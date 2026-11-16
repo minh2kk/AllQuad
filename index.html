@@ -1029,7 +1029,7 @@ body.navmini .applybar { left: calc(36px + 50%); }
 <h2 id="comTitle" style="margin-top:0">Kết nối với flight controller</h2>
 <p class="muted" style="margin-bottom:4px">Cắm cáp USB vào FC rồi chọn cổng COM của nó.</p>
 <button class="btn primary" id="comPick">Chọn cổng COM</button>
-<button class="btn primary" id="usbPick" hidden>Kết nối USB (điện thoại / WebUSB)</button>
+<button class="btn primary" id="usbPick" hidden>Kết nối USB trực tiếp (điện thoại, WebUSB)</button>
 <button class="btn" id="comAgain" hidden>Kết nối lại cổng vừa dùng</button>
 <button class="btn" id="sitlBtn" hidden>Mô phỏng trên máy (SITL, không cần board)</button>
 <button class="btn" id="demoBtn" hidden>Thử với drone ảo (demo, chạy trong trình duyệt)</button>
@@ -6636,7 +6636,8 @@ const _sc = showConnect;
 showConnect = function (msg, bad) {
 _sc(msg, bad);
 const webusb = "usb" in navigator, serial = "serial" in navigator;
-$("usbPick").hidden = !webusb || serial;
+const phone = /Android|Mobi/i.test(navigator.userAgent);
+$("usbPick").hidden = !webusb || (serial && !phone);
 if (!serial && webusb) {
 $("comPick").hidden = true;
 const err = $("comErr");
@@ -6649,7 +6650,7 @@ let dev;
 try { dev = await navigator.usb.requestDevice({ filters: USB_FILTERS }); } catch (e) { return; }
 usbConnect(dev);
 };
-if ("usb" in navigator && !("serial" in navigator)) {
+if ("usb" in navigator && (!("serial" in navigator) || /Android|Mobi/i.test(navigator.userAgent))) {
 navigator.usb.addEventListener("disconnect", (ev) => { if (LINK.usbdev === ev.device) linkLost("Đã rút cáp USB."); });
 navigator.usb.addEventListener("connect", (ev) => { if (!LINK.open && !$("connect").hidden) usbConnect(ev.device); });
 }
