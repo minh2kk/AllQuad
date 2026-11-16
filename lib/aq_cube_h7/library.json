@@ -1,0 +1,14 @@
+{
+  "name": "aq_cube_h7",
+  "version": "1.0.0",
+  "platforms": "ststm32",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src",
+    "flags": [
+      "-Wno-unused-parameter",
+      "-Wno-unused-variable",
+      "-Wno-strict-aliasing"
+    ]
+  }
+}

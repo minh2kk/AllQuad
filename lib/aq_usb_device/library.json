@@ -1,0 +1,12 @@
+{
+  "name": "aq_usb_device",
+  "version": "1.0.0",
+  "platforms": "ststm32",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src",
+    "flags": [
+      "-Wno-unused-parameter"
+    ]
+  }
+}

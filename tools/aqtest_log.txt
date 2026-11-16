@@ -1,0 +1,68 @@
+AllQuad serial test 2026-10-25 18:53:03 python 3.11.7 pyserial 3.5
+PORT COM3 | USB-Enhanced-SERIAL CH343 (COM3) | vid=0x1a86 pid=0x55d3 | USB VID:PID=1A86:55D3 SER=5B15114249 LOCATION=1-1
+
+=== COM3 at 921600 ===
+  idle output 3 s after open: 0 bytes
+  hello: 200 crc ok {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":125971,"rr":1}
+  CLI 'version' -> 200 ok
+AllQuad 2.0.0 (ESP32-S3-N16R8), 264 parameters
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":126111,"rr":1}
+  CLI 'net' -> 200 ok
+unknown command, type 'help'
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":126251,"rr":1}
+  CLI 'scan' -> 200 ok
+SPI SCK 12 MISO 13 MOSI 11 | IMU CS 10 | I2C SDA 8 SCL 9
+I2C: 0x11 0x14 0x16 0x19 0x1C 0x1E (HMC5883/LIS3MDL) 0x20 0x22 0x2C (QMC5883P) 0x2F 0x32 0x34 0x37 0x3A 0x3C 0x3E 0x46 0x4B 0x4F 0x53 0x5F 0x64 0x67 0x6C 0x6D 0x6E 0x70 0x72 0x77 (baro BMP/DPS/SPL/MS5611)
+SPI IMU reg 0x72 (ICM-456xx: E9/E5) = 0xE9
+SPI IMU reg 0x75 (MPU/ICM-42xxx) = 0x00
+SPI IMU reg 0x00 (BMI088 gyro: 0F) = 0x05
+SPI IMU reg 0x0F (LSM6: 6C/6B/6A) = 0x00
+(all 0xFF: MISO not connected / chip unpowered; all 0x00: MISO shorted low or CS wrong)
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":126641,"rr":1}
+  CLI 'status' -> 200 ok
+AllQuad 2.0.0 on ESP32-S3-N16R8 | up 126 s | last reset: power-on
+IMU ICM-45686 | BARO BMP388 | MAG QMC5883P | GPS none
+attitude roll 2.6 pitch 0.2 yaw 118.0 | alt -0.68 m vz -0.01 | agl - 0.00
+position invalid (gps 0 flow 0) N 0.0 E 0.0 | home - 0 m
+heading none 118 deg | wind 0.0 m/s from 180 deg | hover thr 0.400 | gps glitches 0
+EKF: pos 10.06 vel 0.07 hgt 0.07 m yaw 57.3 deg (1 sigma) | test gps 0.00/0.00 hgt 0.00 yaw 0.00 mag 0.00 | height baro | faults 0x10 resets 0/0/0
+vibration 0.0 m/s^2 | motors 
+gps fix 0 sats 0 hAcc 0.0 | battery 11.75V 3S 69% 0.0A 0mAh
+rx no signal LQ 0  0 0 0 0 | 0 0 0 0 0 0
+mode ACRO nav IDLE armed 0 failsafe 0 mission 0/0
+arming blocked: NO_RX ARM_SWITCH CLI ACC_NOT_CALIBRATED MAG
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":126801,"rr":1}
+  CLI 'tasks' -> 200 ok
+task       rate_hz last_us  max_us  load% overruns stack_free
+fast          1000     591    1012    59%        0      2388
+io             500      48    5715     2%        0      4152
+control        250    1268    3317    31%        0      6432
+sensors        100    1024   48749    10%        0      2504
+telemetry      100     273  238644     2%        0      2800
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":126931,"rr":1}
+  CLI 'get web_enable' -> 200 ok
+web_enable = 0
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":127061,"rr":1}
+  CLI 'get wifi_enable' -> 200 ok
+wifi_enable = 1
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":127201,"rr":1}
+  CLI 'get yaw_reversed' -> 200 ok
+yaw_reversed = 1
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":127331,"rr":1}
+  CLI 'get vbat_scale' -> 200 ok
+vbat_scale = 4.3
+
+  hello after CLI: {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":127471,"rr":1}
+  soak test 40 s ...
+  soak: 110 requests, 0 failed, 0 resets, last hello {"ok":true,"name":"AllQuad","board":"ESP32-S3-N16R8","usb":false,"baud":921600,"max":2048,"up":167511,"rr":1}
+  plain text 'version': 0 bytes
+
+done

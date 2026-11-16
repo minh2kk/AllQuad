@@ -1,0 +1,6 @@
+{
+  "name": "allquad-web-tools",
+  "private": true,
+  "description": "Optional: npm install here lets tools/embed_web.py minify the web page with terser + csso (smaller flash image).",
+  "devDependencies": { "csso": "5.0.5", "terser": "5.31.0" }
+}

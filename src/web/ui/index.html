@@ -1,0 +1,2792 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AllQuad Configurator</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --paper: #F2F5F8;
+  --sheet: #FFFFFF;
+  --ink: #12243A;
+  --ink-2: #5B6C80;
+  --rule: #D9E0E7;
+  --grid: #E7ECF1;
+  --acc: #1E66D0;
+  --soft: #F6F8FA;
+  --shadow: 0 1px 2px rgba(18, 36, 58, .05), 0 6px 20px rgba(18, 36, 58, .05);
+  --roll: #D24B2A;
+  --pitch: #2F8A4E;
+  --yaw: #2C66C9;
+  --amber: #E09B12;
+  --amber-ink: #5A3B00;
+  --danger: #B3261E;
+  --ok: #2F8A4E;
+  --num: "DIN Alternate", "Bahnschrift", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --frame: #0E1E31;
+  --on-acc: #FFFFFF;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0D1722; --sheet: #15222E; --ink: #E3EAF0; --ink-2: #9AACBC; --rule: #273746; --grid: #1D2B38;
+    --roll: #F07455; --pitch: #5CC27F; --yaw: #6E9EF0; --amber: #F2B53A; --amber-ink: #2A1C00; --danger: #FF6B5E;
+    --acc: #6EA2F5; --soft: #1A2835; --shadow: 0 1px 2px rgba(0, 0, 0, .3); --frame: #09131D; --on-acc: #06121F;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0D1722; --sheet: #15222E; --ink: #E3EAF0; --ink-2: #9AACBC; --rule: #273746; --grid: #1D2B38;
+  --roll: #F07455; --pitch: #5CC27F; --yaw: #6E9EF0; --amber: #F2B53A; --amber-ink: #2A1C00; --danger: #FF6B5E;
+  --acc: #6EA2F5; --soft: #1A2835; --shadow: 0 1px 2px rgba(0, 0, 0, .3); --frame: #09131D; --on-acc: #06121F;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.45 var(--body);
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--yaw); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--num); font-weight: 700; letter-spacing: .01em; margin: 0; }
+h2 { font-size: 1.35rem; margin: 22px 0 10px; }
+h3 { font-size: 1.05rem; margin: 18px 0 8px; }
+p { margin: 6px 0; max-width: 70ch; }
+.muted { color: var(--ink-2); }
+.num { font-family: var(--num); font-variant-numeric: tabular-nums; }
+
+/* ---------- flight strip (signature element) ---------- */
+.strip {
+  position: sticky; top: 0; z-index: 5;
+  display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center;
+  padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top));
+  background: linear-gradient(100deg, #0E1E31, #17375C); color: #EAF1F7;
+  box-shadow: 0 2px 10px rgba(10, 25, 45, .18);
+}
+.strip canvas { width: 64px; height: 64px; border-radius: 50%; display: block; }
+.strip .mode { font-family: var(--num); font-size: 1.6rem; line-height: 1; }
+.strip .sub { font-size: .85rem; opacity: .8; margin-top: 4px; }
+.strip .bat { text-align: right; font-family: var(--num); }
+.strip .bat b { font-size: 1.5rem; display: block; line-height: 1; }
+.armed-tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: .8rem; margin-left: 8px; vertical-align: middle; }
+.armed-tag.on { background: var(--amber); color: var(--amber-ink); }
+.armed-tag.off { border: 1px solid currentColor; opacity: .75; }
+.link-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 6px; }
+.link-dot.up { background: #5CC27F; }
+
+/* ---------- navigation ---------- */
+nav.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+  display: flex; overflow-x: auto; scrollbar-width: none;
+  background: var(--sheet); border-top: 1px solid var(--rule);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav.tabs::-webkit-scrollbar { display: none; }
+nav.tabs button {
+  flex: 0 0 auto; min-width: 66px;
+  border: 0; background: none; padding: 10px 4px 12px; font-size: .72rem; color: var(--ink-2); cursor: pointer;
+  border-top: 3px solid transparent;
+}
+nav.tabs button[aria-selected="true"] { color: var(--acc); border-top-color: var(--acc); font-weight: 600; }
+nav.tabs svg { display: block; margin: 0 auto 3px; width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: none; }
+nav.tabs .brand, nav.tabs .tgroup { display: none; }
+main { max-width: 1240px; margin: 0 auto; padding: 4px 16px 24px; }
+section[hidden] { display: none; }
+@media (min-width: 900px) {
+  body { padding-bottom: 0; padding-left: 92px; }
+  nav.tabs { top: 0; bottom: 0; right: auto; width: 92px; flex-direction: column; overflow-y: auto; overflow-x: hidden; border-top: 0; border-right: 1px solid var(--rule); }
+  nav.tabs button { border-top: 0; border-left: 3px solid transparent; padding: 9px 4px; min-width: 0; }
+  nav.tabs button[aria-selected="true"] { border-left-color: var(--acc); background: color-mix(in srgb, var(--acc) 8%, transparent); }
+  nav.tabs .brand { display: flex; align-items: center; justify-content: center; gap: 8px; height: 84px; flex: none; font: 700 1rem var(--num); color: var(--ink); border-bottom: 1px solid var(--rule); margin-bottom: 6px; }
+  nav.tabs .brand i { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, #1E66D0, #17375C); color: #fff; font-style: normal; font-size: .85rem; letter-spacing: .02em; }
+  nav.tabs .brand span { display: none; }
+}
+@media (min-width: 1200px) {
+  body { padding-left: 212px; }
+  nav.tabs { width: 212px; padding: 0 10px 12px; }
+  nav.tabs .brand { justify-content: flex-start; padding-left: 8px; margin: 0 -10px 6px; padding-left: 18px; }
+  nav.tabs .brand span { display: inline; }
+  nav.tabs .tgroup { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); opacity: .75; padding: 14px 10px 4px; }
+  nav.tabs button { display: flex; align-items: center; gap: 12px; text-align: left; font-size: .9rem; padding: 9px 10px; border-left: 0; border-radius: 8px; margin: 1px 0; }
+  nav.tabs button svg { margin: 0; width: 20px; height: 20px; }
+  nav.tabs button:hover { background: var(--soft); color: var(--ink); }
+  nav.tabs button[aria-selected="true"] { background: color-mix(in srgb, var(--acc) 12%, transparent); }
+}
+
+/* ---------- surfaces ---------- */
+.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px; margin: 12px 0; box-shadow: var(--shadow); }
+.panel > h3:first-child { margin-top: 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 14px; align-items: start; }
+.cards > .panel { margin: 7px 0; }
+.card-h { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+.card-h h3 { margin: 0; font-size: 1rem; }
+.card-h .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); flex: none; }
+.card-d { font-size: .84rem; color: var(--ink-2); margin: 0 0 6px; max-width: none; }
+.jump { position: sticky; top: var(--sh, 84px); z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 10px 0 8px; margin: 0 0 4px; background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(6px); }
+.jump::-webkit-scrollbar { display: none; }
+.jump a { flex: none; text-decoration: none; color: var(--ink-2); font-size: .85rem; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--rule); background: var(--sheet); }
+.jump a.on, .jump a:hover { color: #fff; background: var(--acc); border-color: var(--acc); }
+section > h2, .sec-h { scroll-margin-top: calc(var(--sh, 84px) + 56px); }
+section > h2 + p.muted { margin-top: -4px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+.kv dt { color: var(--ink-2); }
+.kv dd { margin: 0; font-family: var(--num); font-variant-numeric: tabular-nums; }
+.btn {
+  border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px; padding: 9px 14px; min-height: 42px;
+  cursor: pointer; font-weight: 600; transition: background .12s, border-color .12s;
+}
+.btn:hover:not(:disabled) { border-color: var(--ink-2); }
+.btn.primary { background: var(--acc); border-color: var(--acc); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 85%, #000); }
+.btn.warn { border-color: var(--amber); background: var(--amber); color: var(--amber-ink); }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.note { border-left: 4px solid var(--amber); padding: 10px 14px; background: color-mix(in srgb, var(--amber) 12%, var(--sheet)); border-radius: 0 8px 8px 0; max-width: none; }
+td.bad { color: var(--danger); font-weight: 600; }
+.note.bad { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--sheet)); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 3px 9px; border-radius: 3px; background: color-mix(in srgb, var(--danger) 14%, var(--sheet)); color: var(--danger); font-size: .85rem; }
+.chip.good { background: color-mix(in srgb, var(--ok) 14%, var(--sheet)); color: var(--ok); }
+
+/* ---------- PID matrix ---------- */
+.matrix { display: grid; grid-template-columns: 72px repeat(4, 1fr); gap: 8px; align-items: center; }
+.matrix .head { font-size: .85rem; color: var(--ink-2); text-align: center; }
+.axis-name { font-family: var(--num); font-size: 1.1rem; padding-left: 10px; border-left: 5px solid; }
+.axis-name.roll { border-color: var(--roll); } .axis-name.pitch { border-color: var(--pitch); } .axis-name.yaw { border-color: var(--yaw); }
+.stepper { display: grid; grid-template-columns: 32px 1fr 32px; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--sheet); }
+.stepper button { border: 0; background: var(--soft); cursor: pointer; font-size: 1.1rem; min-height: 42px; color: var(--ink-2); }
+.stepper button:hover { background: var(--grid); color: var(--ink); }
+.stepper input { border: 0; width: 100%; text-align: center; font-family: var(--num); font-size: 1.15rem; background: transparent; min-width: 0; -moz-appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.changed { box-shadow: inset 0 -3px 0 var(--amber); }
+.cell .cl { display: none; }
+@media (max-width: 600px) {
+  .matrix, #rateMatrix { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  #rateMatrix { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .matrix .head, .matrix > div:first-child { display: none; }
+  .matrix .axis-name { grid-column: 1 / -1; margin-top: 6px; }
+  .cell .cl { display: block; font-size: .8rem; color: var(--ink-2); margin-bottom: 2px; }
+  #rateMatrix .stepper { grid-template-columns: 26px 1fr 26px; }
+}
+
+/* ---------- parameter rows ---------- */
+.prow { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--grid); }
+.prow:last-child { border-bottom: 0; }
+.prow .name { font-weight: 600; font-size: .93rem; line-height: 1.3; }
+.prow .hint { font-size: .76rem; color: var(--ink-2); margin-top: 2px; }
+.prow .hint code { font: 500 .74rem ui-monospace, Menlo, Consolas, monospace; color: var(--ink-2); background: var(--soft); border-radius: 4px; padding: 0 4px; }
+.prow .ctl { position: relative; }
+.prow input, .prow select { width: 100%; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); font-family: var(--num); font-size: 1rem; min-height: 40px; }
+.prow select { font-family: var(--body); font-size: .9rem; }
+.prow .ctl.u input { padding-right: 46px; }
+.prow .ctl .unit { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: .76rem; color: var(--ink-2); pointer-events: none; }
+.prow input:focus, .prow select:focus { border-color: var(--acc); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 20%, transparent); }
+.prow.changed { box-shadow: none; }
+.prow.changed .name::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); margin-right: 6px; vertical-align: middle; }
+.prow.changed input, .prow.changed select { border-color: var(--amber); }
+.tog { justify-self: end; position: relative; display: inline-block; width: 46px; height: 26px; }
+.tog input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; min-height: 0; }
+.tog i { position: absolute; inset: 0; border-radius: 999px; background: var(--rule); transition: background .15s; }
+.tog i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.tog input:checked + i { background: var(--acc); }
+.tog input:checked + i::after { transform: translateX(20px); }
+.tog input:focus-visible + i { outline: 3px solid var(--yaw); outline-offset: 2px; }
+.prow.changed .tog i { box-shadow: 0 0 0 2px var(--amber); }
+.badge { white-space: nowrap; display: inline-block; font-size: .72rem; color: var(--amber-ink); background: var(--amber); padding: 1px 6px; border-radius: 3px; margin-left: 6px; font-weight: 600; }
+input[type=search] { width: 100%; padding: 10px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); min-height: 46px; box-shadow: var(--shadow); }
+
+/* ---------- charts ---------- */
+.chart { width: 100%; height: 220px; display: block; background: var(--sheet); border: 1px solid var(--grid); border-radius: 8px; }
+.chart.tall { height: 280px; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: .85rem; color: var(--ink-2); margin-top: 6px; }
+.legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 5px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--soft); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 7px 14px; cursor: pointer; min-height: 36px; border-radius: 6px; color: var(--ink-2); font-weight: 600; }
+.seg button[aria-pressed="true"] { background: var(--sheet); color: var(--acc); box-shadow: 0 1px 3px rgba(18, 36, 58, .15); }
+input[type=range] { width: 100%; accent-color: var(--ink); }
+
+/* ---------- suggestions ---------- */
+.sug { display: grid; grid-template-columns: 6px 1fr auto; gap: 12px; align-items: start; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.sug:last-child { border-bottom: 0; }
+.sug .bar { align-self: stretch; border-radius: 3px; background: var(--ink-2); }
+.sug .bar.roll { background: var(--roll); } .sug .bar.pitch { background: var(--pitch); } .sug .bar.yaw { background: var(--yaw); }
+.sug h4 { margin: 0; font-size: 1rem; }
+.sug .change { font-family: var(--num); font-size: .92rem; color: var(--ink-2); margin-top: 4px; }
+
+/* ---------- motors / rc bars ---------- */
+.bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; height: 120px; }
+.bars div { background: var(--grid); border-radius: 3px 3px 0 0; position: relative; height: 100%; }
+.bars span { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, var(--acc), color-mix(in srgb, var(--acc) 60%, var(--ink))); border-radius: 3px 3px 0 0; }
+.bars label { display: block; text-align: center; font-size: .8rem; margin-top: 4px; color: var(--ink-2); }
+.rc { display: grid; grid-template-columns: 54px 1fr 52px; gap: 8px; align-items: center; font-size: .85rem; margin: 3px 0; }
+.rc .track { height: 8px; background: var(--grid); border-radius: 4px; position: relative; }
+.rc .track span { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: var(--ink); border-radius: 2px; }
+#perfBars .rc { grid-template-columns: 110px 1fr 70px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 600; }
+td.r, th.r { text-align: right; font-family: var(--num); }
+.sdbar { height: 6px; background: var(--grid); border-radius: 3px; overflow: hidden; margin: 4px 0 10px; }
+.sdbar i { display: block; height: 100%; background: var(--acc); }
+.sdrow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; padding: 8px 0; border-bottom: 1px solid var(--grid); }
+.sdrow .row { gap: 6px; }
+.sdrow .btn { min-height: 32px; padding: 4px 12px; }
+
+/* ---------- mode ranges ---------- */
+#modeList { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 12px; }
+.mrow { padding: 14px 16px; border: 1px solid var(--rule); border-radius: 12px; background: var(--sheet); box-shadow: var(--shadow); }
+.mrow.on { border-color: var(--amber); }
+.mhead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.mhead select { width: 100%; padding: 8px; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); min-height: 44px; font-weight: 600; }
+.mhint { font-size: .85rem; color: var(--ink-2); margin: 4px 0 0; }
+.mbar { position: relative; height: 30px; background: var(--grid); border-radius: 4px; margin-top: 10px; }
+.mrange { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: color-mix(in srgb, var(--ink) 22%, var(--grid)); }
+.mrow.on .mrange { background: var(--amber); }
+details.pgroup { padding: 0 18px; }
+details.pgroup[open] { padding-bottom: 8px; }
+details.pgroup summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 14px 0; }
+details.pgroup summary::-webkit-details-marker { display: none; }
+details.pgroup summary .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); }
+details.pgroup summary .num { margin-left: auto; font-size: .82rem; background: var(--soft); border-radius: 999px; padding: 1px 9px; }
+details.pgroup summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg); margin: 0 4px 3px 6px; transition: transform .15s; }
+details.pgroup[open] summary::after { transform: rotate(-135deg); margin-bottom: -3px; }
+details.pgroup[open] summary { border-bottom: 1px solid var(--grid); }
+.dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; margin: 12px 0 4px; }
+.tile { position: relative; overflow: hidden; background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px 12px 18px; box-shadow: var(--shadow); min-height: 104px; }
+.tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--tc, var(--acc)); }
+.tile .k { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+.tile .v { font: 700 1.35rem/1.2 var(--num); margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .k { padding-right: 40px; }
+.tile .s { font-size: .8rem; color: var(--ink-2); margin-top: 4px; }
+.tile .ring { position: absolute; right: 12px; top: 12px; width: 32px; height: 32px; border-radius: 50%; background: conic-gradient(var(--tc, var(--acc)) calc(var(--p, 0) * 1%), var(--grid) 0); }
+.tile .ring::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--sheet); }
+.tile.ok { --tc: var(--pitch); } .tile.warn { --tc: var(--amber); } .tile.bad { --tc: var(--danger); } .tile.idle { --tc: var(--rule); }
+.tile.bad .v { color: var(--danger); }
+.calrow .btn { white-space: nowrap; min-width: 128px !important; }
+.slgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 0 28px; }
+.slgrid .prow { border-bottom: 1px solid var(--grid); }
+input[type=range] { accent-color: var(--acc); }
+.mbar { height: 10px; background: var(--grid); border-radius: 999px; overflow: hidden; margin: 6px 0 4px; }
+.mbar span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--pitch); transition: width .3s; }
+/* ---- compact density (desktop / tablet); phones keep the bigger touch targets */
+@media (min-width: 700px) {
+  body { font-size: 14px; }
+  h2 { font-size: 1.2rem; margin: 16px 0 8px; }
+  h3 { margin: 12px 0 6px; }
+  .panel { padding: 12px 14px; margin: 8px 0; border-radius: 10px; }
+  .cards { gap: 0 12px; }
+  .cards > .panel { margin: 6px 0; }
+  .card-h { margin-bottom: 2px; }
+  .card-h h3 { font-size: .95rem; }
+  .card-d { font-size: .8rem; margin-bottom: 4px; }
+  .prow { padding: 5px 0; gap: 10px; grid-template-columns: minmax(0, 1fr) 132px; }
+  .prow .name { font-size: .88rem; }
+  .prow .hint { font-size: .72rem; margin-top: 1px; }
+  .prow input, .prow select { min-height: 32px; padding: 4px 8px; font-size: .92rem; border-radius: 7px; }
+  .btn { min-height: 34px; padding: 6px 12px; border-radius: 7px; }
+  .stepper button { min-height: 34px; }
+  .seg button { min-height: 30px; padding: 5px 12px; }
+  .tile { min-height: 86px; padding: 10px 14px 10px 16px; }
+  .tile .v { font-size: 1.2rem; margin-top: 4px; }
+  .jump { padding: 6px 0; }
+  .jump a { padding: 4px 10px; font-size: .8rem; }
+  .dash { gap: 10px; margin: 8px 0 2px; }
+  .mrow { padding: 10px 12px; }
+  #modeList { gap: 8px; }
+  details.pgroup summary { padding: 10px 0; }
+  .note { padding: 8px 12px; }
+}
+.panel.bare { background: none; border: 0; box-shadow: none; padding: 0; }
+.mlive { position: absolute; top: -5px; bottom: -5px; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--ink); }
+.mscale { display: flex; justify-content: space-between; font-size: .75rem; color: var(--ink-2); margin-top: 3px; }
+.mfoot { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; margin-top: 8px; }
+.mfoot .seg { display: flex; }
+.mfoot .seg button { flex: 1; padding: 8px 10px; }
+@media (max-width: 600px) { .mfoot { grid-template-columns: 1fr 1fr; } .mfoot .seg { grid-column: 1 / -1; } }
+.btn.ghost { border-color: var(--rule); font-weight: 500; }
+
+/* ---------- login & security ---------- */
+.login { position: fixed; inset: 0; z-index: 20; background: var(--paper); display: grid; place-items: center; padding: 16px; }
+.login[hidden] { display: none; }
+.login form, .login .connect { width: 100%; max-width: 380px; }
+.connect .btn { width: 100%; margin-top: 8px; }
+.connect .opt { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 4px; font-size: .9rem; }
+.connect .opt select { flex: 1; min-height: 40px; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); color: var(--ink); padding: 0 8px; }
+.connect .steps { margin: 10px 0 0; padding-left: 18px; font-size: .85rem; color: var(--ink-2); }
+.login input, .secform input { width: 100%; padding: 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); min-height: 44px; margin-top: 4px; }
+.secform label { display: block; margin-top: 10px; font-weight: 600; }
+.secform .hint { font-size: .82rem; color: var(--ink-2); font-weight: 400; }
+
+/* ---------- apply bar ---------- */
+.applybar {
+  position: fixed; left: 12px; right: 12px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 7;
+  display: none; gap: 10px; align-items: center; justify-content: space-between;
+  padding: 8px 10px 8px 18px; background: var(--amber); color: var(--amber-ink); font-weight: 600;
+  border-radius: 14px; box-shadow: 0 8px 30px rgba(18, 36, 58, .25);
+}
+.applybar.show { display: flex; }
+.applybar .btn { border-color: var(--amber-ink); background: transparent; color: var(--amber-ink); min-height: 40px; padding: 6px 12px; }
+.applybar .btn.primary { background: var(--amber-ink); color: var(--amber); }
+@media (max-width: 600px) { .prow { grid-template-columns: minmax(0, 1fr) 112px; gap: 10px; } .panel { padding: 14px; } }
+@media (min-width: 900px) { .applybar { left: calc(92px + 50%); transform: translateX(-50%); right: auto; width: min(640px, calc(100% - 140px)); bottom: 18px; } }
+@media (min-width: 1200px) { .applybar { left: calc(106px + 50%); } }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: 96px; z-index: 9; background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 10px; display: none; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+.toast.show { display: block; }
+/* ---------- laptop tools: CLI, motors, ports, OSD, sensors, flasher ---------- */
+.term { background: #0E1620; color: #D7E3EE; border-color: #0E1620; }
+.term pre { margin: 0; height: 52vh; min-height: 260px; overflow: auto; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
+.cliline { display: flex; gap: 8px; align-items: center; margin-top: 10px; border-top: 1px solid #2B3B4A; padding-top: 10px; }
+.cliline span { font: 600 14px ui-monospace, Menlo, Consolas, monospace; color: #F2B53A; }
+.cliline input { flex: 1; min-height: 40px; background: #16242F; color: #E3EAF0; border: 1px solid #2B3B4A; border-radius: 5px; padding: 0 10px; font: 14px ui-monospace, Menlo, Consolas, monospace; }
+.term .row { margin-top: 10px; }
+.term .btn { background: #16242F; color: #D7E3EE; border-color: #2B3B4A; min-height: 36px; padding: 6px 10px; }
+.slider { display: grid; grid-template-columns: 70px 1fr 52px; gap: 10px; align-items: center; margin: 10px 0; }
+.slider input[type=range] { width: 100%; accent-color: var(--amber); height: 28px; }
+.slider.master { border-bottom: 1px solid var(--rule); padding-bottom: 12px; }
+fieldset.lock { border: 0; padding: 0; margin: 0; }
+fieldset.lock:disabled { opacity: .45; }
+.check { display: flex; gap: 10px; align-items: center; min-height: 44px; font-weight: 600; }
+.check input { width: 22px; height: 22px; accent-color: var(--ink); }
+table.ports { width: 100%; border-collapse: collapse; }
+table.ports th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: .82rem; padding: 6px 4px; }
+table.ports td { padding: 6px 4px; border-top: 1px solid var(--grid); vertical-align: middle; }
+table.ports select, .field select, .field input { width: 100%; min-height: 40px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink); padding: 0 8px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 14px; }
+.field label { display: block; font-size: .82rem; color: var(--ink-2); margin-bottom: 3px; }
+.freq { font-family: var(--num); font-size: 2.4rem; line-height: 1; }
+.leds { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.leds i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--rule); }
+.osdwrap { margin-top: 10px; border-radius: 4px; overflow: hidden; }
+#osdCanvas { width: 100%; display: block; touch-action: none; cursor: grab; }
+.osdlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 2px 14px; }
+.osdlist label { display: flex; gap: 8px; align-items: center; min-height: 36px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.preset { border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; background: var(--sheet); box-shadow: var(--shadow); }
+.preset h4 { margin: 0 0 4px; }
+.preset p { margin: 0 0 8px; font-size: .86rem; }
+.wplist { display: grid; gap: 6px; }
+#navMap { width: 100%; height: clamp(320px, 58vh, 620px); display: block; margin-top: 10px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; touch-action: none; }
+#navMap.goto { cursor: crosshair; outline: 3px solid var(--amber); }
+.wp { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: start; border: 1px solid var(--rule); border-radius: 6px; padding: 8px; }
+.wp.sel { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+.wp .n { font-family: var(--num); font-size: 1.2rem; text-align: center; }
+.wp .fields { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 10px; }
+.fllog { max-height: 160px; overflow: auto; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; background: var(--paper); border-radius: 4px; padding: 8px; white-space: pre-wrap; margin: 10px 0 0; }
+progress { width: 100%; height: 12px; accent-color: var(--amber); }
+/* ================= visual polish (pure CSS: no extra requests, nothing for the FC) ================= */
+/* app frame: dark sidebar joins the flight strip */
+@media (min-width: 900px) {
+  nav.tabs { background: var(--frame); border-right: 0; scrollbar-width: thin; scrollbar-color: #2A3E54 transparent; }
+  nav.tabs button { color: #93A7BC; }
+  nav.tabs button:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+  nav.tabs button[aria-selected="true"] { color: #fff; border-left-color: #6EA2F5; background: linear-gradient(90deg, rgba(110, 162, 245, .28), rgba(110, 162, 245, .08)); }
+  nav.tabs .brand { color: #fff; border-bottom-color: rgba(255, 255, 255, .07); }
+  nav.tabs .brand i { background: linear-gradient(135deg, #4F8EF0, #1E66D0); box-shadow: 0 4px 14px rgba(30, 102, 208, .45); }
+  nav.tabs .tgroup { color: #5F7891; opacity: 1; }
+  .strip { background: linear-gradient(100deg, var(--frame) 0%, #15314F 60%, #1A3D63 100%); box-shadow: 0 1px 0 rgba(255, 255, 255, .04), 0 6px 18px rgba(10, 25, 45, .16); }
+}
+@media (min-width: 1200px) {
+  nav.tabs button[aria-selected="true"] { box-shadow: inset 3px 0 0 #6EA2F5; }
+}
+/* section titles and card headers */
+section > h2 { display: flex; align-items: center; gap: 10px; }
+section > h2::before { content: ""; width: 4px; height: 1.05em; border-radius: 2px; background: linear-gradient(180deg, var(--acc), color-mix(in srgb, var(--acc) 40%, var(--pitch))); flex: none; }
+.panel { border-color: color-mix(in srgb, var(--rule) 75%, transparent); }
+.cards > .panel > .card-h:first-child { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--grid); }
+.card-h .dot { width: 8px; height: 8px; border-radius: 3px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent); }
+.panel > h3:first-child { display: flex; align-items: center; gap: 8px; }
+/* cards fill both columns without gaps (masonry by CSS columns) */
+@media (min-width: 940px) {
+  .cards { display: block; columns: 2; column-gap: 14px; }
+  .cards > .panel { display: block; break-inside: avoid; margin: 0 0 14px; }
+  .cards > :not(.panel) { column-span: all; }
+}
+/* calmer "restart needed" tag */
+.badge { background: color-mix(in srgb, var(--amber) 16%, var(--sheet)); color: color-mix(in srgb, var(--amber) 55%, var(--ink)); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); font-weight: 600; font-size: .66rem; padding: 0 6px; border-radius: 999px; letter-spacing: .01em; }
+/* controls */
+.btn.primary, .btn.primary:hover:not(:disabled) { color: var(--on-acc); }
+.btn.primary { background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 88%, #fff), var(--acc)); box-shadow: 0 1px 2px rgba(18, 36, 58, .18), inset 0 1px 0 rgba(255, 255, 255, .15); }
+.btn:not(.primary):not(.warn):hover:not(:disabled) { background: var(--soft); }
+.prow input, .prow select, table.ports select, .field select, .field input { background: var(--soft); border-color: color-mix(in srgb, var(--rule) 85%, transparent); transition: border-color .12s, box-shadow .12s, background .12s; }
+.prow input:hover, .prow select:hover { border-color: var(--ink-2); }
+.prow input:focus, .prow select:focus { background: var(--sheet); }
+.prow:hover { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) 3%, transparent) 40%, transparent); }
+.stepper { background: var(--soft); }
+.stepper input { background: var(--sheet); }
+.jump { gap: 4px; }
+.jump a { border-color: transparent; background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.jump a.on, .jump a:hover { color: var(--on-acc); box-shadow: 0 2px 8px color-mix(in srgb, var(--acc) 35%, transparent); }
+/* status tiles: tinted by state */
+.tile { background: linear-gradient(160deg, color-mix(in srgb, var(--tc, var(--acc)) 9%, var(--sheet)) 0%, var(--sheet) 55%); border-color: color-mix(in srgb, var(--tc, var(--rule)) 25%, var(--rule)); }
+.tile::before { width: 3px; border-radius: 0 3px 3px 0; top: 12px; bottom: 12px; }
+.tile .v { letter-spacing: .01em; }
+.tile.idle { background: var(--sheet); }
+/* motors: rounded columns, value inside */
+.bars { height: 136px; gap: 14px; }
+.bars div { border-radius: 10px; overflow: hidden; background: var(--soft); border: 1px solid var(--grid); }
+.bars span { border-radius: 0; background: linear-gradient(0deg, var(--acc), color-mix(in srgb, var(--acc) 45%, #8FD3FF)); transition: height .12s linear; }
+.bars label { position: absolute; top: 6px; left: 0; right: 0; margin: 0; z-index: 1; font-weight: 700; color: var(--ink); text-shadow: 0 1px 0 var(--sheet); }
+/* sticks: centre tick, pill marker */
+.rc { margin: 5px 0; }
+.rc > :first-child { color: var(--ink-2); font-weight: 600; }
+.rc .track { height: 8px; background: linear-gradient(90deg, transparent calc(50% - 1px), var(--rule) 0 calc(50% + 1px), transparent 0), var(--grid); }
+.rc .track span { width: 10px; margin-left: -5px; top: -3px; bottom: -3px; border-radius: 4px; background: var(--acc); box-shadow: 0 0 0 2px var(--sheet); transition: left .1s linear; }
+.chart { border-color: var(--grid); background: linear-gradient(180deg, var(--sheet), var(--soft)); }
+.legend i { height: 4px; border-radius: 2px; }
+/* notes */
+.row > input[type=number], .row > input[type=text], .row > select { min-height: 34px; padding: 4px 8px; border: 1px solid var(--rule); border-radius: 7px; background: var(--soft); font-family: var(--num); }
+.row > input[type=number]:focus, .row > input[type=text]:focus, .row > select:focus { outline: 0; border-color: var(--acc); background: var(--sheet); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 20%, transparent); }
+.note { border-left-width: 3px; border-radius: 0 10px 10px 0; }
+@media (prefers-reduced-motion: reduce) { .bars span, .rc .track span { transition: none; } }
+@media (prefers-reduced-motion: no-preference) { .toast.show { animation: drop .18s ease-out; } @keyframes drop { from { transform: translate(-50%, -8px); opacity: 0; } } }
+/* ================= v2 layout: overview dashboard + consistent pages ================= */
+/* readiness banner */
+.ready { padding: 0; overflow: hidden; }
+.ready-h { display: flex; align-items: center; gap: 14px; padding: 14px 18px; }
+.ready-ic { width: 38px; height: 38px; border-radius: 12px; flex: none; display: grid; place-items: center; background: color-mix(in srgb, var(--rc, var(--ink-2)) 14%, var(--sheet)); }
+.ready-ic::after { content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--rc, var(--ink-2)); box-shadow: 0 0 0 5px color-mix(in srgb, var(--rc, var(--ink-2)) 22%, transparent); }
+.ready-t h3 { margin: 0; font-size: 1.08rem; }
+.ready-t p { margin: 2px 0 0; font-size: .85rem; }
+.ready.ready { --rc: var(--ok); }
+.ready.blocked { --rc: var(--danger); }
+.ready.armed { --rc: var(--amber); }
+.ready { border-left: 4px solid var(--rc, var(--rule)); }
+#blockerChips:empty { display: none; }
+#blockerChips { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; padding: 0 18px 16px; }
+.blk { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; text-align: left; padding: 9px 12px; border-radius: 10px; cursor: default;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--rule)); background: color-mix(in srgb, var(--danger) 6%, var(--sheet)); }
+.blk[data-go] { cursor: pointer; }
+.blk[data-go]:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--sheet)); }
+.blk b { grid-row: span 2; align-self: center; font: 700 .68rem/1 var(--num); letter-spacing: .04em; color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, var(--sheet)); padding: 5px 6px; border-radius: 6px; max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
+.blk span { font-weight: 600; font-size: .88rem; color: var(--ink); }
+.blk small { font-size: .76rem; color: var(--ink-2); line-height: 1.3; }
+/* KPI tiles: one even row */
+#pcPanel { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+#pcPanel .tile { min-height: 92px; display: flex; flex-direction: column; }
+#pcPanel .tile .s { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+/* overview grid */
+.ov-grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); margin-top: 4px; }
+.ov-grid > .panel { margin: 0; }
+@media (min-width: 1000px) {
+  .ov-grid { grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); }
+}
+.card-h .card-x { margin-left: auto; font-size: .85rem; color: var(--ink-2); }
+.card-h .card-x b { color: var(--ink); font-size: 1rem; }
+.card-h .card-x.bad { color: var(--danger); font-weight: 700; }
+.card-h .seg { margin-left: auto; }
+.seg-sm button { min-height: 28px !important; padding: 3px 10px !important; font-size: .8rem; }
+.ov-grid .card-h { padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--grid); }
+.att-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: center; }
+@media (min-width: 640px) { .att-row { grid-template-columns: 200px minmax(0, 1fr); } }
+.att-gauge { display: grid; justify-items: center; gap: 8px; }
+.att-gauge canvas { width: 180px; height: 180px; border-radius: 50%; box-shadow: 0 0 0 4px var(--sheet), 0 0 0 5px var(--rule), 0 6px 18px rgba(18, 36, 58, .18); }
+.att-num { display: flex; gap: 12px; font-size: .78rem; color: var(--ink-2); }
+.att-num b { color: var(--ink); font-size: .92rem; }
+.att-chart .chart { height: 200px; }
+.ov-mot .bars { height: 196px; gap: 10px; }
+.ov-mot .bars label { line-height: 1.25; top: 8px; }
+/* sticks: filled from the low end, separator before the AUX channels */
+.rc .track { overflow: visible; }
+.rc .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: color-mix(in srgb, var(--acc) 22%, transparent); }
+.rc.sep { padding-bottom: 7px; margin-bottom: 8px; border-bottom: 1px dashed var(--grid); }
+/* system health list */
+.health { display: grid; gap: 2px; }
+.hrow { display: grid; grid-template-columns: 10px auto minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 8px; border-radius: 8px; }
+.hrow:nth-child(odd) { background: var(--soft); }
+.hrow i { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-2); }
+.hrow.ok i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+.hrow.warn i { background: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 25%, transparent); }
+.hrow.bad i { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent); }
+.hrow.off i { background: var(--rule); }
+.hrow span { color: var(--ink-2); font-size: .86rem; }
+.hrow b { text-align: right; font: 600 .88rem var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hrow.off b { color: var(--ink-2); font-weight: 500; }
+.ov-kv { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); font-size: .85rem; gap: 3px 14px; }
+.ov-msg { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--soft); font-size: .82rem; color: var(--ink-2); max-width: none; }
+#xWarn { margin-top: 10px !important; }
+
+/* ---- pages: calmer headings, aligned cards, consistent spacing ---- */
+main { max-width: 1320px; padding-top: 10px; }
+section > h2 { font-size: 1.15rem; margin: 26px 0 4px; letter-spacing: .005em; }
+section > h2:first-child, section > .jump + h2, section > .note:first-child + h2 { margin-top: 10px; }
+section > h2 + p.muted { margin: 0 0 10px; font-size: .86rem; max-width: 90ch; }
+section > h2::before { width: 4px; height: 18px; }
+.panel { border-radius: 12px; }
+.panel > h3:first-child, .card-h h3 { font-size: .98rem; letter-spacing: .005em; }
+.cards > .panel > .card-h:first-child { margin: -2px 0 8px; }
+.card-h .dot { background: var(--acc); }
+.jump { margin-left: -2px; }
+.jump a { border-radius: 8px; }
+.note { font-size: .88rem; }
+table th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.kv dt { font-size: .86rem; }
+/* top status strip: tidier block */
+.strip .mode { letter-spacing: .02em; }
+.strip .bat b { font-size: 1.45rem; }
+@media (min-width: 900px) { .strip { padding-left: 22px; padding-right: 22px; } }
+/* OSD preview: keep the 4:3 / 16:9 canvas at a readable size instead of the full page width */
+.osdwrap { max-width: 900px; margin-left: auto; margin-right: auto; box-shadow: 0 6px 22px rgba(18, 36, 58, .18); border-radius: 10px; }
+/* tables and lists inside cards */
+table.ports th { text-transform: uppercase; letter-spacing: .04em; font-size: .74rem; }
+.sdrow { padding: 10px 2px; }
+.sdrow:hover { background: var(--soft); }
+/* setup wizard steps read as a stepper */
+@media (min-width: 700px) { .ov-grid { gap: 14px; } }
+@media (max-width: 640px) {
+  .ready-h { padding: 12px 14px; }
+  #blockerChips { padding: 0 14px 14px; }
+  .att-gauge canvas { width: 150px; height: 150px; }
+  .ov-mot .bars { height: 150px; }
+  .card-h { flex-wrap: wrap; }
+}
+/* ================= v3: tools bar, pre-flight, review, search, profiles, link, heatmap, themes ================= */
+.strip { grid-template-columns: 64px minmax(0, 1fr) auto auto; }
+.strip-tools { display: flex; gap: 6px; align-items: center; }
+.st-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border-radius: 9px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .06); color: #DCE7F2; font-size: .8rem; font-weight: 600; }
+.st-btn:hover { background: rgba(255, 255, 255, .13); }
+.st-btn svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; flex: none; }
+.st-btn kbd { font: 600 .66rem var(--num); padding: 1px 5px; border-radius: 4px; background: rgba(255, 255, 255, .12); opacity: .8; }
+.st-btn[aria-pressed="true"] { background: rgba(110, 162, 245, .3); border-color: rgba(110, 162, 245, .6); }
+@media (max-width: 1100px) { .st-btn span, .st-btn kbd { display: none; } .st-btn { width: 36px; justify-content: center; padding: 0; } }
+@media (max-width: 520px) { .strip { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 8px; } .strip canvas { width: 48px; height: 48px; } .strip .bat { display: none; } .strip .mode { font-size: 1.25rem; } .strip-tools { gap: 4px; } }
+.rate-pill { display: inline-block; font-size: .7rem; padding: 0 7px; margin-right: 8px; border-radius: 999px; background: rgba(255, 255, 255, .12); vertical-align: 1px; }
+.rate-pill.bad { background: var(--danger); color: #fff; }
+/* applied-but-not-saved: blue bar instead of amber */
+.applybar.saved-only { background: var(--acc); color: var(--on-acc); }
+.applybar.saved-only .btn { border-color: currentColor; color: inherit; }
+.applybar.saved-only .btn.primary { background: var(--on-acc); color: var(--acc); }
+/* modal dialogs */
+.pro-modal { background: color-mix(in srgb, var(--paper) 55%, transparent); backdrop-filter: blur(4px); place-items: start center; padding-top: 8vh; }
+.pro-dlg { width: min(720px, 100%); max-height: 80vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; box-shadow: 0 20px 60px rgba(10, 25, 45, .35); }
+.pro-dlg-h { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--grid); }
+.pro-dlg-h h3 { margin: 0; }
+.pro-dlg-b { padding: 12px 16px 16px; overflow: auto; }
+.pro-x { min-height: 30px !important; padding: 2px 10px !important; }
+.rv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--grid); }
+.rv-row code { display: block; font: .72rem ui-monospace, Menlo, Consolas, monospace; color: var(--ink-2); }
+.rv-val { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; }
+.rv-val s { color: var(--ink-2); }
+.rv-val em { font-style: normal; font-size: .75rem; padding: 0 5px; border-radius: 4px; background: var(--soft); }
+.rv-val em.up { color: var(--pitch); } .rv-val em.dn { color: var(--roll); }
+.rv-foot { margin-top: 12px; }
+@media (max-width: 560px) { .rv-row { grid-template-columns: 1fr auto; } .rv-val { grid-column: 1; } }
+/* search */
+#gsIn { margin-bottom: 8px; box-shadow: none; }
+.gs-res { display: grid; gap: 2px; }
+.gs-it { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.gs-it:hover, .gs-it.on { background: color-mix(in srgb, var(--acc) 12%, transparent); }
+.gs-it i { font-style: normal; color: var(--acc); font-weight: 700; text-align: center; }
+.gs-it code { font: .74rem ui-monospace, Menlo, Consolas, monospace; color: var(--ink-2); }
+.gs-it b { font-size: .85rem; }
+.gs-tip { font-size: .75rem; margin-top: 8px; }
+@keyframes flash { 0%, 60% { background: color-mix(in srgb, var(--amber) 30%, transparent); } 100% { background: transparent; } }
+.prow.flash { animation: flash 1.8s ease-out; border-radius: 6px; }
+/* pre-flight */
+.pf-sum { padding: 14px 18px; }
+.pf-score { display: flex; align-items: center; gap: 16px; }
+.pf-score h3 { margin: 0; }
+.pf-score p { margin: 2px 0 0; font-size: .85rem; }
+.pf-ring { --c: var(--ok); width: 64px; height: 64px; border-radius: 50%; flex: none; display: grid; place-items: center; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--grid) 0); position: relative; }
+.pf-ring::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--sheet); }
+.pf-ring b { position: relative; font-size: .95rem; }
+.pf-score.warn .pf-ring { --c: var(--amber); } .pf-score.bad .pf-ring { --c: var(--danger); }
+.pf-score.bad h3 { color: var(--danger); }
+.pf-cols { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1000px) { .pf-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+.pf-cols > .panel { margin: 0; }
+.pf-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--grid); }
+.pf-row:last-child { border-bottom: 0; }
+.pf-row i { width: 11px; height: 11px; border-radius: 50%; background: var(--rule); }
+.pf-row.ok i { background: var(--ok); } .pf-row.warn i { background: var(--amber); } .pf-row.bad i { background: var(--danger); }
+.pf-row b { display: block; font-size: .92rem; }
+.pf-row small { display: block; color: var(--ink-2); font-size: .8rem; }
+.pf-row.bad b { color: var(--danger); }
+.pf-row .btn { min-height: 30px; padding: 3px 12px; }
+.pf-chk { display: flex; gap: 12px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--grid); cursor: pointer; font-size: .9rem; }
+.pf-chk:last-child { border-bottom: 0; }
+.pf-chk input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--ok); }
+.pf-chk input:checked + span { color: var(--ink-2); text-decoration: line-through; }
+/* RC link + mission stats: label / value tiles */
+.rx-stats, .wp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.rx-stats div, .wp-stats div { background: var(--soft); border-radius: 8px; padding: 6px 10px; }
+.rx-stats span, .wp-stats span { display: block; font-size: .72rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+.rx-stats b, .wp-stats b { font-size: 1.05rem; }
+/* blackbox events */
+.ev-bar { position: relative; height: 14px; border-radius: 7px; background: var(--grid); margin: 4px 0 10px; }
+.ev-bar i { position: absolute; top: 2px; bottom: 2px; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--ink-2); cursor: pointer; }
+.ev-bar i.arm, .ev .arm { background: var(--ok); } .ev-bar i.disarm { background: var(--ink); } .ev-bar i.warn { background: var(--danger); } .ev-bar i.mode { background: var(--yaw); }
+.ev-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: .84rem; }
+.ev span { color: var(--ink-2); font-size: .78rem; }
+.ev.warn { border-color: color-mix(in srgb, var(--danger) 45%, var(--rule)); color: var(--danger); }
+.ev.mode { border-color: color-mix(in srgb, var(--yaw) 40%, var(--rule)); }
+.ev:hover { background: var(--soft); }
+#heatChart { background: var(--frame); }
+/* simple view */
+body.simple .prow.adv, body.simple .adv-only { display: none; }
+/* compact sidebar on laptops */
+.navmini-btn { display: none; }
+@media (min-width: 1200px) {
+  .navmini-btn { display: flex; align-items: center; gap: 10px; margin-top: auto; border: 0; background: none; color: #6F86A0; cursor: pointer; padding: 10px; border-radius: 8px; font-size: .8rem; }
+  .navmini-btn:hover { color: #fff; background: rgba(255, 255, 255, .06); }
+  .navmini-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; transition: transform .2s; }
+  body.navmini { padding-left: 72px; }
+  body.navmini nav.tabs { width: 72px; padding: 0 8px 12px; }
+  body.navmini nav.tabs .brand { justify-content: center; padding-left: 0; margin: 0 -8px 6px; }
+  body.navmini nav.tabs .brand span, body.navmini nav.tabs .tgroup, body.navmini .navmini-btn span { display: none; }
+  body.navmini nav.tabs button { font-size: 0; justify-content: center; padding: 10px 0; }
+  body.navmini nav.tabs button svg { width: 22px; height: 22px; }
+  body.navmini .navmini-btn { justify-content: center; }
+  body.navmini .navmini-btn svg { transform: rotate(180deg); }
+  body.navmini .applybar { left: calc(36px + 50%); }
+}
+/* outdoor theme: maximum contrast and bigger type for sunlight on a phone */
+:root[data-theme="sun"] {
+  --paper: #FFFFFF; --sheet: #FFFFFF; --ink: #000000; --ink-2: #26323F; --rule: #2A3542; --grid: #C9D2DC; --soft: #EEF2F6;
+  --acc: #0047B3; --roll: #B3260A; --pitch: #0B6B2E; --yaw: #0047B3; --amber: #C77700; --amber-ink: #000; --danger: #B00000; --ok: #0B6B2E;
+  --shadow: none; --frame: #000000; color-scheme: light;
+}
+:root[data-theme="sun"] body { font-size: 16px; }
+:root[data-theme="sun"] .panel, :root[data-theme="sun"] .tile { border: 2px solid #000; }
+:root[data-theme="sun"] .tile .v { font-size: 1.5rem; }
+:root[data-theme="sun"] .strip { background: #000; }
+:root[data-theme="sun"] .btn { border-width: 2px; font-weight: 700; }
+:root[data-theme="sun"] .hrow b, :root[data-theme="sun"] .kv dd { font-weight: 700; }
+</style>
+</head>
+<body>
+<header class="strip" aria-live="polite">
+  <canvas id="horizon" width="128" height="128" aria-label="Chân trời nhân tạo"></canvas>
+  <div>
+    <div><span class="mode" id="sMode">—</span><span class="armed-tag off" id="sArmed">Disarmed</span></div>
+    <div class="sub"><span class="link-dot" id="sLink"></span><span class="rate-pill num" id="linkRate" hidden></span><span id="sSub">Đang kết nối tới FC…</span></div>
+  </div>
+  <div class="strip-tools">
+    <button type="button" class="st-btn" id="searchBtn" title="Tìm tham số / chức năng (Ctrl+K)" aria-label="Tìm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><span>Tìm</span><kbd>Ctrl K</kbd></button>
+    <button type="button" class="st-btn" id="viewBtn" title="Chế độ hiển thị: đơn giản / nâng cao" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h6"/></svg><span id="viewTxt">Nâng cao</span></button>
+    <button type="button" class="st-btn" id="themeQuick" title="Giao diện: tự động / sáng / tối / ngoài trời"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg><span id="themeTxt">Tự động</span></button>
+  </div>
+  <div class="bat"><b id="sVolt">—</b><span id="sBat"></span></div>
+</header>
+
+<main>
+  <!-- ======================= OVERVIEW ======================= -->
+  <section id="tab-overview">
+    <p class="note bad" id="defPw" hidden>Drone đang dùng mật khẩu mặc định <span class="num">allquad123</span>: ai ở gần cũng vào chỉnh được. Đổi ở tab Hệ thống → WiFi & bảo mật.</p>
+    <!-- readiness: always shown; lists what blocks arming, each item with what to do -->
+    <div id="blockers" class="panel ready">
+      <div class="ready-h">
+        <span class="ready-ic" aria-hidden="true"></span>
+        <div class="ready-t"><h3 id="readyTitle">Đang chờ dữ liệu…</h3><p class="muted" id="readySub"></p></div>
+      </div>
+      <div class="chips" id="blockerChips"></div>
+    </div>
+    <div class="ov-grid">
+      <div class="panel ov-att">
+        <div class="card-h"><span class="dot"></span><h3>Tư thế & tốc độ góc</h3>
+          <div class="seg seg-sm" role="group" aria-label="Trục" id="liveAxis">
+            <button aria-pressed="true" data-a="0">Roll</button><button aria-pressed="false" data-a="1">Pitch</button><button aria-pressed="false" data-a="2">Yaw</button>
+          </div>
+        </div>
+        <div class="att-row">
+          <div class="att-gauge">
+            <canvas id="ovHorizon" width="320" height="320" aria-label="Chân trời nhân tạo"></canvas>
+            <div class="att-num num"><span>Roll <b id="ovRoll">—</b></span><span>Pitch <b id="ovPitch">—</b></span><span>Hướng <b id="ovHdg">—</b></span></div>
+          </div>
+          <div class="att-chart">
+            <canvas class="chart" id="liveChart"></canvas>
+            <div class="legend"><span><i style="background:var(--ink)"></i>Gyro (°/s)</span><span><i style="background:var(--amber)"></i>Setpoint</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel ov-mot">
+        <div class="card-h"><span class="dot"></span><h3>Motor</h3><span class="card-x num">Ga <b id="oThr">—</b></span></div>
+        <div class="bars" id="motorBars"></div>
+      </div>
+      <div class="panel ov-rc">
+        <div class="card-h"><span class="dot"></span><h3>Tay điều khiển</h3><span class="card-x num" id="oLq"></span></div>
+        <div id="rcBars"></div>
+      </div>
+      <div class="panel ov-sys">
+        <div class="card-h"><span class="dot"></span><h3>Tình trạng hệ thống</h3></div>
+        <div class="health" id="oSensors"></div>
+        <dl class="kv ov-kv">
+          <dt>Độ cao</dt><dd id="oAlt">—</dd>
+          <dt>Vị trí</dt><dd id="oPos">—</dd>
+          <dd id="oGps" hidden></dd>
+          <dt>Notch động</dt><dd id="oNotch">—</dd>
+        </dl>
+        <p class="ov-msg" id="oMsg"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= PRE-FLIGHT ======================= -->
+  <section id="tab-preflight" hidden>
+    <h2>Kiểm tra trước khi bay</h2>
+    <p class="muted">Các mục tự kiểm tra từ dữ liệu FC đang gửi; các mục cần nhìn bằng mắt thì tích tay. Bấm "Sửa" để tới đúng chỗ.</p>
+    <div class="panel pf-sum" id="pfSum"></div>
+    <div class="pf-cols">
+      <div class="panel"><div class="card-h"><span class="dot"></span><h3>Tự kiểm tra</h3></div><div id="pfAuto"></div></div>
+      <div class="panel"><div class="card-h"><span class="dot"></span><h3>Kiểm tra bằng mắt</h3><button class="btn ghost card-x" id="pfReset" type="button">Bỏ tích hết</button></div><div id="pfManual"></div></div>
+    </div>
+  </section>
+
+  <!-- ======================= PID ======================= -->
+  <section id="tab-pid" hidden>
+    <h2 data-j="PID">PID</h2>
+    <p class="muted">Chạm − / + để chỉnh từng bước, hoặc gõ số. Thay đổi chỉ áp dụng khi drone đã disarm.</p>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px"><div class="seg" id="profSeg" role="group" aria-label="Profile đang sửa"><button data-pf="0" aria-pressed="true">Profile 1</button><button data-pf="1" aria-pressed="false">Profile 2</button><button data-pf="2" aria-pressed="false">Profile 3</button></div><span class="muted" id="profInfo"></span></div>
+      <div class="matrix" id="pidMatrix"></div>
+    </div>
+    <h2 data-j="Cảm giác bay">Cảm giác bay & bảo vệ</h2>
+    <div class="cards" id="pidExtra"></div>
+    <p class="note">Tự chỉnh: gán AUTOTUNE cho một công tắc ở tab Chế độ. Bay treo ở nơi trống, cao 5–10 m, bật công tắc và buông cần: drone tự giật từng trục (khoảng 1–3 phút). Đẩy cần bất kỳ lúc nào để lấy lại điều khiển. Xong thì hạ cánh và <b>disarm khi công tắc còn bật</b> để lưu; tắt công tắc trước khi disarm để bỏ kết quả. Sau đó có thể tinh chỉnh I và feedforward bằng phân tích blackbox.</p>
+    <h2 data-j="Rates">Rates</h2>
+    <div class="grid2">
+      <div class="panel"><div class="matrix" id="rateMatrix" style="grid-template-columns:72px repeat(3,1fr)"></div></div>
+      <div class="panel">
+        <canvas class="chart" id="rateChart"></canvas>
+        <div class="legend"><span><i style="background:var(--roll)"></i>Roll</span><span><i style="background:var(--pitch)"></i>Pitch</span><span><i style="background:var(--yaw)"></i>Yaw</span><span class="num" id="rateMax"></span></div>
+      </div>
+    </div>
+    <h2 data-j="Bộ lọc">Bộ lọc gyro & D-term</h2>
+    <div class="panel">
+      <canvas class="chart" id="filterChart"></canvas>
+      <div class="legend"><span><i style="background:var(--ink)"></i>Gyro (lọc thông thấp + notch tĩnh)</span><span><i style="background:var(--yaw)"></i>D-term</span><span class="num" id="filterDelay"></span></div>
+    </div>
+    <div class="cards" id="filterParams"></div>
+  </section>
+
+  <!-- ======================= NAVIGATION ======================= -->
+  <section id="tab-nav" hidden>
+    <h2 data-j="Bản đồ">Điều hướng</h2>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <span class="muted">Bắc ở trên. H: điểm cất cánh, R: điểm an toàn (rally), số: waypoint.</span>
+        <span class="row"><button class="btn ghost" id="mapOut" aria-label="Thu nhỏ">−</button><button class="btn ghost" id="mapIn" aria-label="Phóng to">+</button><button class="btn ghost" id="mapReload">Tải lại nhiệm vụ</button><button class="btn" id="gotoBtn" hidden aria-pressed="false">Bay tới điểm chạm</button><button class="btn primary" id="wpEditBtn">Soạn nhiệm vụ</button></span>
+      </div>
+      <div class="seg" id="wpLayer" hidden style="margin-top:10px"><button data-l="wp" aria-pressed="true">Waypoint</button><button data-l="survey" aria-pressed="false">Quét khu vực</button><button data-l="fence" aria-pressed="false">Geofence đa giác</button></div>
+      <p class="note" id="wpHint" hidden></p>
+      <canvas id="navMap" aria-label="Bản đồ vị trí"></canvas>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3 style="margin-top:0">Trạng thái</h3>
+        <dl class="kv" id="navKv"></dl>
+        <div class="chips" id="navChips" style="margin-top:8px"></div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">Độ cao</h3>
+        <canvas class="chart" id="navAlt"></canvas>
+        <div class="legend"><span><i style="background:var(--ink)"></i>Thực tế</span><span><i style="background:var(--amber)"></i>Mục tiêu</span><span><i style="background:var(--pitch)"></i>So với mặt đất</span></div>
+      </div>
+    </div>
+    <div class="panel" id="wpPanel" hidden>
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Nhiệm vụ <span class="muted num" id="wpCount"></span></h3>
+        <span class="row"><button class="btn" id="wpRtl">Thêm về nhà cuối</button><button class="btn danger" id="wpClear">Xoá hết</button><button class="btn" id="wpCancel">Huỷ</button><button class="btn primary" id="wpUpload">Gửi lên drone</button></span>
+      </div>
+      <div class="wplist" id="wpList" style="margin-top:10px"></div>
+      <div id="svPanel" hidden style="margin-top:10px">
+        <div class="fields">
+          <div class="field"><label>Khoảng cách giữa các đường (m)</label><input id="svSpace" inputmode="decimal" value="20"></div>
+          <div class="field"><label>Hướng đường quét (° so với bắc)</label><input id="svAngle" inputmode="decimal" value="0"></div>
+          <div class="field"><label>Độ cao (m)</label><input id="svAlt" inputmode="decimal" value="30"></div>
+          <div class="field"><label>Thêm về nhà ở cuối</label><select id="svRtl"><option value="1">Có</option><option value="0">Không</option></select></div>
+        </div>
+        <p class="muted" id="svInfo"></p>
+        <div class="row"><button class="btn" id="svUndo">Bỏ đỉnh cuối</button><button class="btn" id="svClear">Xoá vùng</button><button class="btn primary" id="svMake">Tạo đường quét → waypoint</button></div>
+      </div>
+      <div id="fcPanel" hidden style="margin-top:10px">
+        <p class="muted" id="fcInfo" style="margin-top:0"></p>
+        <label class="row" style="gap:8px"><input type="checkbox" id="fcOn"> Bật geofence đa giác (drone chỉ được bay bên trong; vượt ra thì RTH / hạ cánh theo fence_action)</label>
+        <div class="row" style="margin-top:8px"><button class="btn" id="fcUndo">Bỏ đỉnh cuối</button><button class="btn danger" id="fcClear">Xoá đa giác</button></div>
+      </div>
+    </div>
+    <h2 data-j="Thông số">Thông số điều hướng</h2>
+    <div class="cards" id="navParams"></div>
+  </section>
+
+  <!-- ======================= MODES ======================= -->
+  <section id="tab-modes" hidden>
+    <h2 data-j="Công tắc">Chế độ & công tắc</h2>
+    <p class="muted">Mỗi dòng gán một chế độ cho một khoảng giá trị của kênh AUX. Gạt công tắc trên tay điều khiển để thấy vạch đen di chuyển; khoảng chuyển màu vàng khi chế độ đang bật.</p>
+    <div class="panel">
+      <dl class="kv"><dt>Đang bật</dt><dd id="modeActive">—</dd><dt>Chế độ bay</dt><dd id="modeNow">—</dd></dl>
+      <p class="muted" style="margin-top:8px">Khi nhiều chế độ cùng bật, chế độ đứng trước thắng: LAND, SMART RTL, RTH / GPS RESCUE, MISSION, AUTOTUNE, CRUISE, POSHOLD, ALTHOLD, HORIZON, ANGLE. Không có chế độ nào thì là ACRO. LAUNCH không phải chế độ bay riêng: nó chỉ giữ drone chờ phóng trong ACRO / ANGLE / HORIZON.</p>
+      <p class="note bad" id="modeNoArm" hidden>Chưa gán công tắc ARM: drone sẽ không arm được.</p>
+    </div>
+    <div id="modeList"></div>
+    <button class="btn primary" id="modeAdd" style="margin-top:12px">+ Thêm chế độ</button>
+    <h2 data-j="Failsafe & pin">Failsafe, pin & arm</h2>
+    <p class="muted">Drone làm gì khi mất sóng hoặc yếu pin, và điều kiện để được arm.</p>
+    <div class="cards" id="safetyParams"></div>
+  </section>
+
+
+  <!-- ======================= BLACKBOX ======================= -->
+  <section id="tab-blackbox" hidden>
+    <h2>Phân tích blackbox</h2>
+    <div class="panel">
+      <div class="row">
+        <button class="btn primary" id="bbDownload">Tải log từ drone</button>
+        <label class="btn" for="bbFile" style="display:inline-flex;align-items:center">Mở file log</label>
+        <input type="file" id="bbFile" accept=".bin,.bbl,application/octet-stream" hidden>
+        <select id="bbFlight" class="btn" hidden aria-label="Chọn chuyến bay"></select>
+      </div>
+      <p class="muted" id="bbInfo">Ghi log: bật trong tab Hệ thống (500 Hz), bay ở ACRO với các cú lắc cần nhanh từng trục, hạ cánh, rồi tải log về đây.</p>
+    </div>
+    <div class="panel" id="sdPanel" hidden>
+      <div class="row" style="justify-content:space-between">
+        <div class="card-h" style="margin:0"><span class="dot" id="sdDot"></span><h3>Thẻ SD</h3></div>
+        <div class="row"><button class="btn" id="sdRefresh">Làm mới</button><button class="btn" id="sdMount">Tìm lại thẻ</button></div>
+      </div>
+      <p class="muted" id="sdInfo" style="margin:6px 0"></p>
+      <div class="sdbar" id="sdBar" hidden><i></i></div>
+      <div id="sdFiles"></div>
+    </div>
+    <div id="bbResults" hidden>
+      <div class="panel">
+        <h3 style="margin-top:0">Gợi ý chỉnh</h3>
+        <div id="bbSuggest"></div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">Đáp ứng bước</h3>
+        <p class="muted">Gyro phản ứng thế nào với một cú lắc cần, ước lượng từ toàn bộ log. Lý tưởng: lên nhanh tới 1.0, vọt lố dưới 10–15%, không rung.</p>
+        <canvas class="chart" id="stepChart"></canvas>
+        <div class="legend" id="stepLegend"></div>
+      </div>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <h3 style="margin:0">Phổ nhiễu</h3>
+          <div class="seg" role="group" aria-label="Trục" id="specAxis"><button aria-pressed="true" data-a="0">Roll</button><button aria-pressed="false" data-a="1">Pitch</button><button aria-pressed="false" data-a="2">Yaw</button></div>
+        </div>
+        <canvas class="chart" id="specChart" style="margin-top:10px"></canvas>
+        <div class="legend"><span><i style="background:var(--ink-2)"></i>Gyro thô</span><span><i style="background:var(--ink)"></i>Gyro sau lọc</span><span><i style="background:var(--yaw)"></i>D-term</span></div>
+      </div>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <h3 style="margin:0">Theo thời gian</h3>
+          <div class="seg" role="group" aria-label="Trục" id="tsAxis"><button aria-pressed="true" data-a="0">Roll</button><button aria-pressed="false" data-a="1">Pitch</button><button aria-pressed="false" data-a="2">Yaw</button></div>
+        </div>
+        <canvas class="chart tall" id="tsChart" style="margin-top:10px"></canvas>
+        <div class="legend"><span><i style="background:var(--amber)"></i>Setpoint</span><span><i style="background:var(--ink)"></i>Gyro</span><span><i style="background:var(--roll)"></i>P</span><span><i style="background:var(--pitch)"></i>I</span><span><i style="background:var(--yaw)"></i>D</span></div>
+        <canvas class="chart" id="motorChart" style="margin-top:10px;height:150px"></canvas>
+        <div class="legend"><span>Motor 1–4 và ga</span></div>
+        <label class="muted" for="tsPos">Vị trí</label><input type="range" id="tsPos" min="0" max="1000" value="0">
+        <label class="muted" for="tsZoom">Độ rộng cửa sổ</label><input type="range" id="tsZoom" min="1" max="100" value="12">
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= SENSORS ======================= -->
+  <section id="tab-sensors" hidden>
+    <h2 data-j="Tư thế">Cảm biến</h2>
+    <div class="grid2">
+      <div class="panel">
+        <h3 style="margin-top:0">Tư thế</h3>
+        <canvas id="model3d" style="width:100%;height:260px;display:block" aria-label="Mô hình drone theo tư thế đo được"></canvas>
+        <div class="row" style="justify-content:space-between;margin-top:6px"><span class="num muted" id="modelAtt">—</span><button class="btn ghost" id="modelZero">Nhìn từ phía sau</button></div>
+        <p class="muted" style="margin-bottom:0">Nghiêng drone bằng tay: mô hình phải nghiêng cùng chiều, mũi màu cam là phía trước. Sai thì chỉnh <span class="num">imu_align</span>.</p>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">Số đo</h3>
+        <dl class="kv" id="sensKv"></dl>
+        <div class="seg" role="group" aria-label="Tần số đọc" id="sensRate" style="margin-top:12px">
+          <button aria-pressed="false" data-a="10">10 Hz</button><button aria-pressed="true" data-a="20">20 Hz</button><button aria-pressed="false" data-a="40">40 Hz</button>
+        </div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel"><h3 style="margin-top:0">Gyro <span class="muted num">°/s</span></h3><canvas class="chart" id="chGyro"></canvas>
+        <div class="legend"><span><i style="background:var(--roll)"></i>Roll</span><span><i style="background:var(--pitch)"></i>Pitch</span><span><i style="background:var(--yaw)"></i>Yaw</span></div></div>
+      <div class="panel"><h3 style="margin-top:0">Gia tốc <span class="muted num">m/s²</span></h3><canvas class="chart" id="chAcc"></canvas>
+        <div class="legend"><span><i style="background:var(--roll)"></i>X</span><span><i style="background:var(--pitch)"></i>Y</span><span><i style="background:var(--yaw)"></i>Z</span></div></div>
+      <div class="panel"><h3 style="margin-top:0">Compass <span class="muted num">gauss</span></h3><canvas class="chart" id="chMag"></canvas>
+        <div class="legend"><span><i style="background:var(--roll)"></i>X</span><span><i style="background:var(--pitch)"></i>Y</span><span><i style="background:var(--yaw)"></i>Z</span></div></div>
+      <div class="panel"><h3 style="margin-top:0">Độ cao <span class="muted num">m</span></h3><canvas class="chart" id="chBaro"></canvas>
+        <div class="legend"><span><i style="background:var(--ink)"></i>Baro</span><span><i style="background:var(--pitch)"></i>Cảm biến khoảng cách</span></div></div>
+    </div>
+    <div class="panel" id="escPanel" hidden><h3 style="margin-top:0">ESC</h3><table class="ports" id="escTable"></table></div>
+    <h2 data-j="Thiết lập cảm biến">Thiết lập cảm biến</h2>
+    <div class="cards" id="sensorParams"></div>
+  </section>
+
+  <!-- ======================= MOTORS ======================= -->
+  <section id="tab-motors" hidden>
+    <h2 data-j="Thử motor">Thử motor</h2>
+    <p class="note bad"><b>Tháo hết cánh quạt trước khi thử.</b> Motor quay thật; ESC cần cắm pin.</p>
+    <div class="grid2">
+      <div class="panel">
+        <h3 style="margin-top:0">Thứ tự & chiều quay</h3>
+        <canvas id="motorMap" style="width:100%;height:260px;display:block" aria-label="Sơ đồ motor nhìn từ trên xuống"></canvas>
+        <p class="muted" id="motorDirNote" style="margin-bottom:0"></p>
+      </div>
+      <div class="panel">
+        <label class="check"><input type="checkbox" id="mtArm"> Tôi đã tháo cánh quạt</label>
+        <fieldset class="lock" id="mtLock" disabled>
+          <div id="mtSliders"></div>
+          <button class="btn danger" id="mtStop" style="width:100%">Dừng tất cả</button>
+        </fieldset>
+        <p class="muted">Motor tự dừng sau 1 giây nếu mất kết nối, khi đổi tab hoặc rời trang. Chỉ chạy khi disarm; không arm được trong lúc thử.</p>
+      </div>
+    </div>
+    <h2 data-j="Motor & ESC">Cấu hình motor</h2>
+    <div class="cards" id="motorParams"></div>
+    <h2 data-j="ESC Configurator">Cấu hình ESC (passthrough)</h2>
+    <div class="panel">
+      <p style="margin-top:0">BLHeli_S, Bluejay, AM32, BLHeli_32: đọc, chỉnh và nạp firmware ESC qua flight controller (passthrough), như với Betaflight.</p>
+      <ol class="muted" style="padding-left:20px">
+        <li>Cắm pin cho ESC, tháo cánh quạt.</li>
+        <li>Bấm <b>Nhả cổng USB</b> để trang này trả cổng COM.</li>
+        <li>Mở ESC Configurator bằng Chrome/Edge, chọn cổng COM của FC (ESP32 DevKit: tốc độ 921600), bấm Connect rồi Read Setup.</li>
+        <li>Xong thì bấm Disconnect ở đó và kết nối lại trang này.</li>
+      </ol>
+      <div class="row"><a class="btn primary" href="https://esc-configurator.com" target="_blank" rel="noopener">Mở ESC Configurator</a><button class="btn" id="escRelease">Nhả cổng USB</button></div>
+    </div>
+  </section>
+
+  <!-- ======================= PORTS, VTX, LED ======================= -->
+  <section id="tab-ports" hidden>
+    <h2 data-j="Cổng serial">Cổng serial</h2>
+    <div class="panel"><table class="ports" id="portTable"></table><p class="muted" id="portNote" style="margin-bottom:0"></p></div>
+    <h2 data-j="VTX">Phát video (VTX)</h2>
+    <div class="panel" id="vtxPanel"></div>
+    <h2 data-j="LED">Dải LED</h2>
+    <div class="panel" id="ledPanel"></div>
+  </section>
+
+  <!-- ======================= OSD ======================= -->
+  <section id="tab-osd" hidden>
+    <h2>OSD</h2>
+    <div class="panel">
+      <div class="fields" id="osdTop"></div>
+      <div class="row" style="margin:6px 0 10px"><div class="seg" id="osdView" hidden><button data-v="sd" aria-pressed="true">Bố cục</button><button data-v="hd" aria-pressed="false">Xem trên kính HD</button></div><span class="muted" id="osdViewInfo"></span></div>
+      <div class="osdwrap"><canvas id="osdCanvas" aria-label="Màn hình OSD: kéo để đổi vị trí"></canvas></div>
+      <p class="muted" style="margin-bottom:0">Kéo chữ trên màn hình để đổi chỗ, bỏ chọn để ẩn. Một bố cục dùng cho mọi kính: trên lưới HD, phần tử ở góc vẫn ở góc, phần tử giữa vẫn ở giữa. Bấm Áp dụng rồi Lưu.</p>
+    </div>
+    <div class="panel"><div class="osdlist" id="osdList"></div></div>
+    <h2>Kết nối kính / camera</h2>
+    <div class="cards">
+      <div class="panel"><div class="card-h"><span class="dot"></span><h3>DJI O3 / O4 / O4 Pro</h3></div>
+        <p class="card-d">Nối TX/RX của air unit vào một UART (chéo dây). Cổng đó chọn "OSD kính số (MSP DisplayPort)", baud 115200. OSD = Kính số, lưới Tự động (53×20). Trên kính: Settings → Display → Custom OSD. FC báo là Betaflight nên kính dùng font Betaflight và tự thoát chế độ công suất thấp khi arm.</p></div>
+      <div class="panel"><div class="card-h"><span class="dot"></span><h3>Walksnail Avatar</h3></div>
+        <p class="card-d">Như DJI: UART + DisplayPort, lưới 53×20. Trên kính chọn font Betaflight nếu có tuỳ chọn.</p></div>
+      <div class="panel"><div class="card-h"><span class="dot"></span><h3>HDZero</h3></div>
+        <p class="card-d">UART + DisplayPort. Lưới Tự động sẽ theo kính báo về; nếu không, chọn HD 50×18.</p></div>
+      <div class="panel"><div class="card-h"><span class="dot"></span><h3>Analog</h3></div>
+        <p class="card-d">Board có chip MAX7456 / AT7456E: OSD = Analog, chọn PAL / NTSC theo camera. Chip cần font Betaflight (board bán sẵn thường đã có); nếu thấy ký tự lạ, đổi Ký hiệu sang "Chỉ chữ". MWOSD / OSD rời: DisplayPort lưới SD.</p></div>
+    </div>
+  </section>
+
+  <!-- ======================= CLI ======================= -->
+  <section id="tab-cli" hidden>
+    <h2>CLI</h2>
+    <div class="panel term">
+      <pre id="cliOut" aria-live="polite"></pre>
+      <form class="cliline" id="cliForm"><span>#</span><input id="cliIn" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Lệnh CLI" placeholder="help"><button class="btn" type="submit">Gửi</button></form>
+      <div class="row" id="cliQuick">
+        <button class="btn" data-c="status">status</button><button class="btn" data-c="diff">diff</button><button class="btn" data-c="dump">dump</button>
+        <button class="btn" data-c="tasks">tasks</button><button class="btn" data-c="perf">perf</button><button class="btn" data-c="help">help</button>
+        <button class="btn" data-c="save">save</button><button class="btn" id="cliClear" type="button">Xoá màn hình</button>
+      </div>
+    </div>
+    <p class="muted">Như CLI của Betaflight: <span class="num">get</span>, <span class="num">set ten gia_tri</span>, <span class="num">save</span>, <span class="num">diff</span>, <span class="num">mission</span>… Mũi tên lên/xuống gọi lại lệnh cũ. Lệnh <span class="num">wifi</span> chỉ chạy qua USB.</p>
+  </section>
+
+  <!-- ======================= PARAMETERS ======================= -->
+  <section id="tab-params" hidden>
+    <h2 data-j="Preset">Preset</h2>
+    <p class="muted">Bộ giá trị khởi đầu theo loại khung và kiểu bay. Chọn một bộ: các thay đổi vào hàng chờ, xem lại rồi bấm Áp dụng và Lưu.</p>
+    <div class="presets" id="presetList"></div>
+    <h2 data-j="Tất cả">Tất cả tham số</h2>
+    <input type="search" id="pSearch" placeholder="Tìm tham số, ví dụ: rth, fence, osd" aria-label="Tìm tham số">
+    <div class="cards" id="paramGroups" style="margin-top:6px"></div>
+  </section>
+
+  <!-- ======================= SYSTEM ======================= -->
+  <section id="tab-system" hidden>
+    <h2 data-j="Lưu">Hệ thống</h2>
+    <div class="panel">
+      <div class="row">
+        <button class="btn primary" id="saveBtn">Lưu vào flash</button>
+        <button class="btn" data-cmd="reboot">Khởi động lại FC</button>
+        <button class="btn danger" data-cmd="defaults">Về mặc định</button>
+        <button class="btn" id="themeBtn">Đổi giao diện sáng / tối</button>
+        <button class="btn" id="comClose" hidden>Ngắt kết nối USB</button>
+      </div>
+      <p class="muted" style="margin-bottom:0">Áp dụng: thay đổi có hiệu lực ngay nhưng mất khi tắt nguồn. Lưu vào flash: giữ lại. Hiệu chuẩn cảm biến nằm ở tab Cảm biến.</p>
+    </div>
+    <div class="cards">
+    <div class="panel">
+      <div class="card-h"><span class="dot"></span><h3>Sao lưu & khôi phục</h3></div>
+      <p class="muted" style="margin-top:0">File sao lưu chứa mọi thiết lập đã đổi (PID, rates, bộ lọc, chế độ, hiệu chuẩn, cổng...), nhiệm vụ và điểm rally. Không chứa mật khẩu. Dạng lệnh CLI: cũng dán được qua USB.</p>
+      <div class="row">
+        <button class="btn primary" id="backupBtn">Tải file sao lưu</button>
+        <label class="btn" for="restoreFile" style="display:inline-flex;align-items:center">Khôi phục từ file</label>
+        <input type="file" id="restoreFile" accept=".txt,text/plain" hidden>
+      </div>
+      <p class="muted" id="restoreMsg"></p>
+    </div>
+    <div class="panel">
+      <div class="card-h"><span class="dot"></span><h3>Blackbox</h3></div>
+      <div id="bbParams"></div>
+      <div id="sdParams"></div>
+      <p class="num" id="logUse"></p>
+      <button class="btn danger" data-cmd="bb_erase">Xoá log trên drone</button>
+    </div>
+    <div class="panel">
+      <div class="card-h"><span class="dot"></span><h3>Nạp firmware qua USB</h3></div>
+      <p style="margin-top:0">Qua cáp USB, như Betaflight Configurator: ESP32 / ESP32-S3 qua cổng COM, STM32 qua DFU. Dùng được cả khi board chưa có firmware.</p>
+      <button class="btn primary flOpen">Nạp firmware qua USB…</button>
+    </div>
+    <div class="panel" id="otaPanel">
+      <div class="card-h"><span class="dot"></span><h3>Cập nhật qua WiFi (OTA)</h3></div>
+      <dl class="kv"><dt>Đang chạy</dt><dd id="fwVer">—</dd></dl>
+      <p class="muted" id="otaNote">Chọn file <span class="num">firmware.bin</span> (PlatformIO: <span class="num">.pio/build/&lt;board&gt;/firmware.bin</span>). Firmware mới được ghi vào ô nhớ còn lại; nếu nó không khởi động được bình thường trong 15 giây đầu, drone tự quay về bản cũ.</p>
+      <div class="row">
+        <label class="btn primary" for="otaFile" style="display:inline-flex;align-items:center" id="otaPick">Chọn firmware và cập nhật</label>
+        <input type="file" id="otaFile" accept=".bin,application/octet-stream" hidden>
+      </div>
+      <div class="rc" id="otaProg" hidden style="margin-top:10px;grid-template-columns:76px 1fr 52px"><span>Đang gửi</span><div class="track"><span id="otaBar" style="left:0;width:0;margin-left:0;border-radius:4px"></span></div><span class="num" id="otaPct">0%</span></div>
+    </div>
+    <div class="panel">
+      <div class="card-h"><span class="dot"></span><h3>WiFi & bảo mật</h3></div>
+      <form class="secform" id="secForm">
+        <label for="secSsid">Tên WiFi</label>
+        <input id="secSsid" maxlength="32" autocomplete="off">
+        <label for="secWifi">Mật khẩu WiFi mới <span class="hint">8–63 ký tự, để trống nếu không đổi</span></label>
+        <input id="secWifi" type="password" minlength="8" maxlength="63" autocomplete="new-password">
+        <label for="secWeb">Mật khẩu web riêng <span class="hint">6–64 ký tự, để trống = dùng mật khẩu WiFi</span></label>
+        <input id="secWeb" type="password" maxlength="64" autocomplete="new-password">
+        <label for="secCur">Mật khẩu web hiện tại</label>
+        <input id="secCur" type="password" required autocomplete="current-password">
+        <div class="row" style="margin-top:14px">
+          <button class="btn primary" type="submit">Lưu và khởi động lại WiFi</button>
+          <button class="btn" type="button" id="logoutBtn">Đăng xuất</button>
+        </div>
+      </form>
+      <p class="muted" id="secNote">Sau khi lưu, điện thoại mất kết nối: vào lại WiFi với tên và mật khẩu mới rồi đăng nhập lại.</p>
+    </div>
+    </div>
+    <h2 data-j="Kết nối">Kết nối & giao tiếp</h2>
+    <div class="cards" id="sysParams"></div>
+    <h2 data-j="Hiệu năng">Hiệu năng</h2>
+    <div class="cards">
+    <div class="panel">
+      <div class="card-h"><span class="dot"></span><h3>Tác vụ</h3></div>
+      <table id="taskTable"></table></div>
+    <div class="panel">
+      <div class="card-h"><span class="dot"></span><h3>Vòng bay nhanh</h3></div>
+      <p class="muted" style="margin-top:0">Thời gian trung bình mỗi vòng, đo bằng bộ đếm chu kỳ CPU trên chính board. Tải dưới khoảng 60% là an toàn; vòng trễ nên bằng 0 khi đang bay.</p>
+      <div id="perfBars"></div>
+      <p class="num" id="perfSum"></p>
+    </div>
+    </div>
+  </section>
+</main>
+
+<div class="applybar" id="applyBar" role="region" aria-label="Thay đổi chưa áp dụng">
+  <span id="applyText"></span>
+  <span class="row"><button class="btn" id="discardBtn">Bỏ</button><button class="btn primary" id="applyBtn">Áp dụng</button></span>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<div class="login" id="login" hidden>
+  <form class="panel" id="loginForm">
+    <h2 style="margin-top:0">Đăng nhập</h2>
+    <p class="muted">Mật khẩu web của drone. Mặc định trùng mật khẩu WiFi.</p>
+    <label class="muted" for="loginPw">Mật khẩu</label>
+    <input type="password" id="loginPw" autocomplete="current-password" required>
+    <button class="btn primary" type="submit" style="width:100%;margin-top:12px">Đăng nhập</button>
+    <p class="note bad" id="loginErr" hidden></p>
+    <p class="muted" style="font-size:.85rem">Quên mật khẩu: cắm USB, gõ lệnh <span class="num">wifi</span> trong CLI để xem hoặc đặt lại.</p>
+  </form>
+</div>
+
+<div class="login" id="connect" hidden>
+  <div class="panel connect" role="dialog" aria-labelledby="comTitle">
+    <h2 id="comTitle" style="margin-top:0">Kết nối với flight controller</h2>
+    <p class="muted" style="margin-bottom:4px">Cắm cáp USB vào FC rồi chọn cổng COM của nó.</p>
+    <button class="btn primary" id="comPick">Chọn cổng COM</button>
+    <button class="btn primary" id="usbPick" hidden>Kết nối USB (điện thoại / WebUSB)</button>
+    <button class="btn" id="comAgain" hidden>Kết nối lại cổng vừa dùng</button>
+    <button class="btn" id="sitlBtn" hidden>Mô phỏng trên máy (SITL, không cần board)</button>
+    <button class="btn" id="demoBtn" hidden>Thử với drone ảo (demo, chạy trong trình duyệt)</button>
+    <button class="btn flOpen">Nạp firmware…</button>
+    <label class="opt" for="comBaud"><span style="padding-top:10px">Tốc độ</span>
+      <select id="comBaud">
+        <option value="921600">921600 (ESP32, mặc định)</option>
+        <option value="115200">115200 (firmware cũ)</option>
+      </select>
+    </label>
+    <p class="note" id="comState" hidden></p>
+    <p class="note bad" id="comErr" hidden></p>
+    <ul class="steps">
+      <li>Không thấy cổng: cài driver CP210x hoặc CH340 cho ESP32 DevKit. ESP32-S3 và STM32 hiện là "USB Serial Device".</li>
+      <li>Đóng terminal, CLI hay Betaflight/INAV Configurator đang giữ cổng.</li>
+      <li>ESP32 còn vào được bằng WiFi: nối mạng AllQuad-xxxx, mở 192.168.4.1.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="login" id="flasher" hidden>
+  <div class="panel connect" role="dialog" aria-labelledby="flTitle" style="max-width:460px">
+    <h2 id="flTitle" style="margin-top:0">Nạp firmware qua USB</h2>
+    <div class="seg" role="group" aria-label="Loại board" id="flTarget">
+      <button aria-pressed="true" data-t="esp">ESP32 / ESP32-S3</button><button aria-pressed="false" data-t="stm">STM32 (DFU)</button>
+    </div>
+    <p class="muted" id="flHow"></p>
+    <label class="btn" for="flFile" style="display:flex;align-items:center;justify-content:center">Chọn file firmware (.bin)</label>
+    <input type="file" id="flFile" accept=".bin,application/octet-stream" hidden>
+    <p class="num" id="flInfo"></p>
+    <label class="check" style="margin:6px 0"><input type="checkbox" id="flBackup" checked> Tải file sao lưu cấu hình trước khi nạp (khi đang kết nối)</label>
+    <button class="btn primary" id="flGo" disabled>Nạp</button>
+    <button class="btn" id="flDfu" hidden>Chọn thiết bị DFU</button>
+    <div id="flProg" hidden style="margin-top:12px"><progress id="flBar" max="100" value="0"></progress><span class="num" id="flPct">0%</span></div>
+    <pre class="fllog" id="flLog" hidden></pre>
+    <button class="btn" id="flClose">Đóng</button>
+  </div>
+</div>
+
+<nav class="tabs" role="tablist" aria-label="Mục">
+  <div class="brand"><i>AQ</i><span>AllQuad</span></div>
+  <div class="tgroup">Bay</div>
+  <button role="tab" data-tab="overview" aria-selected="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 13l5-2 4 3 4-5 5 3"/></svg>Tổng quan</button>
+  <button role="tab" data-tab="preflight" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M8.5 12l2.5 2.5 4.5-5"/></svg>Trước bay</button>
+  <div class="tgroup">Tinh chỉnh</div>
+  <button role="tab" data-tab="pid" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="7" cy="18" r="2"/></svg>PID & lọc</button>
+  <button role="tab" data-tab="modes" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="6" rx="3"/><circle cx="15" cy="12" r="1.5"/><path d="M7 5v2M12 5v2M17 5v2"/></svg>Chế độ & an toàn</button>
+  <button role="tab" data-tab="nav" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M12 3l7 18-7-4-7 4z"/></svg>Điều hướng</button>
+  <div class="tgroup">Phần cứng</div>
+  <button role="tab" data-tab="sensors" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg>Cảm biến</button>
+  <button role="tab" data-tab="motors" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3a4 4 0 0 1 0 6M21 12a4 4 0 0 1-6 0M12 21a4 4 0 0 1 0-6M3 12a4 4 0 0 1 6 0"/></svg>Motor & ESC</button>
+  <button role="tab" data-tab="ports" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11h2M11 11h2M15 11h2M7 17v3M17 17v3"/></svg>Cổng & thiết bị</button>
+  <button role="tab" data-tab="osd" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 9h4M14 15h4M10 12h4"/></svg>OSD</button>
+  <div class="tgroup">Công cụ</div>
+  <button role="tab" data-tab="blackbox" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M7 15l3-4 3 2 4-5"/></svg>Blackbox</button>
+  <button role="tab" data-tab="params" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M5 4v16M12 4v16M19 4v16"/><path d="M3 9h4M10 15h4M17 7h4"/></svg>Tham số</button>
+  <button role="tab" data-tab="cli" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>CLI</button>
+  <button role="tab" data-tab="system" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Hệ thống</button>
+</nav>
+
+<script>
+/*ANALYSIS_JS*/
+</script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+// DOM writes only when the content really changed (10 status frames per second on a phone)
+const setHtml = (el, h) => { if (el._h !== h) { el._h = h; el.innerHTML = h; } };
+const shown = (tab) => !$("tab-" + tab).hidden;
+const S = { params: {}, order: [], edits: {}, status: null, flights: [], analysis: null, live: [[], [], [], [], [], []], liveAxis: 0, specAxis: 0, tsAxis: 0, linkOk: false, armed: false };
+const AXES = ["roll", "pitch", "yaw"];
+const AXCOL = ["--roll", "--pitch", "--yaw"];
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// ---------------------------------------------------------------- API
+async function api(path, opts = {}) {
+  if (LINK.open) return linkApi(path, opts);
+  if (window.AQ_MOCK) return window.AQ_MOCK(path, opts);
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), opts.timeout || 4000);
+  try {
+    const init = { method: opts.method || "GET", signal: ctl.signal };
+    if (opts.form) {  // small urlencoded forms (passwords never go into the URL)
+      init.body = new URLSearchParams(opts.form).toString();
+      init.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+    }
+    if (opts.upload != null) { init.body = opts.upload; init.headers = { "Content-Type": "text/plain" }; }
+    if (opts.body != null) { init.body = opts.body; init.headers = { "Content-Type": "text/plain" }; }
+    const r = await fetch((window.AQ_BASE || "") + path, init);
+    if (r.status === 401 && path !== "/api/login" && path !== "/api/wifi") { showLogin(); const e = new Error("login required"); e.code = 401; throw e; }
+    if ((opts.binary || opts.text) && r.ok) return opts.binary ? await r.arrayBuffer() : await r.text();
+    const j = await r.json();
+    if (!r.ok) { const e = new Error(j.msg || ("HTTP " + r.status)); e.code = r.status; throw e; }
+    return j;
+  } finally { clearTimeout(t); }
+}
+// ---------------------------------------------------------------- USB / COM link (Web Serial)
+// The same API as over WiFi, carried in binary frames over the USB console (firmware: comms/aqlink).
+//   request  A7 51 seq len16 "path?query" 00 body crc16
+//   response A7 52 seq status16 total32 offset32 len16 data crc16   (CRC-16/CCITT over all after A7 xx)
+// Long documents come in 2 kB pages (o=offset), uploads go up in pieces (o=offset&n=size).
+const LINK = { open: false, kind: "", label: "", port: null, ws: null, writer: null, rx: new Uint8Array(0), seq: 0,
+  wait: null, chain: Promise.resolve(), baud: 921600, closing: false };
+function crc16(b, from, to, crc = 0xFFFF) {
+  for (let i = from; i < to; i++) {
+    crc ^= b[i] << 8;
+    for (let k = 0; k < 8; k++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+  }
+  return crc;
+}
+function linkFeed(chunk) {
+  let b = LINK.rx;
+  if (b.length) { const r = new Uint8Array(b.length + chunk.length); r.set(b); r.set(chunk, b.length); b = r; } else b = chunk;
+  let i = 0;
+  while (i + 17 <= b.length) {
+    if (b[i] !== 0xA7 || b[i + 1] !== 0x52) { i++; continue; }  // CLI text, boot messages: skipped
+    const len = b[i + 13] | (b[i + 14] << 8);
+    if (len > 4096) { i++; continue; }
+    if (i + 17 + len > b.length) break;  // rest still on the wire
+    if (crc16(b, i + 2, i + 15 + len) !== (b[i + 15 + len] | (b[i + 16 + len] << 8))) { i++; continue; }
+    const dv = new DataView(b.buffer, b.byteOffset + i, 15);
+    const f = { seq: b[i + 2], status: dv.getUint16(3, true), total: dv.getUint32(5, true), off: dv.getUint32(9, true),
+      data: b.slice(i + 15, i + 15 + len) };
+    i += 17 + len;
+    if (LINK.wait && LINK.wait.seq === f.seq) { const w = LINK.wait; LINK.wait = null; w.done(f); }
+  }
+  LINK.rx = b.slice(i);
+  if (LINK.rx.length > 65536) LINK.rx = LINK.rx.slice(-8192);
+}
+function linkFrame(seq, path, body) {
+  const enc = new TextEncoder(), p = enc.encode(path);
+  const bd = body == null ? new Uint8Array(0) : typeof body === "string" ? enc.encode(body) : body;
+  const len = p.length + 1 + bd.length, f = new Uint8Array(len + 7);
+  f[0] = 0xA7; f[1] = 0x51; f[2] = seq; f[3] = len & 255; f[4] = len >> 8;
+  f.set(p, 5); f[5 + p.length] = 0; f.set(bd, 6 + p.length);
+  const c = crc16(f, 2, 5 + len);
+  f[5 + len] = c & 255; f[6 + len] = c >> 8;
+  return f;
+}
+function linkOnce(path, body, ms) {
+  return new Promise((resolve, reject) => {
+    const seq = LINK.seq = (LINK.seq + 1) & 255;
+    const t = setTimeout(() => { if (LINK.wait && LINK.wait.seq === seq) LINK.wait = null; reject(Object.assign(new Error("FC không trả lời"), { code: 0 })); }, ms);
+    LINK.wait = { seq, done: (f) => { clearTimeout(t); resolve(f); } };
+    LINK.send(linkFrame(seq, path, body)).catch((e) => { clearTimeout(t); LINK.wait = null; reject(e); });
+  });
+}
+// one request on the wire at a time; reads are retried (noise, a reboot), writes are sent once
+function linkRequest(path, body, tries, timeout) {
+  const run = async () => {
+    if (!LINK.open) throw Object.assign(new Error("chưa kết nối"), { code: 0 });
+    const ms = Math.max(timeout || 0, 300 + 22000000 / LINK.baud);  // ~2.2 kB at the line speed + FC tick
+    for (let k = 0; ; k++) {
+      try { return await linkOnce(path, body, ms); } catch (e) { if (k >= tries - 1 || !LINK.open) throw e; }
+    }
+  };
+  const p = LINK.chain.then(run, run);
+  LINK.chain = p.catch(() => {});
+  return p;
+}
+async function linkApi(path, opts = {}) {
+  const q = (p, k, v) => p + (p.includes("?") ? "&" : "?") + k + "=" + v;
+  const write = opts.method === "POST", t = opts.timeout || 0;
+  let first;
+  if (opts.upload != null) {  // restore file: pieces of 900 bytes
+    const data = new TextEncoder().encode(opts.upload);
+    for (let o = 0; o < data.length; o += 900) {
+      first = await linkRequest(q(q(path, "o", o), "n", data.length), data.subarray(o, o + 900), 1, Math.max(t, 8000));
+      if (opts.progress) opts.progress(Math.min(o + 900, data.length), data.length);
+      if (first.status !== 202) break;
+    }
+  } else {
+    first = await linkRequest(path, opts.body != null ? opts.body : opts.form ? new URLSearchParams(opts.form).toString() : null, write ? 1 : 3,
+      write ? Math.max(t, 5000) : t);  // flash writes (save, restore) can take a second on STM32
+  }
+  const parts = [first.data];
+  let got = first.data.length;
+  while (first.status === 200 && opts.upload == null && got < first.total) {  // paged document
+    if (opts.progress) opts.progress(got, first.total);
+    const f = await linkRequest(q(path, "o", got), null, 3, t);
+    if (f.status !== 200 || f.off !== got || !f.data.length) throw Object.assign(new Error("trang dữ liệu lỗi"), { code: f.status });
+    parts.push(f.data);
+    got += f.data.length;
+  }
+  const all = parts.length === 1 ? parts[0] : new Uint8Array(got);
+  if (parts.length > 1) { let o = 0; for (const x of parts) { all.set(x, o); o += x.length; } }
+  if (first.status >= 400) {
+    let msg = "lỗi " + first.status;
+    try { msg = JSON.parse(new TextDecoder().decode(all)).msg || msg; } catch (e) {}
+    throw Object.assign(new Error(msg), { code: first.status });
+  }
+  if (opts.binary) return all.buffer.slice(all.byteOffset, all.byteOffset + all.length);
+  const text = new TextDecoder().decode(all);
+  return opts.text ? text : JSON.parse(text);
+}
+async function linkPoll() {
+  if (!LINK.open) { S.polling = false; return; }
+  S.polling = true;
+  const full = !S.lastFullMs || Date.now() - S.lastFullMs > 1000;  // slow fields once per second
+  try {
+    const st = await api("/api/status" + (full ? "" : "?full=0"), { timeout: 1200 });
+    if (full) S.lastFullMs = Date.now();
+    onStatus(st);
+  } catch (e) { linkState(false); }
+  setTimeout(linkPoll, document.hidden ? 1000 : 80);
+}
+
+// ---- opening a port / the simulator
+function showConnect(msg, bad) {
+  $("connect").hidden = false;
+  const has = "serial" in navigator;
+  $("comPick").disabled = !has;
+  const st = $("comState"), err = $("comErr");
+  st.hidden = true;
+  err.hidden = !(msg || !has);
+  err.textContent = msg || "Trình duyệt này không có Web Serial: mở trang bằng Chrome hoặc Edge trên máy tính.";
+  if (msg && !bad) { err.hidden = true; st.hidden = false; st.textContent = msg; }
+  if (has) navigator.serial.getPorts().then((p) => { $("comAgain").hidden = !p.length; }).catch(() => {});
+  if (/^https?:$/.test(location.protocol) && /^(localhost|127\.0\.0\.1)$/.test(location.hostname))
+    fetch("/sitl/available").then((r) => r.json()).then((j) => { $("sitlBtn").hidden = !j.ok; }).catch(() => {});
+}
+function connBusy(text) {
+  ["comPick", "comAgain", "sitlBtn", "demoBtn"].forEach((id) => { $(id).disabled = !!text; });
+  $("comErr").hidden = true;
+  $("comState").hidden = !text;
+  $("comState").textContent = text || "";
+}
+async function hello(tries) {
+  for (let k = 0; k < tries; k++) {
+    try { return await linkApi("/api/hello", { timeout: 700 }); } catch (e) { if (!LINK.open) throw e; }
+  }
+  throw new Error("FC không trả lời");
+}
+async function openSerial(port, baud) {
+  await port.open({ baudRate: baud, bufferSize: 65536 });
+  LINK.port = port; LINK.kind = "usb"; LINK.baud = baud; LINK.rx = new Uint8Array(0); LINK.closing = false;
+  LINK.writer = port.writable.getWriter();
+  LINK.send = (f) => LINK.writer.write(f);
+  LINK.open = true;
+  (async () => {
+    // line errors (a framing / parity error or a break while the ESP32 resets, a burst that overran
+    // the buffer) end only the current reader: Web Serial gives a new one and the link carries on.
+    // Only a real loss (cable out, port closed) or a run of errors ends the connection.
+    let errs = 0, lastErr = 0;
+    while (LINK.port === port && !LINK.closing && port.readable) {
+      const reader = port.readable.getReader();
+      LINK.reader = reader;
+      let soft = false;
+      try { for (;;) { const { value, done } = await reader.read(); if (done) break; if (value) linkFeed(value); } }
+      catch (e) {
+        soft = !!e && /^(BreakError|FramingError|ParityError|BufferOverrunError)$/.test(e.name);
+        if (soft) { const t = Date.now(); errs = t - lastErr < 2000 ? errs + 1 : 1; lastErr = t; if (errs > 20) soft = false; }
+      }
+      finally { try { reader.releaseLock(); } catch (e) {} }
+      if (!soft) break;
+    }
+    if (LINK.port === port && !LINK.closing) linkLost("Mất kết nối USB. Cắm lại cáp: trang tự kết nối lại.");
+  })();
+}
+async function closeLink() {
+  LINK.closing = true;
+  LINK.open = false;
+  S.polling = false;
+  if (LINK.ws) { const w = LINK.ws; LINK.ws = null; w.onclose = null; try { w.close(); } catch (e) {} }
+  if (LINK.worker) { LINK.worker.terminate(); LINK.worker = null; }
+  if (LINK.usbdev) { const d = LINK.usbdev; LINK.usbdev = null; try { await d.close(); } catch (e) {} }
+  const port = LINK.port;
+  LINK.port = null;
+  if (port) {
+    try { await LINK.reader.cancel(); } catch (e) {}
+    try { LINK.writer.releaseLock(); } catch (e) {}
+    try { await port.close(); } catch (e) {}
+  }
+}
+function linkLost(msg) {
+  closeLink();
+  linkState(false);
+  showConnect(msg, true);
+}
+async function connected(h, label) {
+  LINK.label = label;
+  S.lastHello = h;
+  $("connect").hidden = true;
+  $("comClose").hidden = false;
+  $("logoutBtn").hidden = true;
+  $("secCur").required = false;
+  $("secCur").hidden = $("secCur").previousElementSibling.hidden = true;  // no password needed over USB
+  $("secNote").textContent = "Qua USB không cần mật khẩu cũ: dùng khi quên mật khẩu WiFi hoặc web.";
+  $("otaPick").hidden = true;
+  $("otaNote").textContent = LINK.kind === "sitl" || LINK.kind === "demo" ? "Mô phỏng: không có firmware để cập nhật."
+    : "Qua USB: nạp firmware bằng PlatformIO (pio run -t upload) hoặc esptool / STM32 DFU. Qua WiFi thì cập nhật được ngay trên trang này.";
+  S.status = null; S.lastFullMs = 0;
+  await loadParams();
+  startLive();
+  toast(`Đã kết nối ${h.board || "FC"}${LINK.kind === "usb" ? (h.usb ? " (USB)" : ` (${LINK.baud} baud)`) : ""}.`);
+}
+async function connectPort(port) {
+  const first = +$("comBaud").value;
+  for (const baud of first === 921600 ? [921600, 115200] : [first]) {
+    connBusy(`Đang kết nối ${baud} baud…`);
+    try {
+      await openSerial(port, baud);
+      // ESP32 DevKit may reset when the port opens: give it a few seconds to boot
+      const h = await hello(baud === first ? 6 : 4);
+      connBusy("");
+      return connected(h, h.usb ? "USB" : "COM " + (baud / 1000).toFixed(baud % 1000 ? 1 : 0) + "k");
+    } catch (e) {
+      await closeLink();
+      if (e && e.name === "NetworkError") { connBusy(""); return showConnect("Cổng đang bị chương trình khác dùng (terminal, CLI, Configurator khác). Đóng nó rồi thử lại.", true); }
+      if (e && e.name === "InvalidStateError") { connBusy(""); return showConnect("Cổng này đang mở ở một tab khác.", true); }
+    }
+  }
+  connBusy("");
+  showConnect("FC không trả lời trên cổng này. Kiểm tra đúng cổng, firmware AllQuad mới, và thử tốc độ khác.", true);
+}
+$("comPick").onclick = async () => {
+  let port;
+  try { port = await navigator.serial.requestPort(); } catch (e) { return; }  // the user closed the chooser
+  connectPort(port);
+};
+$("comAgain").onclick = async () => {
+  const ports = await navigator.serial.getPorts();
+  if (ports.length) connectPort(ports[ports.length - 1]);
+};
+$("sitlBtn").onclick = () => {
+  connBusy("Đang khởi động firmware mô phỏng…");
+  const ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/sitl");
+  ws.binaryType = "arraybuffer";
+  LINK.ws = ws;
+  ws.onmessage = (ev) => linkFeed(new Uint8Array(ev.data));
+  ws.onopen = async () => {
+    LINK.kind = "sitl"; LINK.baud = 2000000; LINK.rx = new Uint8Array(0); LINK.closing = false; LINK.open = true;
+    LINK.send = async (f) => ws.send(f);
+    try { const h = await hello(8); connBusy(""); connected(h, "SITL"); }
+    catch (e) { connBusy(""); linkLost("Firmware mô phỏng không chạy (build/sim). Chạy tools/build_host.sh rồi thử lại."); }
+  };
+  ws.onclose = () => { if (LINK.ws === ws && !LINK.closing) linkLost("Mô phỏng đã dừng."); };
+};
+$("comClose").onclick = async () => { await closeLink(); linkState(false); showConnect("Đã ngắt kết nối."); };
+if ("serial" in navigator) {
+  // plugged back in (or the STM32 rebooted and re-enumerated): reconnect by itself
+  navigator.serial.addEventListener("connect", (ev) => { if (!LINK.open && !$("connect").hidden && !FL.busy) connectPort(ev.target); });
+  navigator.serial.addEventListener("disconnect", (ev) => { if (LINK.port === ev.target) linkLost("Đã rút cáp USB. Cắm lại: trang tự kết nối lại."); });
+}
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast.h);
+  toast.h = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+// ---------------------------------------------------------------- parameters & edits
+const val = (n) => (n in S.edits ? S.edits[n] : (S.params[n] ? S.params[n].v : undefined));
+function setEdit(n, v) {
+  const p = S.params[n];
+  if (!p) return;
+  v = Number(v);
+  if (!isFinite(v)) return;
+  v = Math.min(p.max, Math.max(p.min, v));
+  if (!p.f) v = Math.round(v);
+  if (Math.abs(v - p.v) < 1e-9) delete S.edits[n]; else S.edits[n] = v;
+  document.querySelectorAll(`[data-p="${n}"]`).forEach((el) => {
+    if (el.type === "checkbox") el.checked = !!v;
+    else if (document.activeElement !== el) el.value = fmt(n, v);
+    el.closest(".stepper, .prow")?.classList.toggle("changed", n in S.edits);
+  });
+  refreshApplyBar();
+  if (/rc_rate|max_rate|expo/.test(n)) drawRates();
+  if (/lpf|notch|loop_hz/.test(n)) drawFilters();
+  if (/^mr\d+_mode$/.test(n)) buildModes();
+  else if (/^mr\d+_/.test(n)) updateModes();
+  if (typeof onParamEdit === "function") onParamEdit(n);
+  if (typeof extrasParamEdit === "function") extrasParamEdit(n);
+}
+const fmt = (n, v) => (S.params[n] && S.params[n].f ? +Number(v).toFixed(4) : Math.round(v));
+function refreshApplyBar() {
+  const k = Object.keys(S.edits).length;
+  $("applyBar").classList.toggle("show", k > 0);
+  $("applyText").textContent = k === 1 ? "1 thay đổi chưa áp dụng" : `${k} thay đổi chưa áp dụng`;
+}
+async function applyEdits() {
+  const q = Object.entries(S.edits).map(([k, v]) => `${encodeURIComponent(k)}=${v}`).join("&");
+  try {
+    await api("/api/set?" + q, { method: "POST" });
+    const changes = Object.entries(S.edits).map(([k, v]) => [k, S.params[k].v, v]);
+    for (const [k, v] of Object.entries(S.edits)) S.params[k].v = v;
+    if (typeof extrasApplied === "function") extrasApplied(changes);
+    const reboot = Object.keys(S.edits).some((k) => S.params[k].r);
+    S.edits = {};
+    document.querySelectorAll(".changed").forEach((e) => e.classList.remove("changed"));
+    refreshApplyBar();
+    toast(reboot ? "Đã áp dụng. Lưu vào flash rồi khởi động lại để có hiệu lực." : "Đã áp dụng. Bấm Lưu vào flash để giữ sau khi tắt.");
+  } catch (e) {
+    toast(e.code === 423 ? "Hãy disarm trước khi đổi tham số." : "Không áp dụng được: " + e.message);
+  }
+}
+function stepper(n, step, label) {
+  const p = S.params[n];
+  if (!p) return document.createElement("span");
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  cell.innerHTML = `<span class="cl">${label || ""}</span>`;
+  const w = document.createElement("div");
+  w.className = "stepper";
+  w.innerHTML = `<button type="button" aria-label="Giảm ${n}">−</button><input inputmode="decimal" data-p="${n}" aria-label="${n}"><button type="button" aria-label="Tăng ${n}">+</button>`;
+  const inp = w.querySelector("input");
+  inp.value = fmt(n, val(n));
+  w.children[0].onclick = () => setEdit(n, val(n) - step);
+  w.children[2].onclick = () => setEdit(n, val(n) + step);
+  inp.onchange = () => setEdit(n, inp.value);
+  cell.appendChild(w);
+  return cell;
+}
+const HINT = {
+  iterm_limit: "Giới hạn I", pidsum_limit: "Giới hạn tổng PID roll/pitch", pidsum_lim_yaw: "Giới hạn tổng PID yaw",
+  tpa_rate: "Giảm P/D ở ga cao (0–1)", tpa_breakpoint: "Ga bắt đầu TPA", iterm_relax: "Ngưỡng I-relax (°/s)",
+  anti_gravity: "Tăng I khi giật ga", angle_p: "Độ cứng tự cân bằng", angle_limit: "Góc nghiêng tối đa (ANGLE)",
+  horizon_trans: "Điểm chuyển HORIZON", gyro_lpf_hz: "Lọc thông thấp gyro 1 (Hz)", gyro_lpf2_hz: "Lọc thông thấp gyro 2 (Hz)",
+  dterm_lpf_hz: "Lọc D-term (Hz)", notch1_hz: "Notch 1 tâm (Hz, 0 = tắt)", notch1_cut: "Notch 1 cạnh dưới (Hz)",
+  notch2_hz: "Notch 2 tâm (Hz)", notch2_cut: "Notch 2 cạnh dưới (Hz)", dyn_notch_count: "Số notch động (0–2)",
+  dyn_notch_min: "Notch động thấp nhất (Hz)", dyn_notch_max: "Notch động cao nhất (Hz)", dyn_notch_q: "Độ hẹp notch động (Q)",
+  rpm_harmonics: "Số hoạ âm RPM filter", rpm_min_hz: "RPM filter tần số thấp nhất", rpm_q: "Độ hẹp RPM filter (Q)",
+  esc_telemetry: "Đọc telemetry ESC (cần cho RPM filter)", loop_hz: "Tần số vòng PID", imu_sync: "Vòng bay chạy theo chân ngắt INT1 của IMU (mẫu gyro mới nhất, 6,4 kHz + lọc trong chip)", dshot_edt: "Xin ESC (AM32 / Bluejay / BLHeli_32) gửi nhiệt độ, điện áp, dòng qua DShot hai chiều",
+  rc_smooth_hz: "Làm mượt tay điều khiển (Hz), 0 = tự động theo tốc độ cập nhật", crash_detect: "Phát hiện rơi / va chạm và tắt motor",
+  yaw_spin_thr: "Phục hồi khi xoay yaw quá nhanh (°/s), 0 = tắt", d_min_pct: "D khi bay êm (% của D), 0 = D cố định",
+  d_min_gain: "Mức tăng D khi gyro rung (prop wash)", d_min_adv: "Mức tăng D khi gạt cần nhanh",
+  dyn_lpf_min: "Lọc gyro động: tần số cắt ở ga 0 (Hz), 0 = tắt", dyn_lpf_max: "Lọc gyro động: tần số cắt ở ga tối đa (Hz)",
+  dyn_idle_rpm: "Dynamic idle: RPM tối thiểu ÷ 100 (cần RPM từ ESC), 0 = tắt", thr_boost: "Throttle boost: tăng phản ứng ga (0-10)",
+  thrust_expo: "Tuyến tính hoá lực đẩy (0 = tắt, thường 0,6)", vbat_sag_comp: "Bù sụt áp pin (%): phản ứng như pin đầy",
+  pid_profile: "Profile PID / rates đang dùng khi không gán công tắc (0-2 = 1-3)", prof_ch: "Kênh chọn profile (thấp / giữa / cao = 1 / 2 / 3), 0 = không",
+  gcs_fs: "Mất kết nối trạm mặt đất khi GUIDED / MISSION: 0 tắt, 1 RTH, 2 hạ cánh, 3 SmartRTL", gcs_fs_s: "Số giây mất heartbeat GCS",
+  srtl_point_m: "SmartRTL: khoảng cách giữa các điểm ghi đường bay (m), 0 = tắt", imu_dual: "IMU thứ hai (chân CS IMU2) thay khi IMU chính hỏng",
+  fence_poly: "Dùng geofence đa giác tải lên từ GCS", acc_scale_x: "Hệ số gia tốc trục X (hiệu chuẩn 6 mặt)",
+  mag_cmot_x: "Nhiễu la bàn theo dòng điện, trục X (compassmot)",
+  bb_rate_hz: "Tần số ghi blackbox (0 = tắt, khuyên 500)", bb_backend: "Nơi ghi: 1 cổng serial, 2 flash trên board, 3 thẻ SD",
+  sd_mode: "Kiểu nối thẻ SD: 0 tắt, 1 SPI, 2 SD bus 1-bit, 3 SD bus 4-bit", sd_mhz: "Xung nhịp thẻ (0 = mặc định 20 MHz; hạ xuống 10 nếu dây dài / lỗi ghi)",
+  sd_keep: "Thẻ gần đầy: tự xoá log cũ nhất (tắt = ngừng ghi)",
+  sd_clk: "Chân CLK / SCK (255 = mặc định của board)", sd_cmd: "Chân CMD / MOSI (255 = mặc định)", sd_d0: "Chân D0 / MISO (255 = mặc định)",
+  sd_d1: "Chân D1 (chỉ 4-bit, 255 = mặc định)", sd_d2: "Chân D2 (chỉ 4-bit, 255 = mặc định)", sd_d3: "Chân D3 / CS (4-bit và SPI, 255 = mặc định)",
+  alt_pos_p: "P độ cao → tốc độ leo", alt_vel_p: "P tốc độ leo", alt_vel_i: "I tốc độ leo", alt_vel_d: "D tốc độ leo",
+  climb_rate_max: "Tốc độ leo/hạ tối đa (m/s)", hover_throttle: "Ga treo (tự học nếu bật)",
+  hover_learn: "Tự học ga treo: 0 tắt, 1 học, 2 học và lưu khi disarm",
+  alt_surface: "Bám mặt đất bằng cảm biến khoảng cách (ALTHOLD/POSHOLD/CRUISE)",
+  pos_p: "P vị trí → tốc độ", pos_vel_p: "P tốc độ ngang", pos_vel_i: "I tốc độ ngang (chống trôi)",
+  pos_max_speed: "Tốc độ ngang tối đa (m/s)", pos_max_angle: "Góc nghiêng tối đa khi tự bay (°)",
+  pos_max_accel: "Gia tốc ngang tối đa (m/s²)", wind_comp: "Bù gió: 1 bật", wind_drag: "Hệ số cản (1/s): đổi gió từ m/s² sang m/s",
+  gps_min_sats: "Số vệ tinh tối thiểu", gps_max_hacc: "Bỏ fix có sai số lớn hơn (m)",
+  gps_glitch_m: "Nhảy vị trí lớn hơn mức này coi là nhiễu (m)", gps_glitch_s: "Nhiễu kéo dài quá thời gian này thì chấp nhận vị trí mới (s)",
+  gps_heading: "Không có compass: học hướng từ GPS", mag_declination: "Độ lệch từ (°) tại nơi bay",
+  rth_alt: "Độ cao bay về (m)", rth_speed: "Tốc độ bay về (m/s)", rth_loiter_s: "Chờ trên điểm về trước khi hạ (s)",
+  rth_home_radius: "Bán kính coi là đã về (m)", rth_climb_first: "Leo đủ độ cao rồi mới bay về", rth_land: "Tự hạ cánh sau khi về",
+  rally_max_m: "Bay về điểm rally gần hơn nhà trong phạm vi này (m, 0 = luôn về nhà)",
+  land_speed: "Tốc độ hạ (m/s)", land_slow_speed: "Tốc độ hạ gần đất (m/s)", land_slow_alt: "Độ cao bắt đầu hạ chậm (m)",
+  wp_radius: "Bán kính đến waypoint (m)", wp_speed: "Tốc độ nhiệm vụ (m/s)", nav_yaw_mode: "Hướng mũi: 0 giữ nguyên, 1 theo hướng bay",
+  nav_yaw_p: "P giữ hướng khi tự bay", fence_enable: "Bật geofence", fence_action: "Vượt rào: 1 hạ cánh, 2 bay về",
+  fence_radius: "Bán kính rào (m)", fence_alt_max: "Độ cao tối đa (m)",
+  at_axes: "Autotune trục: 1 roll, 2 pitch, 4 yaw (cộng lại, 3 = roll + pitch)", at_rate: "Autotune: tốc độ cú giật (°/s)",
+  at_steps: "Autotune bước: 1 P/D, 2 feedforward, 4 I, 8 bộ lọc (cộng lại, 15 = tất cả; chỉ 8 = đo nhiễu khi treo)",
+  launch_angle: "Launch control: góc chúi khi chờ phóng (°)", launch_thr: "Launch control: ga (%) để phóng",
+  dshot_bidir: "Bidirectional DShot: đọc RPM qua dây tín hiệu (RPM filter không cần dây telemetry; ESC cần Bluejay/BLHeli_32/AM32)",
+  est_type: "Bộ ước lượng: 0 Kalman từng trục (cũ), 1 EKF 15 trạng thái có xử lý lỗi cảm biến",
+  rth_sanity_s: "GPS Rescue: bay về không lại gần nhà trong chừng này giây thì hạ cánh tại chỗ (0 = tắt)",
+  vibe_warn: "Cảnh báo rung trên OSD khi rung accel vượt (m/s²)",
+  wifi_enable: "WiFi + MAVLink qua UDP 14550 (QGroundControl không dây), kèm trang 192.168.4.1",
+  web_enable: "WiFi + trang cấu hình 192.168.4.1",
+  board_roll: "Chỉnh tinh hướng lắp FC: roll (°), thêm vào imu_align", board_pitch: "Chỉnh tinh hướng lắp FC: pitch (°)",
+  board_yaw: "Chỉnh tinh hướng lắp FC: yaw (°)",
+  motor1_out: "Đầu ra điều khiển motor 1 (sau phải)", motor2_out: "Đầu ra điều khiển motor 2 (trước phải)",
+  motor3_out: "Đầu ra điều khiển motor 3 (sau trái)", motor4_out: "Đầu ra điều khiển motor 4 (trước trái)",
+  arm_throttle_max: "Ga tối đa để được arm (µs)", arm_max_angle: "Góc nghiêng tối đa để được arm (°)",
+  arm_require_gps: "Chỉ arm khi có GPS fix (để RTH chắc chắn có điểm về)", gcs_arm: "Cho phép arm từ trạm mặt đất (MAVLink)",
+  fs_delay_ms: "Mất sóng bao lâu thì vào failsafe (ms)", fs_off_delay_ms: "Failsafe kéo dài bao lâu thì tắt motor (ms)",
+  fs_action: "Mất sóng tay điều khiển thì làm gì", fs_throttle: "Ga khi hạ cánh failsafe không có baro",
+  cell_count: "Số cell pin, 0 = tự nhận", vbat_warn_cell: "Cảnh báo pin yếu (V / cell)", vbat_crit_cell: "Pin cạn (V / cell)",
+  bat_capacity: "Dung lượng pin (mAh), 0 = không theo dõi", bat_fs_action: "Pin cạn thì làm gì",
+  bat_reserve_pct: "Giữ lại % pin để bay về (RTH thông minh)", vbat_scale: "Hệ số chia áp đo pin",
+  cur_scale: "Hệ số cảm biến dòng (A / V)", cur_offset: "Độ lệch cảm biến dòng (V)",
+  motor_protocol: "Giao thức ESC", motor_poles: "Số cực từ của motor (thường 14)", motor_idle: "Ga không tải khi arm (0,055 = 5,5 %)",
+  airmode: "Airmode: giữ điều khiển khi ga 0", yaw_reversed: "Đảo chiều quay cánh (props out)",
+  pidsum_limit: "Giới hạn tổng PID roll / pitch", pidsum_lim_yaw: "Giới hạn tổng PID yaw", acc_lpf_hz: "Lọc thông thấp accel (Hz)",
+  rx_protocol: "Giao thức receiver", imu_align: "Hướng lắp FC", mag_align: "Hướng lắp compass",
+  mav_sysid: "MAVLink system ID", wifi_armed: "Giữ WiFi khi đang bay (tắt = bớt nhiễu, tiết kiệm CPU)",
+  est_baro_noise: "Độ nhiễu baro cho bộ ước lượng", est_acc_noise: "Độ nhiễu accel cho bộ ước lượng", est_gpsvel_noise: "Độ nhiễu vận tốc GPS",
+  rf_max_m: "Tầm xa tối đa cảm biến khoảng cách (m)", flow_scale: "Hệ số optical flow", flow_align: "Hướng lắp optical flow",
+  flow_flip: "Lật trục optical flow", osd_backend: "Loại OSD", osd_pal: "Camera chuẩn PAL (tắt = NTSC)", osd_canvas: "Lưới chữ OSD (canvas)", osd_font: "Ký hiệu OSD",
+  osd_stats: "Màn hình thống kê sau khi disarm (giây, 0 = tắt)", rpm_w1: "RPM filter: mức notch hài bậc 1 (%)",
+  rpm_w2: "RPM filter: mức notch hài bậc 2 (%)", rpm_w3: "RPM filter: mức notch hài bậc 3 (%, thấp = ít trễ hơn)",
+  osd_esct_pos: "Vị trí OSD: nhiệt độ ESC", osd_dist_pos: "Vị trí OSD: tổng quãng đường", osd_eff_pos: "Vị trí OSD: mAh/km",
+  osd_tleft_pos: "Vị trí OSD: thời gian bay còn lại",
+  level_trim_roll: "Cân bằng ANGLE: roll (°)", level_trim_pitch: "Cân bằng ANGLE: pitch (°)", acc_calibrated: "Accel đã hiệu chuẩn",
+};
+for (const x of "xyz") {
+  const X = x.toUpperCase();
+  Object.assign(HINT, { [`acc_bias_${x}`]: `Lệch accel ${X} (m/s²)`, [`acc_scale_${x}`]: `Hệ số accel ${X}`, [`mag_bias_${x}`]: `Lệch compass ${X}`,
+    [`mag_scale_${x}`]: `Hệ số compass ${X}`, [`mag_cmot_${x}`]: `Compassmot ${X} (theo dòng)` });
+}
+Object.assign(HINT, { mag_odiag_xy: "Compass: hệ số chéo XY", mag_odiag_xz: "Compass: hệ số chéo XZ", mag_odiag_yz: "Compass: hệ số chéo YZ" });
+// values with names -> a select instead of a number box
+const ENUMS = {
+  hover_learn: ["Tắt", "Học", "Học + lưu khi disarm"], nav_yaw_mode: ["Giữ nguyên", "Theo hướng bay"],
+  est_type: ["Kalman từng trục", "EKF 15 trạng thái"], bb_backend: [, "Cổng serial", "Flash trên board", "Thẻ SD"],
+  sd_mode: ["Tắt", "SPI (4 dây)", "SD bus 1-bit", "SD bus 4-bit"],
+  fence_action: [, "Hạ cánh", "Bay về"], gcs_fs: ["Tắt", "Bay về (RTH)", "Hạ cánh", "SmartRTL"],
+  fs_action: ["Tắt motor", "Hạ cánh", "Bay về (RTH)", "SmartRTL"], bat_fs_action: ["Chỉ cảnh báo", "Hạ cánh", "Bay về (RTH)", "SmartRTL"],
+  pid_profile: ["Profile 1", "Profile 2", "Profile 3"], motor_protocol: ["PWM", "OneShot125", "DShot300", "DShot600"],
+  rx_protocol: ["CRSF / ELRS", "SBUS", "iBUS"], osd_backend: ["Tắt", "MAX7456 (analog)", "MSP DisplayPort (digital)"],
+  dyn_notch_count: ["Tắt", "1 notch", "2 notch"],
+  osd_canvas: ["Tự động", "SD 30×16", "HD 50×18 (HDZero)", "HD 53×20 (DJI, Walksnail)", "HD 60×22"], osd_font: ["Icon Betaflight", "Chỉ chữ"],
+};
+ENUMS.imu_align = ENUMS.mag_align = ["0°", "90°", "180°", "270°", "0° lật", "90° lật", "180° lật", "270° lật"];
+// unit shown inside the box (by name pattern)
+const UNITS = [[/_hz$|^notch\d_cut$|^rpm_min_hz$|^dyn_notch_m/, "Hz"], [/_m$|^rth_alt$|^fence_radius$|^fence_alt_max$|^rf_max_m$|_radius$|^land_slow_alt$/, "m"],
+  [/speed|^climb_rate_max$/, "m/s"], [/_ms$/, "ms"], [/_s$/, "s"], [/angle|^board_|_deg$|^mag_declination$|^level_trim/, "°"],
+  [/_pct$|^bat_reserve_pct$/, "%"], [/_cell$/, "V"], [/^bat_capacity$/, "mAh"], [/rc_rate$|max_rate$|^iterm_relax$|^yaw_spin_thr$|^at_rate$/, "°/s"],
+  [/^arm_throttle_max$|^mr\d+_(lo|hi)$/, "µs"], [/^pos_max_accel$/, "m/s²"]];
+const unitOf = (n) => (UNITS.find(([re]) => re.test(n)) || [])[1] || "";
+// "Title: detail" / "Title (detail)" -> a short title and a grey detail line
+function splitHint(h) {
+  const short = (t) => t.replace(/\s\([^()]{1,6}\)$/, "");  // "(°/s)" goes to the unit label
+  if (h.length <= 44) return [short(h), ""];
+  const m = h.match(/^(.{6,48}?)(?:: | \()(.*)$/);
+  if (!m) return [h, ""];
+  return [m[1], m[2].replace(/^[^()]{0,6}\)[\s,]*/, "").replace(/\)$/, () => (m[2].includes("(") ? ")" : ""))];
+}
+function prow(n) {
+  const p = S.params[n];
+  const d = document.createElement("div");
+  d.className = "prow";
+  d.dataset.name = n;
+  const en = ENUMS[n];
+  // a select lists the choices itself: drop "0 tắt, 1 RTH…" from the title
+  const [title, detail] = !HINT[n] ? [n, ""] : en && /:\s*\d/.test(HINT[n]) ? [HINT[n].split(":")[0], ""] : splitHint(HINT[n]);
+  const bool = !p.f && p.min === 0 && p.max === 1 && !en, unit = unitOf(n);
+  const range = en || bool ? "" : ` · ${p.min}…${p.max}`;
+  d.innerHTML = `<div><div class="name">${esc(title)}${p.r ? '<span class="badge">khởi động lại</span>' : ""}</div><div class="hint"><code>${n}</code>${detail ? " · " + esc(detail) : ""}<span class="num">${range}</span></div></div>`;
+  let el;
+  if (bool) {
+    const t = document.createElement("label");
+    t.className = "tog";
+    t.innerHTML = `<input type="checkbox" data-p="${n}" aria-label="${n}"><i></i>`;
+    el = t.firstChild;
+    el.checked = !!val(n);
+    el.onchange = () => setEdit(n, el.checked ? 1 : 0);
+    d.appendChild(t);
+  } else {
+    const c = document.createElement("div");
+    c.className = "ctl" + (unit && !en ? " u" : "");
+    if (en) {
+      const opts = en.map((t, i) => (t === undefined || i < p.min || i > p.max ? "" : `<option value="${i}">${t}</option>`)).join("");
+      c.innerHTML = `<select data-p="${n}" aria-label="${n}">${opts}</select>`;
+    } else c.innerHTML = `<input inputmode="decimal" data-p="${n}" aria-label="${n}">${unit ? `<span class="unit">${unit}</span>` : ""}`;
+    el = c.firstChild;
+    el.value = fmt(n, val(n));
+    el.onchange = () => setEdit(n, el.value);
+    d.appendChild(c);
+  }
+  if (n in S.edits) d.classList.add("changed");
+  return d;
+}
+// one titled card of parameter rows (skips names this firmware does not have)
+function pcard(host, title, names, desc) {
+  names = names.filter((n) => S.params[n]);
+  if (!names.length) return null;
+  const p = document.createElement("div");
+  p.className = "panel";
+  p.innerHTML = `<div class="card-h"><span class="dot"></span><h3>${title}</h3></div>${desc ? `<p class="card-d">${desc}</p>` : ""}`;
+  names.forEach((n) => p.appendChild(prow(n)));
+  host.appendChild(p);
+  return p;
+}
+
+// ---------------------------------------------------------------- layout builders
+// parameter names of the profile being edited: profile 1 = roll_p / roll_rc_rate, 2 / 3 = p2_roll_p / p2_roll_rc
+S.pf = 0;
+function pfName(a, k) {
+  const RATE1 = { rc: "rc_rate", max: "max_rate", expo: "expo" };
+  if (!S.pf) return `${a}_${RATE1[k] || k}`;
+  return `p${S.pf + 1}_${a}_${k}`;
+}
+function buildPidMatrix() {
+  const m = $("pidMatrix");
+  m.innerHTML = '<div></div><div class="head">P</div><div class="head">I</div><div class="head">D</div><div class="head">F</div>';
+  AXES.forEach((a) => {
+    const h = document.createElement("div");
+    h.className = "axis-name " + a;
+    h.textContent = a[0].toUpperCase() + a.slice(1);
+    m.appendChild(h);
+    for (const t of ["p", "i", "d", "f"]) m.appendChild(stepper(pfName(a, t), t === "f" ? 5 : 1, t.toUpperCase()));
+  });
+  const r = $("rateMatrix");
+  r.innerHTML = '<div></div><div class="head">Tâm (°/s)</div><div class="head">Tối đa (°/s)</div><div class="head">Expo</div>';
+  AXES.forEach((a) => {
+    const h = document.createElement("div");
+    h.className = "axis-name " + a;
+    h.textContent = a[0].toUpperCase() + a.slice(1);
+    r.appendChild(h);
+    r.appendChild(stepper(pfName(a, "rc"), 5, "Tâm °/s"));
+    r.appendChild(stepper(pfName(a, "max"), 10, "Tối đa °/s"));
+    r.appendChild(stepper(pfName(a, "expo"), 0.05, "Expo"));
+  });
+  const seg = $("profSeg");
+  const has2 = !!S.params.p2_roll_p;
+  seg.hidden = !has2;
+  seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.pf === S.pf)));
+  const act = has2 ? val("pid_profile") : 0, ch = has2 ? val("prof_ch") : 0;
+  $("profInfo").textContent = !has2 ? "" : `Đang bay: Profile ${act + 1}` + (ch ? ` (đổi bằng kênh ${ch})` : "") + (S.pf ? " · thanh trượt chỉnh nhanh chỉ áp dụng cho Profile 1" : "");
+  if (typeof drawRates === "function") drawRates();
+}
+$("profSeg").querySelectorAll("button").forEach((b) => (b.onclick = () => { S.pf = +b.dataset.pf; buildPidMatrix(); }));
+function buildPid() {
+  buildPidMatrix();
+  const ex = $("pidExtra");
+  ex.innerHTML = "";
+  pcard(ex, "Ga & I-term", ["anti_gravity", "iterm_relax", "iterm_limit", "tpa_rate", "tpa_breakpoint", "thr_boost", "pidsum_limit", "pidsum_lim_yaw"], "Giữ drone ổn định khi đổi ga nhanh.");
+  pcard(ex, "D động (D-min)", ["d_min_pct", "d_min_gain", "d_min_adv"], "D thấp khi bay êm cho motor mát, tăng khi rung hoặc gạt cần mạnh.");
+  pcard(ex, "Cảm giác cần & lực đẩy", ["rc_smooth_hz", "thrust_expo", "vbat_sag_comp", "airmode"]);
+  pcard(ex, "Tự cân bằng (ANGLE / HORIZON)", ["angle_p", "angle_limit", "horizon_trans"]);
+  pcard(ex, "Profile", ["pid_profile", "prof_ch"], "3 bộ PID / rates, đổi bằng công tắc. Chọn Profile 2 / 3 ở trên bảng PID để sửa.");
+  pcard(ex, "Bảo vệ", ["crash_detect", "yaw_spin_thr"]);
+  pcard(ex, "Autotune & launch control", ["at_axes", "at_rate", "at_steps", "launch_angle", "launch_thr"]);
+  const f = $("filterParams");
+  f.innerHTML = "";
+  pcard(f, "Lọc thông thấp", ["gyro_lpf_hz", "gyro_lpf2_hz", "dyn_lpf_min", "dyn_lpf_max", "dterm_lpf_hz", "acc_lpf_hz"]);
+  pcard(f, "Notch động (theo phổ gyro)", ["dyn_notch_count", "dyn_notch_min", "dyn_notch_max", "dyn_notch_q"]);
+  pcard(f, "RPM filter (theo vòng quay motor)", ["rpm_harmonics", "rpm_min_hz", "rpm_q", "rpm_w1", "rpm_w2", "rpm_w3", "dyn_idle_rpm"], "Cần RPM từ ESC: bật bidirectional DShot hoặc telemetry ESC ở tab Motor & ESC.");
+  pcard(f, "Notch tĩnh", ["notch1_hz", "notch1_cut", "notch2_hz", "notch2_cut"], "Chỉ dùng khi có nhiễu cố định (khung cộng hưởng).");
+  pcard(f, "Vòng điều khiển", ["loop_hz", "imu_sync"]);
+  const sp = $("safetyParams");
+  if (sp) {
+    sp.innerHTML = "";
+    pcard(sp, "Mất sóng tay điều khiển", ["fs_action", "fs_delay_ms", "fs_off_delay_ms", "fs_throttle", "gcs_fs", "gcs_fs_s"]);
+    pcard(sp, "Pin", ["cell_count", "vbat_warn_cell", "vbat_crit_cell", "bat_capacity", "bat_fs_action", "bat_reserve_pct", "vbat_scale", "cur_scale", "cur_offset"]);
+    pcard(sp, "Điều kiện arm", ["arm_throttle_max", "arm_max_angle", "arm_require_gps", "gcs_arm"]);
+  }
+  const snp = $("sensorParams");
+  if (snp) {
+    snp.innerHTML = "";
+    pcard(snp, "IMU dự phòng", ["imu_dual"], "Có IMU thứ hai: tự chuyển khi IMU chính đứng hình hoặc lỗi.");
+    pcard(snp, "Cảm biến khoảng cách & optical flow", ["rf_max_m", "flow_scale", "flow_align", "flow_flip"]);
+    const cal = pcard(snp, "Kết quả hiệu chuẩn (chỉ xem)", ["acc_calibrated", "acc_bias_x", "acc_bias_y", "acc_bias_z", "acc_scale_x", "acc_scale_y", "acc_scale_z",
+      "mag_bias_x", "mag_bias_y", "mag_bias_z", "mag_scale_x", "mag_scale_y", "mag_scale_z", "mag_odiag_xy", "mag_odiag_xz", "mag_odiag_yz", "mag_cmot_x", "mag_cmot_y", "mag_cmot_z"],
+      "Do các nút hiệu chuẩn ở trên ghi vào; không cần sửa tay.");
+    if (cal) {  // long list: fold it
+      const d = document.createElement("details");
+      d.innerHTML = `<summary class="muted" style="cursor:pointer;margin:4px 0">Xem ${cal.querySelectorAll(".prow").length} giá trị</summary>`;
+      cal.querySelectorAll(".prow").forEach((r) => d.appendChild(r));
+      cal.appendChild(d);
+    }
+  }
+  const syp = $("sysParams");
+  if (syp) {
+    syp.innerHTML = "";
+    pcard(syp, "WiFi & trang web", ["wifi_enable", "web_enable", "wifi_armed"], "Tắt WiFi khi bay giúp bớt nhiễu và để CPU cho vòng bay.");
+    pcard(syp, "MAVLink", ["mav_sysid"], "Mỗi drone một ID khi dùng nhiều drone với một trạm mặt đất.");
+  }
+  const mp = $("motorParams");
+  if (mp) {
+    mp.innerHTML = "";
+    pcard(mp, "Telemetry ESC & motor", ["dshot_bidir", "dshot_edt", "esc_telemetry", "motor_poles", "motor_idle", "yaw_reversed"]);
+  }
+  const navGroups = [
+    ["Độ cao", ["alt_pos_p", "alt_vel_p", "alt_vel_i", "alt_vel_d", "climb_rate_max", "hover_throttle", "hover_learn", "alt_surface"]],
+    ["Giữ vị trí & gió", ["pos_p", "pos_vel_p", "pos_vel_i", "pos_max_speed", "pos_max_angle", "pos_max_accel", "wind_comp", "wind_drag"]],
+    ["GPS, hướng & EKF", ["est_type", "gps_min_sats", "gps_max_hacc", "gps_glitch_m", "gps_glitch_s", "gps_heading", "mag_declination", "vibe_warn"]],
+    ["Bay về (RTH) & hạ cánh", ["rth_alt", "rth_speed", "rth_loiter_s", "rth_home_radius", "rth_climb_first", "rth_land", "rth_sanity_s", "rally_max_m", "land_speed", "land_slow_speed", "land_slow_alt"]],
+    ["Nhiệm vụ & geofence", ["wp_radius", "wp_speed", "nav_yaw_mode", "nav_yaw_p", "fence_enable", "fence_action", "fence_radius", "fence_alt_max"]],
+  ];
+  navGroups[3][1].push("srtl_point_m");
+  navGroups.push(["Bộ ước lượng (độ nhiễu cảm biến)", ["est_baro_noise", "est_acc_noise", "est_gpsvel_noise"]]);
+  navGroups[4][1].push("fence_poly");
+  const np = $("navParams");
+  np.innerHTML = "";
+  for (const [title, names] of navGroups) pcard(np, title, names);
+  const b = $("bbParams");
+  b.innerHTML = "";
+  ["bb_rate_hz", "bb_backend"].forEach((n) => S.params[n] && b.appendChild(prow(n)));
+  if (typeof buildSdParams === "function") buildSdParams();
+  buildParamGroups();
+  buildModes();
+  drawRates();
+  drawFilters();
+  if (typeof onParamsLoaded === "function") onParamsLoaded();
+  if (typeof extrasParamsLoaded === "function") extrasParamsLoaded();
+}
+const GROUPS = [
+  ["PID & rates", /^(roll|pitch|yaw)_|^iterm|^pidsum|^tpa|^anti_gravity|^angle|^horizon|^mode_mid|^at_|^launch_|^d_min|^thr_boost|^thrust_|^vbat_sag|^rc_smooth|^yaw_spin|^crash_/],
+  ["Profile 2 & 3", /^p[23]_|^pid_profile|^prof_ch/],
+  ["Bộ lọc", /lpf|notch|^rpm_|^dyn_idle/],
+  ["Độ cao & vị trí", /^alt_|^climb|^hover|^pos_|^gps_min/],
+  ["Điều hướng & geofence", /^rth_|^land_|^wp_|^nav_|^fence_|^srtl_/],
+  ["Failsafe & pin", /^fs_|^vbat|^cur_|^cell|^bat_|^arm_|^gcs_/],
+  ["Tay điều khiển", /^ch_|^rx_/],
+  ["Chế độ (công tắc)", /^mr\d+_/],
+  ["Cổng & kết nối", /^serial|^udp_|^wifi|^web_|^mav_/],
+  ["Motor & hệ thống", /^motor|^esc_|^dshot|^loop_hz|^imu_sync|^yaw_reversed|^airmode/],
+  ["VTX & LED", /^vtx|^led_/],
+  ["OSD & blackbox", /^osd_|^bb_/],
+  ["Hiệu chuẩn & cảm biến", /^acc_|^mag_|^level_|^imu_|^board_|^est_|^rf_|^flow_|^vibe_/],
+];
+function buildParamGroups() {
+  const host = $("paramGroups");
+  host.innerHTML = "";
+  const used = new Set();
+  const groups = GROUPS.map(([title, re]) => [title, S.order.filter((n) => { if (used.has(n) || !re.test(n)) return false; used.add(n); return true; })]);
+  groups.push(["Khác", S.order.filter((n) => !used.has(n))]);
+  // collapsed groups: 340 rows stay readable; a search opens the groups that match
+  for (const [title, names] of groups) {
+    if (!names.length) continue;
+    const g = document.createElement("details");
+    g.className = "panel pgroup";
+    g.innerHTML = `<summary><span class="dot"></span><b>${title}</b><span class="muted num">${names.length}</span></summary>`;
+    names.forEach((n) => g.appendChild(prow(n)));
+    host.appendChild(g);
+  }
+}
+$("pSearch").oninput = (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll("#paramGroups .prow").forEach((r) => { r.hidden = q && !r.dataset.name.includes(q) && !r.querySelector(".name").textContent.toLowerCase().includes(q); });
+  document.querySelectorAll("#paramGroups .pgroup").forEach((g) => { g.hidden = q && !g.querySelector(".prow:not([hidden])"); g.open = !!q && !g.hidden; });
+};
+
+// ---------------------------------------------------------------- mode ranges
+const BOXES = ["", "ARM", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "TURTLE", "BEEPER", "CRUISE", "AUTOTUNE", "GPS RESCUE", "LAUNCH", "SMART RTL"];
+const BOX_HINT = ["", "Arm motor", "Tự cân bằng, giới hạn góc nghiêng", "Tự cân bằng ở giữa cần, lật được khi gạt hết cần",
+  "Giữ độ cao bằng baro", "Giữ vị trí bằng GPS hoặc optical flow", "Bay về điểm cất cánh rồi hạ cánh",
+  "Bay theo nhiệm vụ waypoint", "Hạ cánh tại chỗ", "Lật drone khi bị úp (cần DShot)", "Còi tìm drone",
+  "Giữ hướng và tốc độ: cần pitch đổi tốc độ, cần yaw rẽ",
+  "Tự chỉnh PID khi bay treo: buông cần, hạ cánh và disarm khi công tắc còn bật để lưu",
+  "Bay về như RTH, tự hạ cánh tại chỗ nếu không lại gần nhà (rth_sanity_s)",
+  "Chờ phóng: giữ góc chúi launch_angle, I tắt; đẩy ga quá launch_thr thì phóng (ACRO/ANGLE/HORIZON)"];
+const NR = 12;
+const PRESETS = [["Thấp", 900, 1300], ["Giữa", 1300, 1700], ["Cao", 1700, 2100]];
+function buildModes() {
+  const host = $("modeList");
+  if (!S.params.mr1_mode) return;
+  host.innerHTML = "";
+  let n = 0;
+  for (let i = 1; i <= NR; i++) {
+    if (!val(`mr${i}_mode`)) continue;
+    n++;
+    const d = document.createElement("div");
+    d.className = "mrow";
+    d.dataset.i = i;
+    d.innerHTML = `<div class="mhead">
+        <select data-p="mr${i}_mode" aria-label="Chế độ">${BOXES.map((b, k) => (k ? `<option value="${k}">${b}</option>` : "")).join("")}</select>
+        <select data-p="mr${i}_ch" aria-label="Kênh">${Array.from({ length: 12 }, (_, k) => `<option value="${k + 4}">AUX${k + 1} (CH${k + 5})</option>`).join("")}</select>
+        <button class="btn ghost" type="button">Xoá</button></div>
+      <p class="mhint"></p>
+      <div class="mbar"><span class="mrange"></span><span class="mlive"></span></div>
+      <div class="mscale num"><span>900</span><span>1500</span><span>2100</span></div>
+      <div class="mfoot"><div class="seg" role="group" aria-label="Vị trí công tắc">${PRESETS.map(([t, lo, hi]) => `<button type="button" data-lo="${lo}" data-hi="${hi}">${t}</button>`).join("")}</div></div>`;
+    d.querySelectorAll("select").forEach((sel) => { sel.value = String(val(sel.dataset.p)); sel.onchange = () => setEdit(sel.dataset.p, sel.value); });
+    d.querySelector(".mhead .btn").onclick = () => setEdit(`mr${i}_mode`, 0);
+    d.querySelectorAll(".mfoot .seg button").forEach((b) => b.onclick = () => { setEdit(`mr${i}_lo`, +b.dataset.lo); setEdit(`mr${i}_hi`, +b.dataset.hi); });
+    const foot = d.querySelector(".mfoot");
+    foot.appendChild(stepper(`mr${i}_lo`, 25, "Từ (µs)"));
+    foot.appendChild(stepper(`mr${i}_hi`, 25, "Đến (µs)"));
+    foot.querySelectorAll(".cl").forEach((e) => { e.style.display = "block"; e.style.fontSize = ".8rem"; e.style.color = "var(--ink-2)"; });
+    host.appendChild(d);
+  }
+  if (!n) host.innerHTML = '<p class="muted">Chưa có chế độ nào. Bấm Thêm chế độ để gán công tắc.</p>';
+  $("modeAdd").disabled = n >= NR;
+  updateModes();
+}
+function updateModes() {
+  const st = S.status;
+  let hasArm = false;
+  document.querySelectorAll("#modeList .mrow").forEach((d) => {
+    const i = d.dataset.i, box = val(`mr${i}_mode`), ch = val(`mr${i}_ch`), lo = val(`mr${i}_lo`), hi = val(`mr${i}_hi`);
+    if (box === 1) hasArm = true;
+    const pct = (v) => Math.max(0, Math.min(100, (v - 900) / 12));
+    const r = d.querySelector(".mrange");
+    r.style.left = pct(lo) + "%";
+    r.style.width = Math.max(0, pct(hi) - pct(lo)) + "%";
+    d.querySelector(".mhint").textContent = BOX_HINT[box] || "";
+    const v = st && st.rc ? st.rc[ch] : 0;
+    const live = d.querySelector(".mlive");
+    live.hidden = !v;
+    live.style.left = pct(v) + "%";
+    d.classList.toggle("on", !!v && v >= lo && v < hi);
+    d.querySelectorAll(".mfoot .seg button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.lo === lo && +b.dataset.hi === hi)));
+  });
+  $("modeNoArm").hidden = !S.params.mr1_mode || hasArm;
+  if (st) {
+    const on = BOXES.filter((b, k) => k && st.boxes & (1 << k));
+    $("modeActive").textContent = on.length ? on.join(", ") : "không có";
+    $("modeNow").textContent = st.mode + (st.armed ? " (armed)" : "");
+  }
+}
+$("modeAdd").onclick = () => {
+  for (let i = 1; i <= NR; i++) if (!val(`mr${i}_mode`)) {
+    setEdit(`mr${i}_ch`, 4); setEdit(`mr${i}_lo`, 1700); setEdit(`mr${i}_hi`, 2100); setEdit(`mr${i}_mode`, 2);
+    return;
+  }
+};
+
+// ---------------------------------------------------------------- navigation
+const COMPASS = ["Bắc", "Đông Bắc", "Đông", "Đông Nam", "Nam", "Tây Nam", "Tây", "Tây Bắc"];
+const compassName = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+S.trail = []; S.altBuf = [[], [], []]; S.mapZoom = 1;
+async function loadMission() {
+  try { S.mission = await api("/api/mission"); } catch (e) { S.mission = null; }
+  drawNav();
+}
+function updateNav(st) {
+  const e = st.est;
+  if (e.pos) {
+    const last = S.trail[S.trail.length - 1];
+    if (!last || Math.hypot(last[0] - e.n, last[1] - e.e) > 0.3) { S.trail.push([e.n, e.e]); if (S.trail.length > 600) S.trail.shift(); }
+  }
+  S.altBuf[0].push(e.alt); S.altBuf[1].push(e.tgt[2]); S.altBuf[2].push(e.agl >= 0 ? e.agl : NaN);
+  if (S.altBuf[0].length > 300) S.altBuf.forEach((b) => b.shift());
+  if ($("tab-nav").hidden) return;
+  if (typeof gotoUi === "function") gotoUi();
+  const wind = Math.hypot(e.wind[0], e.wind[1]);
+  const from = (Math.atan2(-e.wind[1], -e.wind[0]) * 180 / Math.PI + 360) % 360;
+  const hs = ["chưa có", "compass", "GPS (không compass)", "EKF"][e.hsrc] || "?";
+  const rows = [
+    ["Chế độ", `${st.mode}${st.nav !== "IDLE" ? " · " + st.nav : ""}${e.mc ? ` · nhiệm vụ ${Math.min(e.mi + 1, e.mc)}/${e.mc}` : ""}`],
+    ["GPS", st.sensors.gps ? `${st.gps.fix ? "3D fix" : "chưa fix"}, ${st.gps.sats} vệ tinh, sai số ${st.gps.hacc} m${e.glitches ? `, ${e.glitches} lần nhiễu` : ""}` : "không có"],
+    ["Hướng", e.hok ? `${hs}, ${((e.yaw % 360) + 360) % 360 | 0}°` : (e.hsrc === 0 && st.sensors.gps ? "chưa xác định: bay vài đường thẳng để học hướng từ GPS" : hs)],
+    ["Vị trí", e.pos ? `N ${e.n.toFixed(1)} m, E ${e.e.toFixed(1)} m, cách nhà ${e.dist.toFixed(0)} m` : "chưa có"],
+    ["Độ cao", `${e.alt.toFixed(1)} m (mục tiêu ${e.tgt[2].toFixed(1)} m)${e.agl >= 0 ? `, mặt đất ${e.agl.toFixed(2)} m` : ""}`],
+    ["Gió", wind > 0.3 ? `${wind.toFixed(1)} m/s từ hướng ${compassName(from)} (${from.toFixed(0)}°)` : "lặng hoặc chưa ước lượng"],
+    ["Ga treo", e.hover ? e.hover.toFixed(3) : "—"],
+  ];
+  $("navKv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  const chips = [];
+  if (e.glitch) chips.push('<span class="chip">GPS đang nhiễu: giữ vị trí bằng quán tính</span>');
+  if (st.warn & 256) chips.push('<span class="chip">Chưa có hướng</span>');
+  if (e.aglhold) chips.push('<span class="chip good">Đang bám mặt đất</span>');
+  $("navChips").innerHTML = chips.join("");
+  drawNav();
+  const tx = S.altBuf[0].map((_, i) => (i - S.altBuf[0].length + 1) * 0.2);  // seconds before now
+  plot($("navAlt"), [{ x: tx, y: S.altBuf[1], color: "--amber", width: 2 }, { x: tx, y: S.altBuf[0], color: "--ink", width: 2 },
+    { x: tx, y: S.altBuf[2], color: "--pitch", width: 1.5 }], { xmin: -60, xmax: 0, xunit: " s" });
+}
+function drawNav() {
+  const cv = $("navMap");
+  if (!cv || $("tab-nav").hidden) return;
+  const { g, w, h } = setupCanvas(cv);
+  const st = S.status, m = S.mission;
+  const e = st ? st.est : null;
+  // bounds in metres (n up, e right)
+  const pts = [[0, 0]];
+  if (e && e.pos) pts.push([e.n, e.e]);
+  S.trail.forEach((p) => pts.push(p));
+  if (m) {
+    m.items.filter((i) => i.pos).forEach((i) => { const r = i.cmd === 18 ? Math.max(Math.abs(i.p3), 2) : 0; pts.push([i.n + r, i.e + r], [i.n - r, i.e - r]); });
+    m.rally.filter((i) => i.pos).forEach((i) => pts.push([i.n, i.e]));
+    (m.poly || []).forEach((p) => pts.push([p[0], p[1]]));
+  }
+  let n0 = Math.min(...pts.map((p) => p[0])), n1 = Math.max(...pts.map((p) => p[0]));
+  let e0 = Math.min(...pts.map((p) => p[1])), e1 = Math.max(...pts.map((p) => p[1]));
+  let span = Math.max(n1 - n0, e1 - e0, 20) * 1.15 / S.mapZoom;
+  let cn = S.mapZoom > 1 && e && e.pos ? e.n : (n0 + n1) / 2, ce = S.mapZoom > 1 && e && e.pos ? e.e : (e0 + e1) / 2;
+  if (S.navFreeze) { span = S.navFreeze.span / S.mapZoom; cn = S.navFreeze.cn; ce = S.navFreeze.ce; }  // editing: the map holds still
+  const k = Math.min(w, h) / span;
+  S.navT = { k, cn, ce, w, h, span: span * S.mapZoom };
+  const X = (ee) => w / 2 + (ee - ce) * k, Y = (nn) => h / 2 - (nn - cn) * k;
+  g.clearRect(0, 0, w, h);
+  if (typeof mapTiles === "function") mapTiles(g, w, h, k, cn, ce);
+  // grid
+  const step = niceStep(span, 5);
+  g.strokeStyle = css("--grid"); g.lineWidth = 1;
+  for (let v = Math.floor((ce - w / k / 2) / step) * step; v <= ce + w / k / 2; v += step) { g.beginPath(); g.moveTo(X(v), 0); g.lineTo(X(v), h); g.stroke(); }
+  for (let v = Math.floor((cn - h / k / 2) / step) * step; v <= cn + h / k / 2; v += step) { g.beginPath(); g.moveTo(0, Y(v)); g.lineTo(w, Y(v)); g.stroke(); }
+  g.fillStyle = css("--ink-2"); g.font = `12px ${css("--num")}`;
+  g.fillText(`ô lưới ${step} m`, 8, h - 8);
+  if (m && m.fence) {
+    g.strokeStyle = css("--danger"); g.setLineDash([6, 5]); g.beginPath(); g.arc(X(0), Y(0), m.fence * k, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+  }
+  // polygon fence (red) and survey area (blue): from the editor while editing, else from the drone
+  const poly = S.wp ? S.wp.poly.map((p) => wpNE(p, S.wp.ref)) : m && m.poly ? m.poly.map((p) => [p[0], p[1]]) : [];
+  const area = S.wp ? S.wp.area.map((p) => wpNE(p, S.wp.ref)) : [];
+  const shape = (P, col, fillA, dash, handles) => {
+    if (!P.length) return;
+    g.strokeStyle = col; g.lineWidth = 2; g.setLineDash(dash);
+    g.beginPath(); P.forEach(([n, ee], j) => (j ? g.lineTo(X(ee), Y(n)) : g.moveTo(X(ee), Y(n))));
+    if (P.length > 2) { g.closePath(); g.globalAlpha = fillA; g.fillStyle = col; g.fill(); g.globalAlpha = 1; }
+    g.stroke(); g.setLineDash([]);
+    if (handles) P.forEach(([n, ee]) => { g.fillStyle = css("--sheet"); g.beginPath(); g.arc(X(ee), Y(n), 7, 0, Math.PI * 2); g.fill(); g.stroke(); });
+  };
+  if (poly.length && (S.wp || (m && m.polyOn))) shape(poly, css("--danger"), 0.06, [], S.wp && S.wp.layer === "fence");
+  else if (poly.length) shape(poly, css("--danger"), 0, [4, 6], false);  // stored but not enabled
+  shape(area, css("--yaw"), 0.1, [6, 4], S.wp && S.wp.layer === "survey");
+  if (S.wp && S.wp.layer === "survey" && S.svPath && S.svPath.length > 1 && area.length > 2) {  // lane preview
+    g.strokeStyle = css("--yaw"); g.lineWidth = 1.5; g.beginPath();
+    S.svPath.forEach(([n, ee], j) => (j ? g.lineTo(X(ee), Y(n)) : g.moveTo(X(ee), Y(n))));
+    g.stroke();
+  }
+  if (S.gotoT && st && st.armed) {
+    const tx = X(S.gotoT[1]), ty = Y(S.gotoT[0]);
+    g.strokeStyle = css("--amber"); g.lineWidth = 3; g.beginPath(); g.arc(tx, ty, 12, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(tx - 5, ty); g.lineTo(tx + 5, ty); g.moveTo(tx, ty - 5); g.lineTo(tx, ty + 5); g.stroke();
+  }
+  // mission
+  if (m) {
+    const wps = m.items.map((it, i) => ({ ...it, i })).filter((i) => i.pos);
+    g.strokeStyle = css("--ink-2"); g.lineWidth = 1.5; g.beginPath();
+    wps.forEach((p, j) => (j ? g.lineTo(X(p.e), Y(p.n)) : g.moveTo(X(p.e), Y(p.n))));
+    g.stroke();
+    wps.forEach((p) => {
+      const cur = (e && p.i === e.mi && st.mode === "MISSION") || (S.wp && p.i === S.wpSel);
+      if (p.cmd === 18) { g.strokeStyle = css("--ink-2"); g.setLineDash([3, 4]); g.beginPath(); g.arc(X(p.e), Y(p.n), Math.max(Math.abs(p.p3), 2) * k, 0, Math.PI * 2); g.stroke(); g.setLineDash([]); }
+      g.fillStyle = cur ? css("--amber") : css("--sheet"); g.strokeStyle = css("--ink");
+      g.beginPath(); g.arc(X(p.e), Y(p.n), 10, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.fillStyle = cur ? css("--amber-ink") : css("--ink"); g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(String(p.i + 1), X(p.e), Y(p.n) + 1);
+    });
+    m.rally.filter((i) => i.pos).forEach((r) => {
+      g.fillStyle = css("--pitch"); g.fillRect(X(r.e) - 9, Y(r.n) - 9, 18, 18);
+      g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("R", X(r.e), Y(r.n) + 1);
+    });
+  }
+  // home
+  g.fillStyle = css("--ink"); g.beginPath(); g.arc(X(0), Y(0), 11, 0, Math.PI * 2); g.fill();
+  g.fillStyle = css("--paper"); g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("H", X(0), Y(0) + 1);
+  // trail
+  g.strokeStyle = css("--yaw"); g.lineWidth = 2; g.beginPath();
+  S.trail.forEach((p, j) => (j ? g.lineTo(X(p[1]), Y(p[0])) : g.moveTo(X(p[1]), Y(p[0]))));
+  g.stroke();
+  if (e && e.pos) {
+    if (st.armed && /POSHOLD|CRUISE|RTH|MISSION|LAND|GUIDED|SMARTRTL/.test(st.mode)) {  // target
+      const tx = X(e.tgt[1]), ty = Y(e.tgt[0]);
+      g.strokeStyle = css("--amber"); g.lineWidth = 2;
+      g.beginPath(); g.moveTo(tx - 8, ty); g.lineTo(tx + 8, ty); g.moveTo(tx, ty - 8); g.lineTo(tx, ty + 8); g.stroke();
+    }
+    const a = e.yaw * Math.PI / 180, dx = X(e.e), dy = Y(e.n);
+    const pt = (r, t) => [dx + Math.sin(a + t) * r, dy - Math.cos(a + t) * r];
+    g.fillStyle = e.hok ? css("--ink") : css("--danger");
+    g.beginPath(); g.moveTo(...pt(14, 0)); g.lineTo(...pt(10, 2.5)); g.lineTo(...pt(4, Math.PI)); g.lineTo(...pt(10, -2.5)); g.closePath(); g.fill();
+  }
+  // wind arrow (direction the air moves)
+  if (e) {
+    const ws = Math.hypot(e.wind[0], e.wind[1]);
+    if (ws > 0.3) {
+      const a = Math.atan2(e.wind[1], e.wind[0]), cx = 34, cy = 34, L = 20;
+      const ex = cx + Math.sin(a) * L, ey = cy - Math.cos(a) * L, sx = cx - Math.sin(a) * L, sy = cy + Math.cos(a) * L;
+      g.strokeStyle = css("--ink-2"); g.fillStyle = css("--ink-2"); g.lineWidth = 2;
+      g.beginPath(); g.moveTo(sx, sy); g.lineTo(ex, ey); g.stroke();
+      g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - Math.sin(a - 0.5) * 9, ey + Math.cos(a - 0.5) * 9); g.lineTo(ex - Math.sin(a + 0.5) * 9, ey + Math.cos(a + 0.5) * 9); g.fill();
+      g.textAlign = "left"; g.textBaseline = "alphabetic"; g.fillText(`gió ${ws.toFixed(1)} m/s`, 62, 38);
+    }
+  }
+  g.textAlign = "left"; g.textBaseline = "alphabetic";
+}
+$("mapIn").onclick = () => { S.mapZoom = Math.min(S.mapZoom * 1.6, 40); drawNav(); };
+$("mapOut").onclick = () => { S.mapZoom = Math.max(S.mapZoom / 1.6, 1); drawNav(); };
+$("mapReload").onclick = loadMission;
+
+// ---------------------------------------------------------------- charts
+function setupCanvas(cv) {
+  const r = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.max(10, Math.round(r.width * dpr));
+  cv.height = Math.max(10, Math.round(r.height * dpr));
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { g, w: r.width, h: r.height };
+}
+function niceStep(range, n) {
+  const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+// series: [{x: array, y: array, color, width, dash}], o: {xmin,xmax,ymin,ymax,xlabel,ylabel,hline}
+function plot(cv, series, o = {}) {
+  const { g, w, h } = setupCanvas(cv);
+  const L = 44, R = 10, T = 10, B = 26;
+  let { xmin, xmax, ymin, ymax } = o;
+  if (xmin === undefined || xmax === undefined || ymin === undefined || ymax === undefined) {
+    let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+    for (const s of series) for (let i = 0; i < s.y.length; i++) {
+      const xv = s.x ? s.x[i] : i, yv = s.y[i];
+      if (!isFinite(yv)) continue;
+      a = Math.min(a, xv); b = Math.max(b, xv); c = Math.min(c, yv); d = Math.max(d, yv);
+    }
+    if (xmin === undefined) xmin = a; if (xmax === undefined) xmax = b;
+    if (ymin === undefined) ymin = c; if (ymax === undefined) ymax = d;
+  }
+  if (!isFinite(xmin) || xmax <= xmin) { xmin = 0; xmax = 1; }
+  if (!isFinite(ymin) || ymax <= ymin) { ymin = (ymin || 0) - 1; ymax = (ymax || 0) + 1; }
+  const pad = (ymax - ymin) * 0.06; if (o.ymin === undefined) ymin -= pad; if (o.ymax === undefined) ymax += pad;
+  const X = (v) => L + (v - xmin) / (xmax - xmin) * (w - L - R);
+  const Y = (v) => T + (1 - (v - ymin) / (ymax - ymin)) * (h - T - B);
+  g.clearRect(0, 0, w, h);
+  g.font = `11px ${css("--num")}`;
+  g.fillStyle = css("--ink-2");
+  g.strokeStyle = css("--grid");
+  g.lineWidth = 1;
+  const ys = niceStep(ymax - ymin, 4);
+  for (let v = Math.ceil(ymin / ys) * ys; v <= ymax; v += ys) {
+    g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(w - R, Y(v)); g.stroke();
+    g.fillText(+v.toFixed(3), 4, Y(v) + 4);
+  }
+  const xs = niceStep(xmax - xmin, Math.max(3, Math.floor(w / 90)));
+  for (let v = Math.ceil(xmin / xs) * xs; v <= xmax; v += xs) {
+    g.beginPath(); g.moveTo(X(v), T); g.lineTo(X(v), h - B); g.stroke();
+    g.fillText(+v.toFixed(3) + (o.xunit || ""), X(v) - 8, h - 8);
+  }
+  if (o.hline !== undefined) {
+    g.strokeStyle = css("--ink-2"); g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(L, Y(o.hline)); g.lineTo(w - R, Y(o.hline)); g.stroke(); g.setLineDash([]);
+  }
+  for (const s of series) {
+    g.strokeStyle = s.color.startsWith("--") ? css(s.color) : s.color;
+    g.lineWidth = s.width || 1.6;
+    g.setLineDash(s.dash || []);
+    g.beginPath();
+    const n = s.y.length;
+    const stride = Math.max(1, Math.floor(n / (w * 2)));
+    let started = false;
+    for (let i = 0; i < n; i += stride) {
+      const xv = s.x ? s.x[i] : i;
+      if (xv < xmin || xv > xmax || !isFinite(s.y[i])) continue;
+      const px = X(xv), py = Math.max(T, Math.min(h - B, Y(s.y[i])));
+      if (!started) { g.moveTo(px, py); started = true; } else g.lineTo(px, py);
+    }
+    g.stroke();
+  }
+  g.setLineDash([]);
+}
+
+// rates curve preview (actual rates)
+function rateCurve(stick, c, m, e) {
+  const a = Math.abs(stick), s5 = stick ** 5;
+  return stick * c + Math.max(0, m - c) * a * (s5 * e + stick * (1 - e));
+}
+function drawRates() {
+  if (!S.params.roll_rc_rate || $("tab-pid").hidden) return;
+  const RN = (a, k) => pfName(a, k);
+  const xs = Array.from({ length: 101 }, (_, i) => i / 100);
+  const series = AXES.map((a, k) => ({ x: xs, y: xs.map((s) => rateCurve(s, val(RN(a, "rc")), val(RN(a, "max")), val(RN(a, "expo")))), color: AXCOL[k] }));
+  plot($("rateChart"), series, { xmin: 0, xmax: 1, ymin: 0 });
+  $("rateMax").textContent = (S.pf ? `Profile ${S.pf + 1} · ` : "") + "Tối đa: " + AXES.map((a) => Math.round(val(RN(a, "max")))).join(" / ") + " °/s";
+}
+
+// filter magnitude response (biquad lowpass/notch + PT1) at the loop rate
+function biquadMag(type, fc, q, fs, f) {
+  if (!(fc > 0) || fc >= fs * 0.48) return 1;
+  const w0 = 2 * Math.PI * fc / fs, al = Math.sin(w0) / (2 * q), cw = Math.cos(w0);
+  let b0, b1, b2; const a0 = 1 + al, a1 = -2 * cw, a2 = 1 - al;
+  if (type === "lp") { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0; } else { b0 = 1; b1 = -2 * cw; b2 = 1; }
+  const w = 2 * Math.PI * f / fs;
+  const re = (c0, c1, c2) => c0 + c1 * Math.cos(-w) + c2 * Math.cos(-2 * w), im = (c1, c2) => c1 * Math.sin(-w) + c2 * Math.sin(-2 * w);
+  return Math.hypot(re(b0, b1, b2), im(b1, b2)) / Math.hypot(re(a0, a1, a2), im(a1, a2));
+}
+const pt1Mag = (fc, f) => (fc > 0 ? 1 / Math.sqrt(1 + (f / fc) ** 2) : 1);
+const notchQ = (c, cut) => (c > 0 && cut > 0 && cut < c ? c * cut / (c * c - cut * cut) : 0);
+function drawFilters() {
+  if (!S.params.gyro_lpf_hz || $("tab-pid").hidden) return;
+  const fs = val("loop_hz") || 1000, fmax = fs / 2;
+  const f = Array.from({ length: 300 }, (_, i) => 1 + i * (fmax - 1) / 299);
+  const gyro = f.map((x) => {
+    let m = biquadMag("lp", val("gyro_lpf_hz"), 0.7071, fs, x) * pt1Mag(val("gyro_lpf2_hz"), x);
+    const q1 = notchQ(val("notch1_hz"), val("notch1_cut")), q2 = notchQ(val("notch2_hz"), val("notch2_cut"));
+    if (q1) m *= biquadMag("n", val("notch1_hz"), q1, fs, x);
+    if (q2) m *= biquadMag("n", val("notch2_hz"), q2, fs, x);
+    return m;
+  });
+  const dterm = f.map((x, i) => gyro[i] * biquadMag("lp", val("dterm_lpf_hz"), 0.7071, fs, x) * pt1Mag(val("dterm_lpf_hz") * 1.5, x));
+  plot($("filterChart"), [{ x: f, y: gyro, color: "--ink", width: 2 }, { x: f, y: dterm, color: "--yaw", width: 2 }], { xmin: 0, xmax: fmax, ymin: 0, ymax: 1.05, xunit: " Hz" });
+  // group delay estimate at 30 Hz from the phase of the low-pass sections
+  const ph = (fc) => (fc > 0 ? Math.atan(30 / fc) : 0);
+  const delay = (ph(val("gyro_lpf_hz")) * 1.41 + ph(val("gyro_lpf2_hz"))) / (2 * Math.PI * 30) * 1000;
+  $("filterDelay").textContent = `Trễ gyro ước tính ở 30 Hz: ${delay.toFixed(1)} ms`;
+}
+
+// ---------------------------------------------------------------- live status
+function drawHorizonOn(cv, roll, pitch, big) {
+  const g = cv.getContext("2d"), s = cv.width, r = s / 2, k = s / 128;
+  g.save();
+  g.clearRect(0, 0, s, s);
+  g.beginPath(); g.arc(r, r, r, 0, Math.PI * 2); g.clip();
+  g.translate(r, r);
+  g.rotate(-roll * Math.PI / 180);
+  const off = pitch * 2 * k;
+  const sky = g.createLinearGradient(0, -s, 0, off); sky.addColorStop(0, "#2E6FD8"); sky.addColorStop(1, "#7FB1F5");
+  const gnd = g.createLinearGradient(0, off, 0, s); gnd.addColorStop(0, "#9A6634"); gnd.addColorStop(1, "#5C3A1A");
+  g.fillStyle = sky; g.fillRect(-s, -s * 2 + off, s * 2, s * 2);
+  g.fillStyle = gnd; g.fillRect(-s, off, s * 2, s * 2);
+  g.strokeStyle = "#fff"; g.lineWidth = 2 * k; g.beginPath(); g.moveTo(-s, off); g.lineTo(s, off); g.stroke();
+  if (big) {  // pitch ladder every 10°
+    g.lineWidth = 1.2 * k; g.fillStyle = "#fff"; g.font = `${7 * k}px system-ui`; g.textAlign = "left"; g.textBaseline = "middle";
+    for (let d = -40; d <= 40; d += 10) {
+      if (!d) continue;
+      const y = off - d * 2 * k, w = (d % 20 ? 10 : 18) * k;
+      g.beginPath(); g.moveTo(-w, y); g.lineTo(w, y); g.stroke();
+      if (!(d % 20)) g.fillText(String(Math.abs(d)), w + 3 * k, y);
+    }
+  }
+  g.restore();
+  if (big) {  // bank scale + pointer
+    g.save(); g.translate(r, r);
+    g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 1.5 * k;
+    for (const a of [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60]) {
+      const t = (a - 90) * Math.PI / 180, l = a % 30 ? 5 : 9;
+      g.beginPath(); g.moveTo(Math.cos(t) * (r - 2 * k), Math.sin(t) * (r - 2 * k)); g.lineTo(Math.cos(t) * (r - (2 + l) * k), Math.sin(t) * (r - (2 + l) * k)); g.stroke();
+    }
+    g.rotate(-roll * Math.PI / 180);
+    g.fillStyle = "#F2B53A"; g.beginPath(); g.moveTo(0, -r + 13 * k); g.lineTo(-4 * k, -r + 20 * k); g.lineTo(4 * k, -r + 20 * k); g.closePath(); g.fill();
+    g.restore();
+  }
+  g.strokeStyle = "#F2B53A"; g.lineWidth = (big ? 3 : 5) * k; g.lineCap = "round";
+  g.beginPath(); g.moveTo(r - 34 * k, r); g.lineTo(r - 10 * k, r); g.lineTo(r - 10 * k, r + 5 * k); g.moveTo(r + 34 * k, r); g.lineTo(r + 10 * k, r); g.lineTo(r + 10 * k, r + 5 * k); g.stroke();
+  g.fillStyle = "#F2B53A"; g.beginPath(); g.arc(r, r, 2.5 * k, 0, Math.PI * 2); g.fill();
+}
+function drawHorizon(roll, pitch) { drawHorizonOn($("horizon"), roll, pitch, false); }
+// what blocks arming, in words, and where to fix it
+const BLOCK_HELP = {
+  NO_RX: ["Chưa nhận tín hiệu tay điều khiển", "Bật tay điều khiển, kiểm tra bind và cổng RX (tab Cổng)", "ports"],
+  THROTTLE: ["Ga chưa ở mức thấp nhất", "Kéo cần ga xuống hết", null],
+  ANGLE: ["Drone đang nghiêng", "Đặt drone nằm phẳng (giới hạn arm_max_angle)", "modes"],
+  ARM_SWITCH: ["Công tắc ARM đang bật từ lúc cấp nguồn", "Gạt công tắc ARM về tắt rồi bật lại", "modes"],
+  CALIBRATING: ["Đang hiệu chỉnh cảm biến", "Để drone đứng yên vài giây", "sensors"],
+  BATTERY: ["Pin yếu hoặc đọc điện áp sai", "Xem điện áp ở phía trên; kiểm tra vbat_scale, cell_count (Chế độ & an toàn → Pin)", "modes"],
+  NO_IMU: ["Không có dữ liệu IMU", "Kiểm tra dây SPI/I2C của IMU (tab Cảm biến)", "sensors"],
+  CLI: ["Đang kết nối cấu hình / CLI / thử motor", "Ngắt kết nối trang cấu hình hoặc rút USB, chờ vài giây", null],
+  FAILSAFE: ["Đang failsafe", "Khôi phục tín hiệu tay điều khiển", "modes"],
+  ACC_NOT_CALIBRATED: ["Accel chưa hiệu chỉnh", "Đặt drone phẳng, bấm Accel ở tab Cảm biến", "sensors"],
+  BARO: ["Baro chưa sẵn sàng", "Chờ baro ổn định hoặc kiểm tra dây I2C", "sensors"],
+  MAG: ["Compass chưa hiệu chỉnh hoặc lỗi", "Bấm Compass ở tab Cảm biến rồi xoay drone mọi hướng", "sensors"],
+  GPS: ["Chưa có GPS fix / chưa đặt nhà", "Chờ đủ vệ tinh ngoài trời (arm_require_gps)", "nav"],
+  FENCE: ["Đang ở ngoài hàng rào ảo", "Đưa drone vào trong vùng cho phép", "nav"],
+  CPU_LOAD: ["CPU quá tải", "Giảm loop_hz hoặc tắt bớt tính năng (tab Hệ thống → Hiệu năng)", "system"],
+  NAV_MODE: ["Công tắc chế độ đang ở RTH / LAND", "Chuyển về ANGLE / HORIZON / ACRO rồi mới arm", "modes"],
+  LOGIC: ["Một điều kiện logic đang chặn arm", "Xem Logic điều kiện ở tab Cổng & thiết bị", "ports"],
+  IMU_FAILOVER: ["Đã chuyển sang IMU dự phòng", "IMU chính lỗi: kiểm tra dây trước khi bay", "sensors"],
+};
+function gotoTab(t) { const b = document.querySelector(`nav.tabs button[data-tab="${t}"]`); if (b) b.click(); }
+function renderReady(st) {
+  const box = $("blockers");
+  const bl = st.blockers || [];
+  const state = st.armed ? "armed" : bl.length ? "blocked" : "ready";
+  box.className = "panel ready " + state;
+  $("readyTitle").textContent = st.armed ? "Đang ARM — motor có thể quay" : bl.length ? `Chưa thể arm · ${bl.length} điều kiện` : "Sẵn sàng arm";
+  $("readySub").textContent = st.armed ? "Disarm trước khi chỉnh cấu hình." : bl.length ? "Bấm vào từng mục để tới chỗ cần sửa." : "Mọi kiểm tra an toàn đều đạt.";
+  setHtml($("blockerChips"), st.armed ? "" : bl.map((b) => {
+    const h = BLOCK_HELP[b] || [b, "", null];
+    return `<button type="button" class="blk"${h[2] ? ` data-go="${h[2]}"` : ""}><b>${b}</b><span>${h[0]}</span><small>${h[1]}</small></button>`;
+  }).join(""));
+}
+document.addEventListener("click", (e) => { const t = e.target.closest && e.target.closest(".blk[data-go]"); if (t) gotoTab(t.dataset.go); });
+function hrow(state, name, value) { return `<div class="hrow ${state}"><i></i><span>${name}</span><b>${value}</b></div>`; }
+function renderOverview(st) {
+  const ov = $("ovHorizon");
+  if (ov) drawHorizonOn(ov, st.att[0], st.att[1], true);
+  $("ovRoll").textContent = st.att[0].toFixed(1) + "°";
+  $("ovPitch").textContent = st.att[1].toFixed(1) + "°";
+  $("ovHdg").textContent = st.att[2] != null ? ((st.att[2] + 360) % 360).toFixed(0) + "°" : "—";
+  setHtml($("motorBars"), st.motors.map((m, i) => `<div><span style="height:${Math.round(m * 100)}%"></span><label class="num">M${i + 1}<br>${Math.round(m * 100)}%</label></div>`).join(""));
+  $("oThr").textContent = (st.thr * 100).toFixed(0) + "%";
+  $("oAlt").textContent = `${st.est.alt.toFixed(2)} m, ${st.est.vz >= 0 ? "+" : ""}${st.est.vz.toFixed(2)} m/s${st.est.agl >= 0 ? `, mặt đất ${st.est.agl.toFixed(2)} m` : ""}`;
+  $("oPos").textContent = st.est.pos ? `N ${st.est.n.toFixed(1)} m, E ${st.est.e.toFixed(1)} m${st.est.home ? `, cách nhà ${st.est.dist.toFixed(0)} m` : ""}` : "chưa có";
+  $("oGps").textContent = st.sensors && st.sensors.gps ? `${st.gps.fix ? "3D fix" : "chưa fix"}, ${st.gps.sats} vệ tinh, sai số ${st.gps.hacc} m` : "không có";
+  $("oNotch").textContent = st.notch.map((x) => (x ? x + " Hz" : "—")).join(" / ");
+  $("oLq").textContent = st.rxok === false ? "MẤT SÓNG" : st.lq ? `LQ ${st.lq}%` : "";
+  $("oLq").className = "card-x num" + (st.rxok === false ? " bad" : "");
+  const names = ["Roll", "Pitch", "Ga", "Yaw", "AUX1", "AUX2", "AUX3", "AUX4", "AUX5", "AUX6"];
+  setHtml($("rcBars"), names.map((n, i) => {
+    const us = st.rc[i] || 1500, pct = Math.max(0, Math.min(100, (us - 1000) / 10));
+    return `<div class="rc${i === 3 ? " sep" : ""}"><span>${n}</span><div class="track"><i style="width:${pct}%"></i><span style="left:${pct}%"></span></div><span class="num">${us}</span></div>`;
+  }).join(""));
+  if (st.sensors) {
+    const sn = st.sensors, b = st.bat || {};
+    setHtml($("oSensors"), [
+      hrow(sn.imu ? "ok" : "bad", "IMU", sn.imu || "không thấy"),
+      hrow(sn.baro ? "ok" : "off", "Baro", sn.baro || "không có"),
+      hrow(sn.mag ? "ok" : "off", "Compass", sn.mag || "không có"),
+      hrow(!sn.gps ? "off" : st.gps.fix ? "ok" : "warn", "GPS", !sn.gps ? "không có" : st.gps.fix ? `${st.gps.sats} vệ tinh` : "chưa fix"),
+      hrow(st.rxok === false ? "bad" : "ok", "Tay điều khiển", st.rxok === false ? "mất sóng" : st.lq ? `LQ ${st.lq}%` : "ok"),
+      hrow(!b.v ? "off" : b.pct != null && b.pct < 20 ? "bad" : b.pct != null && b.pct < 40 ? "warn" : "ok", "Pin", b.v ? `${b.v.toFixed(2)} V · ${b.a.toFixed(1)} A · ${b.mah} mAh` : "không đo"),
+    ].join(""));
+  }
+  $("oMsg").textContent = st.msg ? "Thông báo cuối: " + st.msg : "";
+  $("oMsg").hidden = !st.msg;
+}
+function renderStatus(st) {
+  S.status = st;
+  S.armed = st.armed;
+  $("sMode").textContent = st.mode;
+  const at = $("sArmed");
+  at.textContent = st.armed ? "Armed" : "Disarmed";
+  at.className = "armed-tag " + (st.armed ? "on" : "off");
+  const atStep = st.at && st.at.step != null ? ["P/D", "feedforward", "I"][st.at.step] : "";
+  const atTxt = st.at && st.at.state === 1 ? `Autotune ${["roll", "pitch", "yaw"][st.at.axis]}${atStep ? " " + atStep : ""} vòng ${st.at.round + 1}${st.at.round ? (st.at.step === 1 ? `, trễ ${(+st.at.lag || 0).toFixed(0)} ms` : st.at.step === 2 ? `, sai lệch ${((st.at.ss || 0) * 100).toFixed(0)}%` : `, vọt lố ${(st.at.ov * 100).toFixed(0)}%`) : ""} · `
+    : st.at && st.at.state === 2 ? "Autotune xong: hạ cánh, disarm để lưu · " : "";
+  $("sSub").textContent = `${LINK.open ? LINK.label + " · " : ""}${atTxt}${st.nav !== "IDLE" ? st.nav + " · " : ""}${st.rxok ? "RX " + (st.lq ? st.lq + "%" : "ok") : "Mất sóng RX"}`;
+  $("sVolt").textContent = st.bat.v ? st.bat.v.toFixed(1) + " V" : "—";
+  $("sBat").textContent = st.bat.cells ? `${st.bat.cells}S ${st.bat.pct}%` : "";
+  renderReady(st);
+  drawHorizon(st.att[0], st.att[1]);
+  if (shown("overview")) renderOverview(st);
+  // live chart buffers
+  for (let a = 0; a < 3; a++) {
+    S.live[a].push(st.rate[a]); S.live[a + 3].push(st.sp[a]);
+    if (S.live[a].length > 120) { S.live[a].shift(); S.live[a + 3].shift(); }
+  }
+  if (!$("tab-overview").hidden) {
+    const a = S.liveAxis;
+    plot($("liveChart"), [{ y: S.live[a + 3], color: "--amber", width: 2 }, { y: S.live[a], color: "--ink", width: 2 }], { xmin: 0, xmax: 119 });
+  }
+  if (st.perf && shown("system")) {
+    const [imu, filt, ahrs, pid, mot, total, worst, period, load] = st.perf;
+    const parts = [["Đọc IMU", imu], ["Bộ lọc gyro", filt], ["Tư thế (AHRS)", ahrs], ["PID + mixer", pid], ["Xuất motor", mot]];
+    setHtml($("perfBars"), parts.map(([n, v]) => `<div class="rc"><span style="min-width:96px">${n}</span><div class="track"><span style="left:0;width:${Math.min(100, period ? v / period * 100 : 0)}%;margin-left:0;border-radius:4px"></span></div><span class="num">${v.toFixed(1)} µs</span></div>`).join(""));
+    $("perfSum").textContent = period ? `Tổng ${total.toFixed(1)} µs / chu kỳ ${period.toFixed(0)} µs (tải ${load.toFixed(0)}%), vòng chậm nhất ${worst.toFixed(0)} µs, ${st.late} vòng trễ` : "Chưa có số liệu.";
+  }
+  if (st.tasks && shown("system"))
+    setHtml($("taskTable"), "<tr><th>Tác vụ</th><th class='r'>Hz</th><th class='r'>µs</th><th class='r'>Tối đa µs</th><th class='r'>Trễ</th><th class='r'>Stack trống</th></tr>" +
+      st.tasks.map((t) => `<tr><td>${t.n}</td><td class="r">${t.hz}</td><td class="r">${t.us}</td><td class="r">${t.max}</td><td class="r">${t.over}</td><td class="r${t.stk && t.stk < 512 ? " bad" : ""}">${t.stk ? t.stk + " B" : "—"}</td></tr>`).join(""));
+  if (shown("modes")) updateModes();
+  updateNav(st);
+  $("defPw").hidden = !st.defpw;
+  if (st.fw) {
+    $("fwVer").textContent = `${st.fw.version} (ô nhớ ${st.fw.slot})${st.fw.pending ? ", đang tự kiểm tra sau cập nhật" : ""}`;
+    $("otaPick").hidden = !st.fw.ota || LINK.open;
+    if (!st.fw.ota && !LINK.open) $("otaNote").textContent = "Board này không hỗ trợ cập nhật qua WiFi: nạp firmware bằng USB.";
+  }
+  if (st.ssid && document.activeElement !== $("secSsid") && !$("secSsid").dataset.touched) $("secSsid").value = st.ssid;
+  if (typeof extrasStatus === "function") extrasStatus(st);
+  if (st.log) $("logUse").textContent = st.log.cap ? `Log trên drone: ${(st.log.size / 1024).toFixed(0)} kB / ${(st.log.cap / 1048576).toFixed(1)} MB, ghi ${st.log.rate} Hz` : "Board này không có bộ nhớ log riêng.";
+}
+// ---- live status: WebSocket push (one connection, 10 Hz), HTTP polling as the fallback ----
+function linkState(up) {
+  if (up === S.linkOk) return;
+  S.linkOk = up;
+  $("sLink").classList.toggle("up", up);
+  if (!up) $("sSub").textContent = LINK.kind ? "Mất kết nối với FC qua USB." : "Mất kết nối với FC. Kiểm tra WiFi AllQuad-xxxx (drone đang bay thì WiFi tắt).";
+}
+function onStatus(st) {
+  S.lastStatusMs = Date.now();
+  // WebSocket frames leave out the slow fields 9 times out of 10: keep the last ones
+  if (st.full === false && S.status) st = Object.assign({}, S.status, st);
+  renderStatus(st);
+  linkState(true);
+  if (typeof proStatus === "function") proStatus(st);
+}
+async function pollStatus() {
+  if (S.ws || document.hidden || S.needLogin) { S.polling = false; return; }
+  S.polling = true;
+  try { onStatus(await api("/api/status", { timeout: 1500 })); } catch (e) { linkState(false); }
+  setTimeout(pollStatus, $("tab-overview").hidden && $("tab-nav").hidden ? 1000 : 250);
+}
+function startLive() {
+  if (LINK.open) { if (!S.polling) linkPoll(); return; }
+  if (document.hidden || S.ws || S.needLogin) return;
+  const base = window.AQ_BASE || location.origin;
+  if (window.AQ_MOCK || !/^https?:/.test(base) || !("WebSocket" in window) || S.wsFailed) {
+    if (!S.polling) pollStatus();
+    return;
+  }
+  let ws, got = false;
+  try { ws = new WebSocket(base.replace(/^http/, "ws") + "/ws"); } catch (e) { S.wsFailed = true; return startLive(); }
+  S.ws = ws;
+  ws.onopen = () => wsRate();
+  ws.onmessage = (ev) => { got = true; try { onStatus(JSON.parse(ev.data)); } catch (e) {} };
+  ws.onclose = () => {
+    S.ws = null;
+    if (!got) S.wsFailed = true;  // the server has no WebSocket: poll instead
+    linkState(false);
+    setTimeout(startLive, got ? 1000 : 0);
+  };
+  setTimeout(() => { if (!got && S.ws === ws) ws.close(); }, 3000);
+}
+// ---- login ----
+function showLogin() {
+  if (S.needLogin) return;
+  S.needLogin = true;
+  if (S.ws) { const w = S.ws; S.ws = null; w.onclose = null; w.close(); }
+  $("login").hidden = false;
+  setTimeout(() => $("loginPw").focus(), 50);
+}
+$("loginForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const err = $("loginErr");
+  err.hidden = true;
+  try {
+    await api("/api/login", { method: "POST", form: { pw: $("loginPw").value } });
+    $("loginPw").value = "";
+    $("login").hidden = true;
+    S.needLogin = false;
+    S.wsFailed = false;
+    loadParams();
+    startLive();
+  } catch (e) {
+    err.textContent = e.code === 429 ? "Sai quá nhiều lần. Đợi 30 giây rồi thử lại." : "Sai mật khẩu.";
+    err.hidden = false;
+  }
+};
+$("logoutBtn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } catch (e) {} showLogin(); };
+$("secForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const form = { ssid: $("secSsid").value, wifi: $("secWifi").value, cur: $("secCur").value };
+  if ($("secWeb").value) form.web = $("secWeb").value;
+  try {
+    await api("/api/wifi", { method: "POST", form });
+    ["secWifi", "secWeb", "secCur"].forEach((id) => { $(id).value = ""; });
+    if (LINK.open) { toast("Đã lưu. WiFi của drone khởi động lại với tên/mật khẩu mới."); return; }
+    toast("Đã lưu. WiFi đang khởi động lại: kết nối lại với tên/mật khẩu mới rồi đăng nhập.");
+    showLogin();  // every session was ended by the change
+  } catch (e) {
+    toast(e.code === 401 ? "Mật khẩu hiện tại không đúng." : e.code === 423 ? "Hãy disarm trước." : "Không lưu được: " + e.message);
+  }
+};
+
+// ---- backup / restore / firmware update ----
+$("backupBtn").onclick = async () => {
+  try {
+    const text = await api("/api/backup", { text: true, timeout: 5000 });
+    const a = document.createElement("a");
+    const d = new Date();
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    a.download = `allquad-backup-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) { if (e.code !== 401) toast("Không tải được file sao lưu."); }
+};
+$("restoreFile").onchange = async (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if (!f) return;
+  if (!confirm(`Khôi phục cấu hình từ "${f.name}"? Thiết lập hiện tại sẽ bị thay.`)) return;
+  const text = await f.text();
+  $("restoreMsg").textContent = "Đang gửi…";
+  try {
+    const j = await api("/api/restore", { method: "POST", upload: text, timeout: 10000,
+      progress: (d, n) => { $("restoreMsg").textContent = `Đang gửi… ${Math.round(d / n * 100)}%`; } });
+    $("restoreMsg").textContent = "Đã khôi phục: " + j.msg;
+    toast("Đã khôi phục và lưu. Khởi động lại nếu có tham số cần khởi động lại.");
+    if (typeof histBeforeLoad === "function") histBeforeLoad("Khôi phục từ " + f.name);
+    loadParams();
+    S.mission = null;
+  } catch (e) {
+    if (e.code === 401) return;
+    $("restoreMsg").textContent = e.code === 400 ? "Không khôi phục (không có gì thay đổi): " + e.message : "";
+    if (e.code !== 400) toast(e.code === 423 ? "Hãy disarm trước." : "Không gửi được file.");
+  }
+};
+$("otaFile").onchange = (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if (!f) return;
+  if (S.armed) return toast("Hãy disarm trước.");
+  if (!/\.bin$/i.test(f.name) || f.size < 65536) return toast("Đây không phải file firmware (.bin).");
+  if (!confirm(`Cập nhật firmware bằng "${f.name}" (${(f.size / 1048576).toFixed(2)} MB)? Drone sẽ khởi động lại.`)) return;
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", (window.AQ_BASE || "") + "/api/ota");
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
+  $("otaProg").hidden = false;
+  $("otaPick").classList.add("disabled");
+  xhr.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round(e.loaded / e.total * 100);
+    $("otaBar").style.width = pct + "%";
+    $("otaPct").textContent = pct + "%";
+  };
+  xhr.onload = () => {
+    let msg = "";
+    try { msg = JSON.parse(xhr.responseText).msg; } catch (e) {}
+    if (xhr.status === 401) return showLogin();
+    if (xhr.status === 200) {
+      toast("Đã ghi firmware. Drone đang khởi động lại, trang sẽ tự kết nối lại.");
+      $("otaNote").textContent = "Đang khởi động lại với firmware mới…";
+    } else {
+      toast("Cập nhật thất bại, firmware cũ vẫn giữ nguyên: " + msg);
+      $("otaProg").hidden = true;
+    }
+  };
+  xhr.onerror = () => { toast("Mất kết nối khi gửi firmware. Firmware cũ vẫn giữ nguyên."); $("otaProg").hidden = true; };
+  xhr.send(f);
+};
+
+// stale data watchdog (radio off in flight, phone left the WiFi)
+setInterval(() => { if (S.lastStatusMs && Date.now() - S.lastStatusMs > 2500) linkState(false); }, 1000);
+// nothing to show while the page is in the background: release the connection
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { if (S.ws) { const w = S.ws; S.ws = null; w.onclose = null; w.close(); } }
+  else startLive();
+});
+async function loadParams() {
+  try {
+    const j = await api("/api/params");
+    S.params = {};
+    S.order = [];
+    for (const p of j.params) { S.params[p.n] = { v: p.v, min: p.min, max: p.max, f: p.f === 1, r: p.r === 1 }; S.order.push(p.n); }
+    S.portMask = typeof j.ports === "number" ? j.ports : 0x0F;  // older firmware: UART1-3 + UDP
+    S.sd = j.sd || { modes: 0, fixed: true, def: [] };  // SD card modes / wiring of this board
+    buildPid();
+  } catch (e) {
+    if (e.code !== 401) setTimeout(loadParams, 2000);  // after a login, the form reloads them
+  }
+}
+
+// ---------------------------------------------------------------- blackbox
+function loadLog(buf) {
+  if (!window.AQ) { toast("Thiếu module phân tích."); return; }
+  S.flights = AQ.decode(buf);
+  const sel = $("bbFlight");
+  if (!S.flights.length) { $("bbInfo").textContent = "Không tìm thấy chuyến bay nào trong log."; $("bbResults").hidden = true; sel.hidden = true; return; }
+  sel.innerHTML = S.flights.map((f, i) => `<option value="${i}">Chuyến ${i + 1}: ${f.duration.toFixed(0)} s, ${f.rateHz} Hz</option>`).join("");
+  sel.hidden = S.flights.length < 2;
+  sel.value = String(S.flights.length - 1);
+  analyzeFlight(S.flights.length - 1);
+}
+function analyzeFlight(i) {
+  const fl = S.flights[i];
+  S.flight = fl;
+  const t0 = performance.now();
+  S.analysis = AQ.analyze(fl);
+  const pv = {};
+  for (const n of S.order) pv[n] = val(n);
+  // the log header records the PIDs that were flown; prefer those as the base for suggestions
+  for (const a of AXES) if (fl.pid[a]) { pv[a + "_p"] = fl.pid[a].p; pv[a + "_i"] = fl.pid[a].i; pv[a + "_d"] = fl.pid[a].d; pv[a + "_f"] = fl.pid[a].f; }
+  S.sugs = AQ.suggest(S.analysis, pv);
+  $("bbInfo").textContent = `Chuyến ${i + 1}: ${fl.duration.toFixed(1)} s, ${fl.n} mẫu ở ${fl.rateHz} Hz, phân tích trong ${(performance.now() - t0).toFixed(0)} ms. PID lúc bay: ` +
+    AXES.map((a) => (fl.pid[a] ? `${a} ${fl.pid[a].p}/${fl.pid[a].i}/${fl.pid[a].d}/${fl.pid[a].f}` : "")).join(", ");
+  $("bbResults").hidden = false;
+  // open the time view on the first stick snap instead of the take-off
+  let first = fl.sp[0].findIndex((v, k) => Math.abs(v) > 100 || Math.abs(fl.sp[1][k]) > 100);
+  if (first < 0) first = 0;
+  $("tsZoom").value = Math.max(1, Math.min(100, Math.round(300 / fl.duration)));
+  const span = fl.duration * (+$("tsZoom").value / 100);
+  $("tsPos").value = fl.duration > span ? Math.round(Math.max(0, fl.t[first] - fl.t[0] - 0.3) / (fl.duration - span) * 1000) : 0;
+  renderSuggestions();
+  drawBlackbox();
+}
+// one merged, bounded plan from all suggestions: tick what to take, it goes to the pending changes
+function planLabel(n) {
+  const m = n.match(/^(roll|pitch|yaw)_([pidf])$/);
+  if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2].toUpperCase()}`;
+  return HINT[n] ? splitHint(HINT[n])[0] : n;
+}
+// ESC telemetry of the flight (frames 0xA7): one row per motor
+function escTable(e) {
+  if (!e || (!e.haveRpm && !e.haveTemp)) return "";
+  const k = e.rpmPerCmd, ok = k.every((v) => v), avg = ok ? k.reduce((a, b) => a + b, 0) / 4 : 0;
+  const rows = [0, 1, 2, 3].map((m) => {
+    const dev = ok ? (k[m] / avg - 1) * 100 : null;
+    const t = e.tempMax[m];
+    return `<tr><td><b>M${m + 1}</b></td><td class="r">${e.rpmMax[m] ? Math.round(e.rpmMax[m]).toLocaleString("vi") : "—"}</td>` +
+      `<td class="r${dev !== null && dev < -8 ? " bad" : ""}">${dev === null ? "—" : (dev >= 0 ? "+" : "") + dev.toFixed(1) + "%"}</td>` +
+      `<td class="r${t !== null && t >= 80 ? " bad" : ""}">${t === null ? "—" : t.toFixed(0) + " °C"}</td></tr>`;
+  }).join("");
+  return `<div class="panel"><div class="card-h"><span class="dot"></span><h3>ESC trong chuyến bay</h3></div>
+    <p class="card-d">Từ telemetry ESC trong log. "Hiệu suất" so vòng quay trên mỗi % ga khi bay êm với trung bình 4 motor: âm nhiều (dưới −8%) là motor yếu, cánh hỏng hoặc bạc đạn kẹt.</p>
+    <table><tr><th>Motor</th><th class="r">RPM cao nhất</th><th class="r">Hiệu suất</th><th class="r">Nhiệt cao nhất</th></tr>${rows}</table></div>`;
+}
+function renderPlan() {
+  let host = $("bbPlan");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "bbPlan";
+    $("bbSuggest").before(host);
+  }
+  const lim = {};
+  for (const n of S.order) lim[n] = { min: S.params[n].min, max: S.params[n].max };
+  const base = {};
+  for (const n of S.order) base[n] = val(n);
+  const fl = S.flight;
+  for (const a of AXES) if (fl && fl.pid[a]) Object.assign(base, { [a + "_p"]: fl.pid[a].p, [a + "_i"]: fl.pid[a].i, [a + "_d"]: fl.pid[a].d, [a + "_f"]: fl.pid[a].f });
+  S.plan = AQ.plan(S.sugs, base, lim);
+  const res = S.analysis, r1 = (v) => (v == null ? "—" : v.toFixed(1));
+  const facts = [];
+  res.axes.forEach((a) => { if (a.name !== "yaw") facts.push(`${a.name}: trễ ${a.lagMs == null ? "—" : a.lagMs.toFixed(0) + " ms"}, prop wash ×${r1(a.propwash)}`); });
+  if (res.motorMean) facts.push("motor " + res.motorMean.map((m) => (m * 100).toFixed(0) + "%").join("/"));
+  if (res.resistance != null) facts.push(`pin ${(res.resistance * 1000).toFixed(0)} mΩ, sụt ${res.sagV.toFixed(1)} V`);
+  const changedSince = S.plan.some((p) => Math.abs(val(p.name) - p.from) > 1e-6);
+  host.innerHTML = `<div class="panel" style="margin-top:0"><div class="card-h"><span class="dot"></span><h3>Kế hoạch chỉnh từ chuyến bay này</h3></div>
+    <p class="card-d">Gộp mọi gợi ý bên dưới thành một bộ thay đổi, mỗi tham số đổi tối đa ±25% một lần: chỉnh từng bước, bay lại, phân tích lại.${changedSince ? " <b>Lưu ý:</b> một số tham số đã khác lúc bay; giá trị đề xuất tính từ giá trị lúc bay." : ""}</p>
+    <p class="muted num" style="font-size:.8rem;margin:0 0 8px">${facts.join(" · ")}</p>
+    ${S.plan.length ? `<div style="overflow-x:auto"><table class="ports"><tr><th></th><th>Tham số</th><th>Lúc bay</th><th>Đề xuất</th><th>Vì sao</th></tr>
+      ${S.plan.map((p, i) => {
+        const pct = p.from ? ` <span class="muted">(${p.to > p.from ? "+" : ""}${Math.round((p.to / p.from - 1) * 100)}%)</span>` : "";
+        return `<tr><td><input type="checkbox" data-pl="${i}" checked></td><td><b>${esc(planLabel(p.name))}</b><div class="hint"><code>${p.name}</code></div></td>
+          <td class="num">${fmt(p.name, p.from)}</td><td class="num"><b>${fmt(p.name, p.to)}</b>${pct}</td><td class="muted" style="font-size:.82rem">${p.reasons.map(esc).join("<br>")}</td></tr>`;
+      }).join("")}</table></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="planTake">Đưa các mục đã chọn vào hàng chờ</button><span class="muted">Sau đó bấm Áp dụng, bay thử, rồi phân tích log mới.</span></div>`
+      : '<p class="muted" style="margin:0">Không có thay đổi nào cần làm từ log này.</p>'}</div>` + escTable(res.esc);
+  if (S.plan.length) $("planTake").onclick = () => {
+    let n = 0;
+    host.querySelectorAll("[data-pl]").forEach((c) => { if (c.checked) { const p = S.plan[+c.dataset.pl]; setEdit(p.name, p.to); n++; } });
+    toast(n ? `${n} thay đổi đang chờ: bấm Áp dụng ở thanh dưới.` : "Chưa chọn mục nào.");
+  };
+}
+function renderSuggestions() {
+  renderPlan();
+  const host = $("bbSuggest");
+  host.innerHTML = "";
+  S.sugs.forEach((s) => {
+    const d = document.createElement("div");
+    d.className = "sug";
+    const ch = Object.entries(s.changes);
+    const axisLabel = s.axis === "all" ? "" : s.axis[0].toUpperCase() + s.axis.slice(1) + ": ";
+    d.innerHTML = `<div class="bar ${s.axis}"></div><div><h4>${axisLabel}${s.title}</h4><p class="muted" style="margin:2px 0">${s.detail}</p>${ch.length ? `<div class="change">${ch.map(([k, v]) => `${k} ${S.params[k] ? fmt(k, val(k)) : "?"} ▸ ${v}`).join(", ")}</div>` : ""}</div>`;
+    if (ch.length) {
+      const b = document.createElement("button");
+      b.className = "btn";
+      const done = ch.every(([k, v]) => S.params[k] && Math.abs(val(k) - v) < 1e-6);
+      b.textContent = done ? "Đã dùng" : "Dùng gợi ý";
+      b.disabled = done;
+      b.onclick = () => { ch.forEach(([k, v]) => setEdit(k, v)); toast("Đã đưa vào thay đổi chờ. Bấm Áp dụng ở thanh dưới."); };
+      d.appendChild(b);
+    } else d.appendChild(document.createElement("span"));
+    host.appendChild(d);
+  });
+}
+function drawBlackbox() {
+  if (!S.analysis || $("tab-blackbox").hidden) return;
+  const res = S.analysis, fl = S.flight;
+  // step responses
+  const ss = [], leg = [];
+  res.axes.forEach((ax, k) => {
+    if (!ax.step) { leg.push(`<span>${AXES[k]}: chưa đủ dữ liệu</span>`); return; }
+    ss.push({ x: ax.step.t, y: ax.step.y, color: AXCOL[k], width: 2.2 });
+    leg.push(`<span><i style="background:var(${AXCOL[k]})"></i>${AXES[k]}: vọt lố ${(ax.step.overshoot * 100).toFixed(0)}%, lên 90% sau ${ax.step.riseMs ?? "—"} ms</span>`);
+  });
+  if (typeof bbRefSeries === "function") { const r = bbRefSeries(); if (r.length) { ss.unshift(...r); leg.push('<span class="muted">đứt nét: chuyến mốc</span>'); } }
+  plot($("stepChart"), ss, { xmin: 0, xmax: 500, ymin: 0, ymax: 1.6, hline: 1, xunit: " ms" });
+  $("stepLegend").innerHTML = leg.join("");
+  // spectrum
+  const ax = res.axes[S.specAxis];
+  plot($("specChart"), [
+    { x: ax.specRaw.f, y: ax.specRaw.amp, color: "--ink-2", width: 1.4 },
+    { x: ax.specFilt.f, y: ax.specFilt.amp, color: "--ink", width: 2 },
+    { x: ax.specD.f, y: ax.specD.amp.map((v) => v / 10), color: "--yaw", width: 1.4 },
+  ], { xmin: 0, ymin: 0, xunit: " Hz" });
+  drawTimeSeries();
+  if (typeof bbCompareRender === "function") bbCompareRender();
+}
+function drawTimeSeries() {
+  const fl = S.flight;
+  if (!fl) return;
+  const a = S.tsAxis;
+  const span = fl.duration * (+$("tsZoom").value / 100);
+  const t0 = fl.t[0] + (fl.duration - span) * (+$("tsPos").value / 1000);
+  const t = Array.from(fl.t, (v) => v - fl.t[0]);
+  const xmin = t0 - fl.t[0], xmax = xmin + span;
+  plot($("tsChart"), [
+    { x: t, y: fl.sp[a], color: "--amber", width: 2 },
+    { x: t, y: fl.gyro[a], color: "--ink", width: 1.6 },
+    { x: t, y: fl.P[a], color: "--roll", width: 1 },
+    { x: t, y: fl.I[a], color: "--pitch", width: 1 },
+    { x: t, y: fl.D[a], color: "--yaw", width: 1 },
+  ], { xmin, xmax, xunit: " s" });
+  plot($("motorChart"), [0, 1, 2, 3].map((m) => ({ x: t, y: fl.motor[m], color: ["--roll", "--pitch", "--yaw", "--ink-2"][m], width: 1.2 }))
+    .concat([{ x: t, y: fl.thr, color: "--ink", width: 2 }]), { xmin, xmax, ymin: 0, ymax: 1, xunit: " s" });
+}
+$("bbDownload").onclick = async () => {
+  const b = $("bbDownload");
+  b.disabled = true;
+  b.textContent = "Đang tải…";
+  const t0 = Date.now();
+  const progress = (d, n) => {
+    const left = d > 0 ? (Date.now() - t0) / d * (n - d) / 1000 : 0;
+    b.textContent = `Đang tải… ${Math.round(d / n * 100)}%${left > 3 ? `, còn ~${left.toFixed(0)} s` : ""}`;
+  };
+  try { loadLog(await api("/api/blackbox", { binary: true, timeout: 60000, progress })); }
+  catch (e) { toast(S.armed ? "Hãy disarm trước khi tải log." : "Không tải được log: " + e.message); }
+  b.disabled = false;
+  b.textContent = "Tải log từ drone";
+};
+$("bbFile").onchange = async (e) => { const f = e.target.files[0]; if (f) loadLog(await f.arrayBuffer()); };
+$("bbFlight").onchange = (e) => analyzeFlight(+e.target.value);
+$("tsPos").oninput = drawTimeSeries;
+$("tsZoom").oninput = drawTimeSeries;
+
+// ---------------------------------------------------------------- segmented controls, tabs, commands
+function segment(id, key, after) {
+  $(id).querySelectorAll("button").forEach((b) => b.onclick = () => {
+    $(id).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    S[key] = +b.dataset.a;
+    after();
+  });
+}
+segment("liveAxis", "liveAxis", () => {});
+segment("specAxis", "specAxis", drawBlackbox);
+segment("tsAxis", "tsAxis", drawTimeSeries);
+document.querySelectorAll("nav.tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("nav.tabs button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+  document.querySelectorAll("main > section").forEach((s) => { s.hidden = s.id !== "tab-" + b.dataset.tab; });
+  window.scrollTo(0, 0);
+  drawRates(); drawFilters(); drawBlackbox();
+  if (S.status) renderStatus(S.status);
+  if (b.dataset.tab === "nav") { if (!S.mission) loadMission(); drawNav(); }
+  if (typeof onTabShown === "function") onTabShown(b.dataset.tab);
+  if (typeof extrasTabShown === "function") extrasTabShown(b.dataset.tab);
+  if (typeof proTabShown === "function") proTabShown(b.dataset.tab);
+  buildJump($("tab-" + b.dataset.tab));
+  wsRate();
+});
+// tabs with live graphs / sticks / motors get 10 Hz from the drone, the rest 2 Hz (less WiFi, less CPU)
+const FAST_TABS = ["overview", "setup", "nav", "motors", "sensors", "modes"];
+function wsRate() {
+  const cur = document.querySelector('nav.tabs [aria-selected="true"]');
+  const fast = !cur || FAST_TABS.includes(cur.dataset.tab);
+  try { if (S.ws && S.ws.readyState === 1) S.ws.send(fast ? "r10" : "r2"); } catch (e) {}
+}
+// in-page shortcuts for long tabs: one pill per heading, the pill of the heading in view is lit
+let jumpObs = null;
+function buildJump(sec) {
+  if (!sec) return;
+  sec.querySelector(".jump")?.remove();
+  if (jumpObs) jumpObs.disconnect();
+  const hs = [...sec.querySelectorAll(":scope > h2")];
+  if (hs.length < 3) return;
+  const nav = document.createElement("nav");
+  nav.className = "jump";
+  nav.setAttribute("aria-label", "Đi tới");
+  hs.forEach((h, i) => {
+    h.id = h.id || `${sec.id}-h${i}`;
+    const a = document.createElement("a");
+    a.href = "#" + h.id;
+    a.textContent = h.dataset.j || h.textContent;
+    a.onclick = (e) => { e.preventDefault(); h.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); };
+    nav.appendChild(a);
+  });
+  sec.insertBefore(nav, sec.firstChild);
+  const links = [...nav.children];
+  if (!("IntersectionObserver" in window)) return;
+  jumpObs = new IntersectionObserver((ents) => {
+    for (const e of ents) if (e.isIntersecting) links.forEach((a) => a.classList.toggle("on", a.hash === "#" + e.target.id));
+  }, { rootMargin: "-20% 0px -70% 0px" });
+  hs.forEach((h) => jumpObs.observe(h));
+  links[0].classList.add("on");
+}
+function stripHeight() { document.documentElement.style.setProperty("--sh", document.querySelector(".strip").offsetHeight + "px"); }
+stripHeight();
+const CMD_DONE = { calib_acc: "Đang hiệu chuẩn accel, giữ drone phẳng.", calib_mag: "Xoay drone theo mọi hướng trong 30 giây.", calib_gyro: "Đang hiệu chuẩn gyro, giữ yên.", bb_erase: "Đang xoá log trong nền (khoảng 25 giây, chưa arm được đến khi xong).", reboot: "FC đang khởi động lại.", defaults: "Đã nạp mặc định (chưa lưu)." };
+document.querySelectorAll("[data-cmd]").forEach((b) => b.onclick = async () => {
+  const c = b.dataset.cmd;
+  if ((c === "defaults" || c === "bb_erase") && !confirm(c === "defaults" ? "Đưa mọi tham số về mặc định?" : "Xoá toàn bộ log trên drone?")) return;
+  try { await api("/api/cmd?c=" + c, { method: "POST" }); toast(CMD_DONE[c] || "Xong"); if (c === "defaults") { if (typeof histBeforeLoad === "function") histBeforeLoad("Nạp mặc định"); loadParams(); } }
+  catch (e) { toast(e.code === 423 ? "Hãy disarm trước." : "Lỗi: " + e.message); }
+});
+$("saveBtn").onclick = async () => {
+  if (Object.keys(S.edits).length) await applyEdits();
+  try { await api("/api/save", { method: "POST" }); toast("Đã lưu vào flash."); }
+  catch (e) { toast(e.code === 423 ? "Hãy disarm trước khi lưu." : "Không lưu được: " + e.message); }
+};
+$("applyBtn").onclick = applyEdits;
+$("discardBtn").onclick = () => {
+  const names = Object.keys(S.edits);
+  S.edits = {};
+  names.forEach((n) => setEdit(n, S.params[n].v));
+  refreshApplyBar();
+};
+$("themeBtn").onclick = () => {
+  const r = document.documentElement;
+  const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("aq-theme", r.dataset.theme); } catch (e) {}
+  drawRates(); drawFilters(); drawBlackbox();
+};
+try { const t = localStorage.getItem("aq-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+window.addEventListener("resize", () => { stripHeight(); drawRates(); drawFilters(); drawBlackbox(); drawNav(); });
+$("secSsid").oninput = () => { $("secSsid").dataset.touched = "1"; };
+/*TOOLS_JS*/
+/*EXTRAS_JS*/
+/*PRO_JS*/
+// opened from a file or the laptop launcher (?usb): connect over USB; served by the drone: WiFi
+// the laptop / phone copy (AllQuad-Configurator.html carries the demo firmware) also when hosted on https
+if (location.protocol === "file:" || /[?&]usb\b/.test(location.search) || typeof window.AQ_DEMO_WASM === "string") showConnect();
+else { loadParams(); startLive(); }
+</script>
+</body>
+</html>

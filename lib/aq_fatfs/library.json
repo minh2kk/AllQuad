@@ -1,0 +1,10 @@
+{
+  "name": "aq_fatfs",
+  "version": "0.15.0",
+  "platforms": "ststm32",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src",
+    "flags": ["-Wno-unused-parameter"]
+  }
+}

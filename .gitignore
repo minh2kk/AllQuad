@@ -1,0 +1,14 @@
+# build output
+.pio/
+build/
+node_modules/
+__pycache__/
+*.pyc
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# local secrets (never commit WiFi passwords or tokens)
+*.local
+secrets*.h
