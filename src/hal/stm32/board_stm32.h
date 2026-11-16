@@ -94,3 +94,4 @@
 #define AQ_PRIO_LOOP_TIM 5
 #define AQ_PRIO_EXTI 5
 #define AQ_PRIO_USB 6
+#define AQ_PRIO_SD 7     // SDMMC1 (DMA completion only)

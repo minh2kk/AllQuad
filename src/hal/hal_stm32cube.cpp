@@ -19,6 +19,7 @@
 
 #include "../common/cycles.h"
 #include "../common/math3d.h"
+#include "ee_ab.h"
 #include "board.h"
 #include "dshot_codec.h"
 #include "hal.h"
@@ -96,23 +97,7 @@ int imuIntPin() {
   return -1;
 #endif
 }
-int resetReason() {
-  static int r = -1;
-  if (r < 0) {
-#if defined(STM32H7xx)
-    uint32_t f = RCC->RSR;
-    r = (f & RCC_RSR_BORRSTF) ? 9 : (f & (RCC_RSR_IWDG1RSTF | RCC_RSR_WWDG1RSTF)) ? 6 : (f & RCC_RSR_SFTRSTF) ? 3
-      : (f & RCC_RSR_PORRSTF) ? 1 : 0;
-    RCC->RSR |= RCC_RSR_RMVF;
-#else
-    uint32_t f = RCC->CSR;
-    r = (f & RCC_CSR_BORRSTF) ? 9 : (f & (RCC_CSR_IWDGRSTF | RCC_CSR_WWDGRSTF)) ? 6 : (f & RCC_CSR_SFTRSTF) ? 3
-      : (f & RCC_CSR_PORRSTF) ? 1 : 0;
-    RCC->CSR |= RCC_CSR_RMVF;
-#endif
-  }
-  return r;
-}
+int resetReason() { return stm32::bootResetReason(); }  // flags read (and cleared) once in main()
 static const char* pinName(int p, char* b) {
   if (p < 0) { strcpy(b, "-"); return b; }
   snprintf(b, 6, "P%c%d", 'A' + (p >> 4), p & 15);
@@ -159,7 +144,7 @@ struct Uart {
   uint8_t rxb[URX];
   uint8_t txb[UTX];
   volatile uint32_t rh = 0, rt = 0, th = 0, tt = 0;
-  volatile uint32_t overruns = 0;
+  volatile uint32_t overruns = 0, framing = 0, noise = 0, dropped = 0, rxBytes = 0, txBytes = 0;
 };
 Uart uarts[5];
 
@@ -243,14 +228,18 @@ inline void uartIrq(USART_TypeDef* r) {
   if (sr & (USART_SR_RXNE | USART_SR_ORE | USART_SR_FE | USART_SR_NE | USART_SR_PE)) {
     uint8_t c = (uint8_t)r->DR;  // SR then DR read clears every error flag
     if (sr & USART_SR_ORE) u->overruns = u->overruns + 1;
+    if (sr & USART_SR_FE) u->framing = u->framing + 1;
+    if (sr & (USART_SR_NE | USART_SR_PE)) u->noise = u->noise + 1;
     if (sr & USART_SR_RXNE) {
+      u->rxBytes = u->rxBytes + 1;
       uint32_t n = (u->rh + 1) % URX;
       if (n != u->rt) { u->rxb[u->rh] = c; u->rh = n; }
-      else u->overruns = u->overruns + 1;
+      else u->dropped = u->dropped + 1;
     }
   }
   if ((r->CR1 & USART_CR1_TXEIE) && (sr & USART_SR_TXE)) {
     if (u->tt != u->th) {
+      u->txBytes = u->txBytes + 1;
       r->DR = u->txb[u->tt];
       u->tt = (u->tt + 1) % UTX;
     } else {
@@ -266,15 +255,19 @@ inline void uartIrq(USART_TypeDef* r) {
     r->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NCF | USART_ICR_PECF;
 #endif
     if (isr & USART_ISR_ORE) u->overruns = u->overruns + 1;
+    if (isr & USART_ISR_FE) u->framing = u->framing + 1;
+    if (isr & (USART_ISR_NE | USART_ISR_PE)) u->noise = u->noise + 1;
   }
   if (isr & AQ_ISR_RXNE) {
     uint8_t c = (uint8_t)r->RDR;
+    u->rxBytes = u->rxBytes + 1;
     uint32_t n = (u->rh + 1) % URX;
     if (n != u->rt) { u->rxb[u->rh] = c; u->rh = n; }
-    else u->overruns = u->overruns + 1;
+    else u->dropped = u->dropped + 1;
   }
   if ((r->CR1 & AQ_CR1_TXEIE) && (isr & AQ_ISR_TXE)) {
     if (u->tt != u->th) {
+      u->txBytes = u->txBytes + 1;
       r->TDR = u->txb[u->tt];
       u->tt = (u->tt + 1) % UTX;
     } else {
@@ -306,6 +299,7 @@ static void uartOpen(Uart* u, uint32_t baud, UartFormat fmt, bool inverted) {
   r->CR1 = 0;
   u->rh = u->rt = 0;
   u->th = u->tt = 0;
+  u->overruns = u->framing = u->noise = u->dropped = u->rxBytes = u->txBytes = 0;
   // RX idles high (pull-up keeps an unplugged receiver quiet); inverted (SBUS): idles low
   gpio::config(u->rx, gpio::AF, inverted ? gpio::DOWN : gpio::UP, false, 2, u->af);
   gpio::config(u->tx, gpio::AF, gpio::NOPULL, false, 2, u->af);
@@ -386,6 +380,14 @@ size_t portWrite(Port p, const uint8_t* d, size_t n) {
     irqRestore(s);
   }
   return done;
+}
+
+bool portStats(Port p, PortStats& o) {
+  Uart* u = uartOf(p);
+  if (!u || !u->open) return false;
+  o.rxBytes = u->rxBytes; o.txBytes = u->txBytes; o.overruns = u->overruns;
+  o.framing = u->framing; o.noise = u->noise; o.dropped = u->dropped;
+  return true;
 }
 
 size_t portWriteSpace(Port p) {
@@ -960,30 +962,44 @@ void rebootToBootloader() {
 }
 void markFastLoopDone() {}
 
-// ============================================================ storage (last 8 kB of the last sector)
-// settings 0-2047, rally 2048 (328 B), fence 2560 (520 B), mission 3584 (120 waypoints, 3856 B)
-static constexpr uint32_t EE_SIZE = 8192;
+// ============================================================ storage (8 kB images at the end of a sector)
+// Image layout: settings 0-2047, rally 2048 (328 B), fence 2560 (520 B), mission 3584 (120 waypoints,
+// 3856 B), WiFi 7600 (172 B), footer 8176-8191 {magic, sequence, crc32 of 0-8175, ~magic}.
+// H743 and F405 keep two copies in two sectors (A/B): a save erases and writes the copy that is NOT in
+// use, so a power loss during the 1-2 s erase / program leaves the previous settings intact; the valid
+// copy with the newest sequence is used. F722 / F411 have no spare sector (one copy, as before).
+// An image written before the footer existed is read as it is (copy A) and the first save goes to B.
+static constexpr uint32_t EE_SIZE = ee::SIZE, EE_FOOT = ee::FOOT;
+struct EeCopy { uint32_t addr, sector; };
 #if defined(STM32H7xx)
-static constexpr uint32_t EE_SECTOR_BASE = 0x081E0000u;  // bank 2 sector 7
-static constexpr uint32_t EE_ADDR = 0x081FE000u;
+static const EeCopy EE[] = {{0x081FE000u, 7}, {0x081DE000u, 6}};  // bank 2 sectors 7, 6 (blackbox: 0-5)
 #elif defined(STM32F405xx)
-static constexpr uint32_t EE_SECTOR_BASE = 0x080E0000u;  // sector 11
-static constexpr uint32_t EE_ADDR = 0x080FE000u;
+static const EeCopy EE[] = {{0x080FE000u, FLASH_SECTOR_11}, {0x080DE000u, FLASH_SECTOR_10}};  // firmware <= 768 kB
 #else  // F722 / F411: 512 kB, sector 7
-static constexpr uint32_t EE_SECTOR_BASE = 0x08060000u;
-static constexpr uint32_t EE_ADDR = 0x0807E000u;
+static const EeCopy EE[] = {{0x0807E000u, FLASH_SECTOR_7}};
 #endif
-// the sector image is only needed while saving: taken from the heap for that moment (8 kB of RAM
-// would otherwise stay reserved for a few saves per flight session)
+static constexpr int EE_COPIES = (int)(sizeof(EE) / sizeof(EE[0]));
+static int eeActive = -1;         // copy in use (-1: not chosen yet)
+static uint32_t eeSeq = 0;        // its sequence number (0: image without footer)
+static volatile bool eeWriting = false;  // a save is erasing / programming (blackbox waits)
+
 static size_t slotOffset(Slot s) {
   return s == Slot::CONFIG ? 0 : s == Slot::RALLY ? 2048 : s == Slot::FENCE ? 2560 : s == Slot::MISSION ? 3584 : 7600;
 }
 static void eeInvalidate() {
 #if defined(STM32H7xx)
-  SCB_InvalidateDCache_by_Addr((uint32_t*)EE_ADDR, (int32_t)EE_SIZE);
+  for (const EeCopy& c : EE) SCB_InvalidateDCache_by_Addr((uint32_t*)c.addr, (int32_t)EE_SIZE);
 #endif
 }
-static bool eeFlush(const uint8_t* img) {
+static void eeChoose() {
+  if (eeActive >= 0) return;
+  eeInvalidate();
+  const uint8_t* c[EE_COPIES];
+  for (int i = 0; i < EE_COPIES; i++) c[i] = (const uint8_t*)EE[i].addr;
+  eeActive = ee::pick(c, EE_COPIES, eeSeq);
+}
+static bool eeFlush(const uint8_t* img, int copy) {
+  const EeCopy& c = EE[copy];
   HAL_FLASH_Unlock();
 #if defined(STM32H7xx)
   __HAL_FLASH_CLEAR_FLAG_BANK2(FLASH_FLAG_ALL_ERRORS_BANK2);
@@ -999,24 +1015,20 @@ static bool eeFlush(const uint8_t* img) {
   er.TypeErase = FLASH_TYPEERASE_SECTORS;
 #if defined(STM32H7xx)
   er.Banks = FLASH_BANK_2;
-  er.Sector = 7;
-#elif defined(STM32F405xx)
-  er.Sector = FLASH_SECTOR_11;
-#else
-  er.Sector = FLASH_SECTOR_7;
 #endif
+  er.Sector = c.sector;
   er.NbSectors = 1;
   er.VoltageRange = FLASH_VOLTAGE_RANGE_3;
-  (void)EE_SECTOR_BASE;
+  stm32::watchdogFlashErase();  // F4 / F7: the CPU stalls for the whole erase (1-2 s, up to 4 s)
   bool ok = HAL_FLASHEx_Erase(&er, &bad) == HAL_OK;
 #if defined(STM32H7xx)
   for (uint32_t o = 0; ok && o < EE_SIZE; o += 32)
-    ok = HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, EE_ADDR + o, (uint32_t)(img + o)) == HAL_OK;
+    ok = HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, c.addr + o, (uint32_t)(img + o)) == HAL_OK;
 #else
   for (uint32_t o = 0; ok && o < EE_SIZE; o += 4) {
     uint32_t w;
     memcpy(&w, img + o, 4);
-    if (w != 0xFFFFFFFFu) ok = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, EE_ADDR + o, w) == HAL_OK;
+    if (w != 0xFFFFFFFFu) ok = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, c.addr + o, w) == HAL_OK;
   }
 #endif
   HAL_FLASH_Lock();
@@ -1025,24 +1037,51 @@ static bool eeFlush(const uint8_t* img) {
 }
 bool storageLoad(Slot s, void* data, size_t len) {
   size_t off = slotOffset(s);
-  if (off + len > EE_SIZE) return false;
+  if (off + len > EE_FOOT) return false;
+  eeChoose();
   eeInvalidate();
-  memcpy(data, (const void*)(EE_ADDR + off), len);
+  memcpy(data, (const void*)(EE[eeActive].addr + off), len);
   return true;
 }
 bool storageSave(Slot s, const void* data, size_t len) {
   size_t off = slotOffset(s);
-  if (off + len > EE_SIZE) return false;
+  if (off + len > EE_FOOT) return false;
+  // one save at a time (CLI, web, deferred save from the control task)
+  taskENTER_CRITICAL();
+  bool busy = eeWriting;
+  eeWriting = true;
+  taskEXIT_CRITICAL();
+  if (busy) return false;
+  eeChoose();
   eeInvalidate();
-  if (!memcmp((const void*)(EE_ADDR + off), data, len)) return true;  // unchanged: no flash wear
-  uint8_t* img = (uint8_t*)pvPortMalloc(EE_SIZE + 32);
-  if (!img) return false;
-  uint8_t* a = (uint8_t*)(((uintptr_t)img + 31) & ~(uintptr_t)31);  // H7 flash words: 32-byte aligned source
-  memcpy(a, (const void*)EE_ADDR, EE_SIZE);
-  memcpy(a + off, data, len);
-  bool ok = eeFlush(a);
-  vPortFree(img);
+  const uint8_t* cur = (const uint8_t*)EE[eeActive].addr;
+  bool ok = true;
+  if (memcmp(cur + off, data, len)) {  // unchanged: no flash wear
+    uint8_t* img = (uint8_t*)pvPortMalloc(EE_SIZE + 32);
+    if (!img) ok = false;
+    else {
+      uint8_t* a = (uint8_t*)(((uintptr_t)img + 31) & ~(uintptr_t)31);  // H7 flash words: 32-byte aligned source
+      memcpy(a, cur, EE_SIZE);
+      memcpy(a + off, data, len);
+      uint32_t seq;
+      int target = ee::seal(a, eeActive, eeSeq, EE_COPIES, seq);
+      ok = eeFlush(a, target);
+      uint32_t back = 0;  // read back: the copy must check out before it is used
+      ok = ok && ee::valid((const uint8_t*)EE[target].addr, back) && back == seq && !memcmp((const void*)EE[target].addr, a, EE_SIZE);
+      if (ok) { eeActive = target; eeSeq = seq; }
+      else if (EE_COPIES == 1) eeActive = -1;  // choose again (the only copy may be half written)
+      vPortFree(img);
+    }
+  }
+  eeWriting = false;
   return ok;
+}
+// which copy is in use (CLI "status" / selftest): copy index, its sequence, number of copies
+void storageInfo(int& copy, uint32_t& seq, int& copies) {
+  eeChoose();
+  copy = eeActive;
+  seq = eeSeq;
+  copies = EE_COPIES;
 }
 
 // ============================================================ motors
@@ -1421,12 +1460,12 @@ void ledStripShow(const uint8_t*, uint8_t) {}
 
 // ============================================================ blackbox in the internal flash (H7 bank 2)
 #if defined(AQ_HAS_FLASH_LOG) && defined(STM32H7xx) && defined(FLASH_BANK_2)
-// Sectors 0-6 of bank 2 (896 kB); the settings own sector 7. Programming / erasing bank 2 does not
+// Sectors 0-5 of bank 2 (768 kB); the settings own sectors 6 and 7 (two copies). Programming / erasing bank 2 does not
 // stall code fetches from bank 1. 32-byte flash words, each programmed once (ECC); a tail < 32 bytes
 // waits in RAM. Erase: one 128 kB sector at a time, started by register and polled (never blocks).
 static constexpr uint32_t BB_BASE = 0x08100000u;
 static constexpr uint32_t BB_SECTOR = 128u * 1024u;
-static constexpr uint32_t BB_SECTORS = 7;
+static constexpr uint32_t BB_SECTORS = 6;
 static constexpr uint32_t BB_SIZE = BB_SECTOR * BB_SECTORS;
 alignas(32) static uint8_t bbWord[32];
 static size_t bbFill = 0;
@@ -1478,6 +1517,7 @@ size_t logWrite(const uint8_t* d, size_t n) {
     bbFill += k;
     done += k;
     if (bbFill == 32) {
+      if (eeWriting) { bbFill -= k; return done - k; }  // a settings save owns bank 2 for now
       HAL_FLASH_Unlock();
       bool ok = HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, BB_BASE + bbEnd, (uint32_t)bbWord) == HAL_OK;
       HAL_FLASH_Lock();
@@ -1512,7 +1552,7 @@ void logService(bool armed) {
     else bbErased = bbEraseNext * BB_SECTOR;
     return;
   }
-  if (armed || bbEraseNext >= bbEraseTo || bbBusy()) return;
+  if (armed || bbEraseNext >= bbEraseTo || bbBusy() || eeWriting) return;
   bbUnlock();
   FLASH->CR2 = (FLASH->CR2 & ~(FLASH_CR_SNB | FLASH_CR_PSIZE)) | FLASH_CR_SER | FLASH_CR_PSIZE_1 | (bbEraseNext << FLASH_CR_SNB_Pos);
   FLASH->CR2 |= FLASH_CR_START;

@@ -1,3 +1,4 @@
+#include <math.h>
 #include "rx_parser.h"
 
 #include <string.h>
@@ -17,6 +18,7 @@ uint8_t crsfCrc8(const uint8_t* data, uint8_t len) {
 }
 
 void RxParser::begin(RxProtocol p) {
+  cnt_ = Counters{};
   proto_ = p;
   pos_ = 0;
   rc_ = fc::RcInput{};
@@ -37,6 +39,7 @@ bool RxParser::feed(uint8_t b, uint32_t nowMs) {
   // a gap > 3 ms means a new frame starts
   if (nowMs - lastByteMs_ > 3) pos_ = 0;
   lastByteMs_ = nowMs;
+  cnt_.bytes++;
   switch (proto_) {
     case RxProtocol::CRSF: return crsfByte(b, nowMs);
     case RxProtocol::SBUS: return sbusByte(b, nowMs);
@@ -68,7 +71,8 @@ bool RxParser::crsfByte(uint8_t b, uint32_t nowMs) {
   if (pos_ < 2 || pos_ < buf_[1] + 2) return false;
   uint8_t len = buf_[1];
   pos_ = 0;
-  if (crsfCrc8(buf_ + 2, len - 1) != buf_[len + 1]) return false;
+  if (crsfCrc8(buf_ + 2, len - 1) != buf_[len + 1]) { cnt_.crcErrors++; return false; }
+  cnt_.frames++;
   uint8_t type = buf_[2];
   const uint8_t* pl = buf_ + 3;
   if (type == 0x16 && len >= 24) {  // RC_CHANNELS_PACKED
@@ -80,6 +84,13 @@ bool RxParser::crsfByte(uint8_t b, uint32_t nowMs) {
     rc_.everReceived = true;
     rc_.failsafeFlag = false;
     return true;
+  }
+  if ((type == 0x7A || type == 0x7C) && len >= 5 && pl[0] == 0xC8) {  // MSP request / write for the FC
+    mspLen_ = (uint8_t)(len - 4 < (int)sizeof(mspBuf_) ? len - 4 : sizeof(mspBuf_));
+    memcpy(mspBuf_, pl + 2, mspLen_);
+    mspOrigin_ = pl[1];
+    mspNew_ = true;
+    return false;
   }
   if (type == 0x14 && len >= 12) {  // LINK_STATISTICS
     rc_.rssiDbm = -(int8_t)pl[0];
@@ -104,8 +115,17 @@ static void put32(uint8_t* p, int32_t v) {
 
 size_t RxParser::buildTelemetry(const RxTelemetry& t, uint8_t* out) {
   if (proto_ != RxProtocol::CRSF) return 0;
+  // one frame per call, rotating; a slot with nothing to send (no GPS) passes its turn on
+  for (int tries = 0; tries < 6; tries++) {
+    size_t n = telemetrySlot(telemSlot_++ % 6, t, out);
+    if (n) return n;
+  }
+  return 0;
+}
+
+size_t RxParser::telemetrySlot(uint8_t slot, const RxTelemetry& t, uint8_t* out) {
   uint8_t p[24];
-  switch (telemSlot_++ % 5) {
+  switch (slot) {
     case 0:  // attitude (rad * 10000)
       put16(p + 0, (int32_t)(t.pitchRad * 10000.0f));
       put16(p + 2, (int32_t)(t.rollRad * 10000.0f));
@@ -119,7 +139,7 @@ size_t RxParser::buildTelemetry(const RxTelemetry& t, uint8_t* out) {
       p[7] = t.batteryPct;
       return crsfFrame(0x08, p, 8, out);
     }
-    case 2: {  // flight mode
+    case 2: {  // flight mode ("ANGLE", "ANGLE*" while disarmed)
       uint8_t n = (uint8_t)strnlen(t.mode, 14);
       memcpy(p, t.mode, n);
       p[n] = 0;
@@ -137,6 +157,12 @@ size_t RxParser::buildTelemetry(const RxTelemetry& t, uint8_t* out) {
       put16(p + 12, (int32_t)(t.altitude + 1000.0f));
       p[14] = t.sats;
       return crsfFrame(0x02, p, 15, out);
+    case 5: {  // barometric altitude above the take-off point: dm + 10000, or m with the top bit set
+      int32_t dm = (int32_t)lroundf(t.altitude * 10.0f) + 10000;
+      uint16_t v = dm >= 0 && dm < 0x8000 ? (uint16_t)dm : (uint16_t)(0x8000 | (uint16_t)fminf(fmaxf(t.altitude, 0.0f), 32767.0f));
+      put16(p, v);
+      return crsfFrame(0x09, p, 2, out);
+    }
   }
   return 0;
 }
@@ -148,7 +174,8 @@ bool RxParser::sbusByte(uint8_t b, uint32_t nowMs) {
   if (pos_ < 25) return false;
   pos_ = 0;
   uint8_t end = buf_[24];
-  if (end != 0x00 && (end & 0x0F) != 0x04) return false;
+  if (end != 0x00 && (end & 0x0F) != 0x04) { cnt_.crcErrors++; return false; }
+  cnt_.frames++;
   uint16_t raw[16];
   unpack11(buf_ + 1, raw);
   for (int i = 0; i < 16; i++) rc_.ch[i] = (uint16_t)(raw[i] * 0.625f + 880.0f);
@@ -171,7 +198,8 @@ bool RxParser::ibusByte(uint8_t b, uint32_t nowMs) {
   pos_ = 0;
   uint16_t sum = 0xFFFF;
   for (int i = 0; i < 30; i++) sum -= buf_[i];
-  if (sum != (uint16_t)(buf_[30] | (buf_[31] << 8))) return false;
+  if (sum != (uint16_t)(buf_[30] | (buf_[31] << 8))) { cnt_.crcErrors++; return false; }
+  cnt_.frames++;
   for (int i = 0; i < 14; i++) rc_.ch[i] = (uint16_t)(buf_[2 + i * 2] | (buf_[3 + i * 2] << 8));
   rc_.count = 14;
   rc_.lastFrameMs = nowMs;

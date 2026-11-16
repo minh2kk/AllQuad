@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p build
-SRC=$(find src -name '*.cpp' ! -path 'src/hal/hal_arduino_common.cpp' ! -path 'src/hal/hal_esp32.cpp' \
+SRC=$(find src -name '*.cpp' ! -path 'src/bridge/*' ! -path 'src/hal/hal_arduino_common.cpp' ! -path 'src/hal/hal_esp32.cpp' \
       ! -path 'src/hal/hal_stm32.cpp' ! -path 'src/os/os_freertos.cpp' ! -path 'src/sim/*' ! -path 'src/main.cpp')
 FLAGS="-std=c++17 -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -DALLQUAD_HOST $*"
 g++ $FLAGS $SRC test/host/hal_host.cpp src/sim/sim_main.cpp -o build/sim

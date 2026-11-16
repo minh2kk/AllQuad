@@ -50,5 +50,8 @@ struct SdCard {
   std::map<std::string, std::vector<uint8_t>> files;
 };
 extern SdCard sd;
+extern CrashInfo crash;     // the record lastCrash() reports (kind 0 = none)
+extern bool wdtRunning;
+extern uint32_t wdtKicks;
 }  // namespace host
 }  // namespace hal

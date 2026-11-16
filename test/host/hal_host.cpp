@@ -32,6 +32,9 @@ std::function<int(int)> escRx;
 bool escActive = false;
 std::vector<uint8_t> ledFrame;
 int bootloaderRequests = 0;
+CrashInfo crash{};
+bool wdtRunning = false;
+uint32_t wdtKicks = 0;
 uint32_t consoleBaudNow = 115200;
 bool bidir = false;
 float erpm[4] = {-1, -1, -1, -1};
@@ -40,6 +43,9 @@ dshot::Edt edt[4];
 SdCard sd;
 void reset() {
   sd = SdCard();
+  crash = CrashInfo{};
+  wdtRunning = false;
+  wdtKicks = 0;
   consoleSpace = 4096;
   consoleBaudNow = 115200;
   bidir = false;
@@ -121,9 +127,24 @@ size_t portWrite(Port p, const uint8_t* d, size_t n) {
   host::outQ[(int)p].append((const char*)d, n);
   return n;
 }
+bool portStats(Port p, PortStats& o) {
+  if ((int)p >= (int)Port::COUNT) return false;
+  o = PortStats{};
+  o.txBytes = (uint32_t)host::outQ[(int)p].size();
+  return true;
+}
 size_t portWriteSpace(Port p) { return p == Port::CONSOLE ? host::consoleSpace : 4096; }
 uint32_t consoleBaud() { return host::consoleBaudNow; }
 int resetReason() { return 1; }
+bool lastCrash(CrashInfo& o) {
+  if (!host::crash.kind) return false;
+  o = host::crash;
+  return true;
+}
+void crashClear() { host::crash = CrashInfo{}; }
+void watchdogStart() { host::wdtRunning = true; }
+void watchdogKick() { host::wdtKicks++; }
+bool watchdogRunning() { return host::wdtRunning; }
 int imuIntPin() { return -1; }
 const char* pinSummary() { return "host"; }
 
@@ -163,6 +184,7 @@ bool storageLoad(Slot s, void* d, size_t n) {
   memcpy(d, slots[i], n);
   return true;
 }
+void storageInfo(int& copy, uint32_t& seq, int& copies) { copy = 0; seq = 0; copies = 1; }
 bool storageSave(Slot s, const void* d, size_t n) {
   int i = (int)s;
   if (n > sizeof(slots[i])) return false;
@@ -185,6 +207,8 @@ bool sdMount(uint8_t mode, uint8_t, const uint8_t*, char* err, size_t n) {
 }
 void sdUnmount() { sdUp = false; sdWr.clear(); }
 bool sdMounted() { return sdUp && host::sd.inserted; }
+void sdSetDma(bool) {}
+bool sdDmaActive() { return false; }
 const char* sdCardType() { return "SDHC"; }
 bool sdSpace(uint64_t& total, uint64_t& used) {
   if (!sdMounted()) return false;

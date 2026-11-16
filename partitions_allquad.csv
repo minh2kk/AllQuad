@@ -1,10 +1,12 @@
 # AllQuad ESP32 flash layout, 4 MB modules (ESP32-WROOM-32 ...)
-# Two 1.375 MB firmware slots for updates over WiFi with automatic rollback; 1.125 MB raw blackbox
+# Two 1.5 MB firmware slots for updates over WiFi with automatic rollback; 896 KB raw blackbox
 # partition (only 256-byte page programs in flight, erased in the background while disarmed).
+# (before v2.1 the slots were 1.375 MB: a board with that table takes a v2.1+ firmware over USB once,
+#  the WiFi update refuses an image larger than its slot)
 # Name,    Type, SubType,  Offset,   Size
 nvs,       data, nvs,      0x9000,   0x5000
 otadata,   data, ota,      0xE000,   0x2000
-ota_0,     app,  ota_0,    0x10000,  0x160000
-ota_1,     app,  ota_1,    0x170000, 0x160000
-blackbox,  data, 0x40,     0x2D0000, 0x120000
+ota_0,     app,  ota_0,    0x10000,  0x180000
+ota_1,     app,  ota_1,    0x190000, 0x180000
+blackbox,  data, 0x40,     0x310000, 0xE0000
 coredump,  data, coredump, 0x3F0000, 0x10000

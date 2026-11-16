@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 359 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 364 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -262,15 +262,15 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 
 | Tham số | Mặc định | Giới hạn | Mô tả |
 |---|---|---|---|
-| `serial1_fn` (KĐL) | 1 | 0 … 10 | Chức năng của SERIAL1: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
-| `serial2_fn` (KĐL) | 2 | 0 … 10 | Chức năng của SERIAL2: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
-| `serial3_fn` (KĐL) | 3 | 0 … 10 | Chức năng của SERIAL3: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial1_fn` (KĐL) | 1 | 0 … 11 | Chức năng của SERIAL1: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial2_fn` (KĐL) | 2 | 0 … 11 | Chức năng của SERIAL2: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial3_fn` (KĐL) | 3 | 0 … 11 | Chức năng của SERIAL3: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `udp_fn` (KĐL) | 3 | 0 … 8 | Chức năng của cổng UDP (WiFi): 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `serial1_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL1 |
 | `serial2_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL2 |
 | `serial3_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL3 |
-| `serial4_fn` (KĐL) | 0 | 0 … 10 | Chức năng của SERIAL4: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
-| `serial5_fn` (KĐL) | 0 | 0 … 10 | Chức năng của SERIAL5: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial4_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL4: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial5_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL5: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `serial4_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL4 |
 | `serial5_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL5 |
 | `wifi_enable` (KĐL) | 0 | 0 … 1 | WiFi + MAVLink qua UDP 14550 (QGroundControl không dây), kèm trang 192.168.4.1 |
@@ -351,6 +351,10 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `osd_dist_pos` | 97 | 0 … 65535 | Vị trí OSD: tổng quãng đường |
 | `osd_eff_pos` | 439 | 0 … 65535 | Vị trí OSD: mAh/km |
 | `osd_tleft_pos` | 417 | 0 … 65535 | Vị trí OSD: thời gian bay còn lại |
+| `osd_batbar_pos` | 385 | 0 … 65535 | Vị trí OSD: thanh pin |
+| `osd_cell_pos` | 161 | 0 … 65535 | Vị trí OSD: điện áp mỗi cell |
+| `osd_rssi_pos` | 119 | 0 … 65535 | Vị trí OSD: RSSI (dBm) |
+| `osd_blink` | 1 | 0 … 1 | OSD: cảnh báo và pin yếu nhấp nháy |
 | `osd_vbat_pos` | 33217 | 0 … 65535 | Vị trí phần tử OSD "vbat" (cột + 32 × hàng trên lưới 30×16; bit 15 = hiện). Kéo thả trong tab OSD |
 | `osd_cur_pos` | 33225 | 0 … 65535 | Vị trí phần tử OSD "cur" (cột + 32 × hàng trên lưới 30×16; bit 15 = hiện). Kéo thả trong tab OSD |
 | `osd_mah_pos` | 33232 | 0 … 65535 | Vị trí phần tử OSD "mah" (cột + 32 × hàng trên lưới 30×16; bit 15 = hiện). Kéo thả trong tab OSD |
@@ -432,3 +436,4 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `sd_d2` (KĐL) | 255 | 0 … 255 | Chân D2 (chỉ 4-bit, 255 = mặc định) |
 | `sd_d3` (KĐL) | 255 | 0 … 255 | Chân D3 / CS (4-bit và SPI, 255 = mặc định) |
 | `sd_keep` | 1 | 0 … 1 | Thẻ gần đầy: tự xoá log cũ nhất (tắt = ngừng ghi) |
+| `sd_dma` (KĐL) | 0 | 0 … 1 | Thẻ SD dùng DMA (STM32H7: CPU rảnh hơn khi ghi; tắt = cách cũ, chắc chắn nhất) |

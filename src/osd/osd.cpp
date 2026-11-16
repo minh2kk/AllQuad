@@ -281,17 +281,45 @@ void Renderer::render(uint32_t now) {
     put(P2[OSD2_TIME_LEFT], t);
   }
 
+  bool blink = (now / 400) % 2;
+  // low battery: voltage, cell voltage and bar blink (osd_blink)
+  bool batShow = !(c.osd_blink && st.armed && (st.warnings & (WARN_BAT_LOW | WARN_BAT_CRIT))) || blink;
+  {
+    const uint16_t* P3 = c.osd_pos3;
+    if (batShow) {
+      // battery bar: remaining charge in 8 cells of two halves each
+      int pct = b.percent > 100 ? 100 : b.percent, halves = (pct * 16 + 50) / 100;
+      char bar[12];
+      int k = 0;
+      bar[k++] = G ? sym::PB_START : '[';
+      for (int i = 0; i < 8; i++) {
+        int hv = halves - 2 * i;
+        bar[k++] = hv >= 2 ? (G ? sym::PB_FULL : '#') : hv == 1 ? (G ? sym::PB_HALF : '=') : (G ? sym::PB_EMPTY : '-');
+      }
+      bar[k++] = G ? sym::PB_END : ']';
+      bar[k] = 0;
+      put(P3[OSD3_BAT_BAR], bar);
+      if (b.cells) {
+        float cell = b.voltage / b.cells;
+        if (G) snprintf(t, sizeof(t), "%c%4.2f%c", sym::BATT, cell, sym::VOLT); else snprintf(t, sizeof(t), "%4.2fV/C", cell);
+        put(P3[OSD3_CELL_V], t);
+      }
+    }
+    if (rc.everReceived && rc.rssiDbm) {
+      if (G) snprintf(t, sizeof(t), "%c%4d", sym::RSSI, (int)rc.rssiDbm); else snprintf(t, sizeof(t), "%4dDBM", (int)rc.rssiDbm);
+      put(P3[OSD3_RSSI_DBM], t);
+    }
+  }
   if (G) {
-    snprintf(t, sizeof(t), "%c%4.1f%c", sym::BATT, b.voltage, sym::VOLT); put(P[OSD_VBAT], t);
+    snprintf(t, sizeof(t), "%c%4.1f%c", sym::BATT, b.voltage, sym::VOLT); if (batShow) put(P[OSD_VBAT], t);
     snprintf(t, sizeof(t), "%4.1f%c", b.current, sym::AMP); put(P[OSD_CURRENT], t);
     snprintf(t, sizeof(t), "%4d%c", (int)b.mahDrawn, sym::MAH); put(P[OSD_MAH], t);
   } else {
-    snprintf(t, sizeof(t), "%4.1fV", b.voltage); put(P[OSD_VBAT], t);
+    snprintf(t, sizeof(t), "%4.1fV", b.voltage); if (batShow) put(P[OSD_VBAT], t);
     snprintf(t, sizeof(t), "%4.1fA", b.current); put(P[OSD_CURRENT], t);
     snprintf(t, sizeof(t), "%4dMAH", (int)b.mahDrawn); put(P[OSD_MAH], t);
   }
-  bool blink = (now / 400) % 2;
-  if (!st.failsafe || blink) put(P[OSD_MODE], flightModeName(st.mode));
+  if (!st.failsafe || blink || !c.osd_blink) put(P[OSD_MODE], flightModeName(st.mode));
   uint32_t s = st.armedTimeMs / 1000;
   if (G) snprintf(t, sizeof(t), "%c%02u:%02u", sym::FLY_M, (unsigned)(s / 60), (unsigned)(s % 60));
   else snprintf(t, sizeof(t), "%02u:%02u", (unsigned)(s / 60), (unsigned)(s % 60));
@@ -344,6 +372,7 @@ void Renderer::render(uint32_t now) {
   else if (st.warnings & WARN_GPS_GLITCH) w = "GPS GLITCH";
   else if (st.warnings & WARN_EKF) w = "EKF: SENSOR FAULT";
   else if (st.warnings & WARN_VIBRATION) w = "VIBRATION";
+  else if (st.warnings & WARN_RPM_LOST) w = "RPM TELEMETRY LOST";
   else if (st.warnings & WARN_LAUNCH) w = "LAUNCH READY";
   else if (st.atState == 1) {
     static const char* const stepName[] = {"", " FF", " I"};
@@ -358,7 +387,7 @@ void Renderer::render(uint32_t now) {
     for (int i = 0; i < ARM_COUNT_BITS; i++)
       if (st.armBlockers & (1u << i)) { snprintf(t, sizeof(t), "NOT READY:%s", armCheckName(i)); w = t; break; }
   }
-  if (w && (blink || !st.armed)) put(P[OSD_WARNINGS], w);
+  if (w && (blink || !st.armed || !c.osd_blink)) put(P[OSD_WARNINGS], w);
   }  // normal screen
 
   if (!be_) return;

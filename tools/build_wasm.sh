@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 W=${WASI_SDK:-$(ls -d /opt/wasi/wasi-sdk-* 2>/dev/null | head -1)}
 [ -x "$W/bin/clang++" ] || { echo "wasi-sdk not found (set WASI_SDK)"; exit 1; }
 mkdir -p build/web
-SRC=$(find src -name '*.cpp' ! -path 'src/hal/hal_arduino_common.cpp' ! -path 'src/hal/hal_esp32.cpp' \
+SRC=$(find src -name '*.cpp' ! -path 'src/bridge/*' ! -path 'src/hal/hal_arduino_common.cpp' ! -path 'src/hal/hal_esp32.cpp' \
       ! -path 'src/hal/hal_stm32.cpp' ! -path 'src/os/os_freertos.cpp' ! -path 'src/sim/*' ! -path 'src/main.cpp')
 "$W/bin/clang++" --target=wasm32-wasip1 --sysroot="$W/share/wasi-sysroot" -std=c++17 -O2 -fno-exceptions \
   -DALLQUAD_HOST -DAQ_WASM -D_WASI_EMULATED_SIGNAL -Wno-unused-command-line-argument \

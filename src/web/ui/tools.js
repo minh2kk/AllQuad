@@ -273,7 +273,8 @@ $("escRelease").onclick = async () => {
 
 // ---------------------------------------------------------------- ports
 const PORT_FN = [[0, "Không dùng"], [1, "Receiver (CRSF / SBUS / iBUS)"], [2, "GPS"], [3, "MAVLink (trạm mặt đất)"], [4, "MSP (cảm biến flow / khoảng cách)"],
-  [5, "OSD kính số (MSP DisplayPort)"], [6, "Telemetry ESC"], [7, "Cảm biến khoảng cách TFmini"], [8, "Blackbox (OpenLog)"], [9, "VTX SmartAudio"], [10, "VTX Tramp"]];
+  [5, "OSD kính số (MSP DisplayPort)"], [6, "Telemetry ESC"], [7, "Cảm biến khoảng cách TFmini"], [8, "Blackbox (OpenLog)"], [9, "VTX SmartAudio"], [10, "VTX Tramp"],
+  [11, "Configurator (cầu WiFi ESP32-C3 / Bluetooth)"]];
 const BAUDS = [0, 9600, 19200, 38400, 57600, 115200, 230400, 250000, 400000, 460800, 921600, 1000000, 2000000];
 // [param prefix, label, hal::Port index] - a row is shown when the board has that port
 const PORTS = [["serial1", "UART1", 0], ["serial2", "UART2", 1], ["serial3", "UART3", 2], ["serial4", "UART4", 5],
@@ -422,7 +423,8 @@ const OSD_EL = [["osd_vbat_pos", "Điện áp pin", "16.4V"], ["osd_cur_pos", "D
   ["osd_cross_pos", "Tâm ngắm", "-+-"], ["osd_horizon_pos", "Đường chân trời", "---------- ----------"],
   ["osd_warn_pos", "Cảnh báo", "LOW BATTERY"], ["osd_coord_pos", "Toạ độ", "21.02850 105.85420"],
   ["osd_esct_pos", "Nhiệt độ ESC", "T 45C"], ["osd_dist_pos", "Tổng quãng đường", "D1.25KM"], ["osd_eff_pos", "mAh/km", "120MAH/KM"],
-  ["osd_tleft_pos", "Thời gian bay còn lại", "L05:30"]];
+  ["osd_tleft_pos", "Thời gian bay còn lại", "L05:30"], ["osd_batbar_pos", "Thanh pin", "[######--]"],
+  ["osd_cell_pos", "Điện áp mỗi cell", "3.85V/C"], ["osd_rssi_pos", "RSSI (dBm)", " -72DBM"]];
 const OSD = { drag: null, hd: false };
 const osdRows = () => (val("osd_pal") ? 16 : 13);
 // canvas the FC will draw on (same rule as osd.cpp): [cols, rows]
@@ -456,7 +458,8 @@ function buildOsd() {
     <div class="field"><label>Hệ màu (analog)</label>${selectHtml("osd_pal", [[1, "PAL (16 dòng)"], [0, "NTSC (13 dòng)"]])}</div>
     ${has("osd_canvas") ? `<div class="field"><label>Lưới chữ (canvas)</label>${selectHtml("osd_canvas", [[0, "Tự động"], [1, "SD 30×16"], [2, "HD 50×18 (HDZero)"], [3, "HD 53×20 (DJI O3 / O4, Walksnail)"], [4, "HD 60×22"]])}</div>
     <div class="field"><label>Ký hiệu</label>${selectHtml("osd_font", [[0, "Icon Betaflight"], [1, "Chỉ chữ"]])}</div>` : ""}
-    ${has("osd_stats") ? `<div class="field"><label>Thống kê sau khi disarm (giây, 0 = tắt)</label><input data-p="osd_stats" inputmode="numeric"></div>` : ""}`;
+    ${has("osd_stats") ? `<div class="field"><label>Thống kê sau khi disarm (giây, 0 = tắt)</label><input data-p="osd_stats" inputmode="numeric"></div>` : ""}
+    ${has("osd_blink") ? `<div class="field"><label>Nhấp nháy</label>${selectHtml("osd_blink", [[1, "Cảnh báo + pin yếu nhấp nháy"], [0, "Không nhấp nháy"]])}</div>` : ""}`;
   bindSelects($("osdTop"));
   const view = $("osdView");
   if (view) {
@@ -935,12 +938,60 @@ function flCheck() {
   $("flInfo").textContent = info;
   $("flGo").disabled = !ok;
 }
+// firmware published next to the page (GitHub Pages: tools/make_pages.py writes firmware/manifest.json and
+// the .bin files): pick one, it is downloaded from the same site and checked (size + SHA-256)
+const REL = { list: null };
+async function relLoad() {
+  if (REL.list !== null || !/^https?:$/.test(location.protocol) || !window.crypto || !crypto.subtle) return;
+  REL.list = [];
+  try {
+    const r = await fetch(new URL("firmware/manifest.json", location.href), { cache: "no-store" });
+    if (!r.ok) return;
+    const m = await r.json();
+    REL.version = m.version || "";
+    REL.list = (m.files || []).filter((f) => f && f.file && (f.target === "esp" || f.target === "stm") && /^[\w.\-]+$/.test(f.file));
+  } catch (e) { REL.list = []; }
+  relRender();
+}
+function relRender() {
+  const box = $("flRel");
+  if (!box || !REL.list || !REL.list.length) { if (box) box.hidden = true; return; }
+  const items = REL.list.filter((f) => f.target === FL.target);
+  box.hidden = !items.length;
+  const board = (S.lastHello && S.lastHello.board) || "";
+  $("flRelSel").innerHTML = items.map((f, i) => `<option value="${REL.list.indexOf(f)}"${f.match && board && new RegExp(f.match, "i").test(board) ? " selected" : ""}>${esc(f.name)}${REL.version ? " · " + esc(REL.version) : ""}</option>`).join("");
+}
+async function relGet() {
+  const f = REL.list[+$("flRelSel").value];
+  if (!f || FL.busy) return;
+  $("flInfo").textContent = `Đang tải ${f.file}…`;
+  try {
+    const r = await fetch(new URL("firmware/" + f.file, location.href), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = new Uint8Array(await r.arrayBuffer());
+    if (f.size && d.length !== f.size) throw new Error(`kích thước ${d.length} khác ${f.size}`);
+    if (f.sha256) {
+      const h = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", d)), (b) => b.toString(16).padStart(2, "0")).join("");
+      if (h !== f.sha256.toLowerCase()) throw new Error("SHA-256 không khớp (file hỏng hoặc bị đổi)");
+    }
+    FL.file = { name: f.file };
+    FL.data = d;
+    flCheck();
+    if (f.note) $("flInfo").textContent += " " + f.note;
+  } catch (e) {
+    FL.data = null;
+    flCheck();
+    $("flInfo").textContent = `Không tải được ${f.file}: ${e.message}`;
+  }
+}
+if ($("flRelGet")) $("flRelGet").onclick = relGet;
 document.querySelectorAll(".flOpen").forEach((b) => (b.onclick = () => {
   $("flasher").hidden = false;
   if (S.lastHello && /STM32/i.test(S.lastHello.board)) FL.target = "stm";
   $("flTarget").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.t === FL.target)));
   flHow();
   flCheck();
+  if (REL.list) relRender(); else relLoad();
 }));
 $("flTarget").querySelectorAll("button").forEach((b) => (b.onclick = () => {
   if (FL.busy) return;
@@ -948,6 +999,7 @@ $("flTarget").querySelectorAll("button").forEach((b) => (b.onclick = () => {
   $("flTarget").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
   flHow();
   flCheck();
+  relRender();
 }));
 $("flFile").onchange = async (ev) => {
   const f = ev.target.files[0];
@@ -1340,7 +1392,8 @@ function sdPinRows() {
   box.innerHTML = "";
   const m = val("sd_mode") | 0, sd = S.sd || {};
   if (!m) return;
-  ["sd_mhz", "sd_keep"].forEach((n) => has(n) && !(sd.fixed && n === "sd_mhz") && box.appendChild(prow(n)));
+  // sd_dma: STM32H7 SDMMC only (the boards with fixed card pins)
+  ["sd_mhz", "sd_keep", "sd_dma"].forEach((n) => has(n) && !(sd.fixed && n === "sd_mhz") && (n !== "sd_dma" || sd.fixed) && box.appendChild(prow(n)));
   if (sd.fixed) {
     box.insertAdjacentHTML("beforeend", '<p class="muted">Khe thẻ có sẵn trên board (SDMMC1, 4-bit): không cần chọn chân.</p>');
     return;

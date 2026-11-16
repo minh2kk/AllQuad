@@ -16,6 +16,8 @@ uint32_t timerClock(TIM_TypeDef* t);   // input clock of a timer (APB x1 / x2)
 void timerClockEnable(TIM_TypeDef* t);
 void requestBootloader();              // ROM DFU on the next reset
 uint32_t hseFrequency();               // crystal in Hz, 0 = internal oscillator
+int bootResetReason();                 // hal::resetReason() numbering, read once at boot
+void watchdogFlashErase();             // kick the watchdog right before a blocking flash erase
 }  // namespace stm32
 }  // namespace hal
 extern "C" {

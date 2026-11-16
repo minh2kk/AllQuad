@@ -34,6 +34,7 @@ class Cli {
   void cmdRally(const char* a1, char* rest);
   void cmdStatus();
   void cmdTasks();
+  void cmdSelftest();
   void cmdGet(const char* filter);
   void cmdMission(const char* arg);
   hal::Port port_ = hal::Port::CONSOLE;

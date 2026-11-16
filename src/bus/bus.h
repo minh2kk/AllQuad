@@ -63,7 +63,11 @@ struct LoopPerf {
   uint32_t lateLoops;                                        // iterations that started > 1 period late
 };
 extern volatile LoopPerf loopPerf;
+// RC receiver link counters since the port was opened (io task; diagnostics only)
+struct RxLinkStats { uint32_t bytes, frames, crcErrors; };
+extern volatile RxLinkStats rxLink;
 extern volatile bool otaActive;  // firmware update being written: arming blocked (flash writes stall the CPU)
+extern volatile uint32_t fastLoops;          // flight-loop iterations since boot (watchdog progress check)
 extern volatile int8_t escTelemMotor;        // motor whose ESC telemetry was last requested
 // Motor test from the configurator (disarmed, props off): 0..1 per motor, stops by itself when no
 // new value arrives for MOTOR_TEST_TIMEOUT_MS. Arming is blocked while it runs.
@@ -89,6 +93,7 @@ bool requestEscCommand(uint8_t cmd, uint8_t mask, uint8_t thenCmd = 0);
 extern volatile bool magRejected;
 // bidirectional DShot RPM (written by the fast task, mechanical RPM; < 0 = no answer)
 extern volatile float bidirRpm[4];
+extern volatile uint8_t rpmLostMask;  // armed: motors whose RPM telemetry stopped (bit per mixer motor)
 // active PID / rate profile (control task, from prof_ch or pid_profile)
 extern volatile uint8_t pidProfile;
 // last MAVLink heartbeat from a ground station (GCS failsafe), 0 = never

@@ -180,6 +180,7 @@ bool validName(const char* n) {
 void begin(const fc::Config& c) {
   mode = c.sd_mode;
   mhz = c.sd_mhz;
+  hal::sdSetDma(c.sd_dma != 0);
   keep = c.sd_keep;
   enabled_ = false;
   state = State::OFF;

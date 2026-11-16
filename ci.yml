@@ -1,0 +1,73 @@
+# AllQuad CI: every push / pull request runs the host tests, the simulator, the log analyser and
+# builds the firmware for all boards and boots the STM32 (STM32Cube) firmware in QEMU. Firmware files are kept as artifacts for 14 days.
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Python packages
+        run: pip install pymavlink
+      - name: Unit tests (sanitizers)
+        run: |
+          bash tools/build_host.sh -fsanitize=address,undefined
+          ./build/tests
+      - name: Unit tests, MAVLink, simulator
+        run: |
+          bash tools/build_host.sh
+          ./build/tests
+          python3 tools/test_mavlink.py
+          ./build/sim all
+      - name: Web page + log analyser
+        run: |
+          npm install --no-audit --no-fund
+          python3 tools/embed_web.py
+          node test/web/test_analysis.js
+  firmware:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [esp32dev, esp32s3, esp32s3_n16r8, esp32c6, esp32p4, blackpill_f411ce, stm32f405, stm32f722, stm32h743_weact, stm32h743_devebox, bridge_esp32c3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.env }}-${{ hashFiles('platformio.ini') }}
+      - name: PlatformIO
+        run: pip install platformio
+      - name: Build ${{ matrix.env }}
+        run: pio run -e ${{ matrix.env }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.env }}
+          path: .pio/build/${{ matrix.env }}/firmware.*
+          retention-days: 14
+  qemu:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-stm32f405_qemu-${{ hashFiles('platformio.ini') }}
+      - name: Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-system-arm
+          pip install platformio
+      - name: STM32F405 boot test (CLI answers in QEMU)
+        run: |
+          pio run -e stm32f405_qemu
+          sh tools/qemu_f405.sh

@@ -111,7 +111,7 @@ Lệnh từ CLI/MAVLink tới bộ chỉ huy đi qua `bus::postRequest` (arm, di
 - `src/web/ui/extras.js` (ghép sau tools.js): **trình thiết lập** 9 bước (hướng FC giải từ 2 tư thế: các hướng lắp là hoán vị có dấu nên nghịch đảo = chuyển vị, chọn hướng làm "phẳng" ≈ (0,0,−g) và "mũi lên" ≈ (+g,0,0); accel, compass, baro nhấc 1 m, GPS, kiểm tra cần + công tắc ARM, thử từng motor 2 s), **demo** (Web Worker chạy `allquad.wasm` với shim WASI tối thiểu; `aq_input` / `aq_step(µs)` mỗi 4 ms; LINK kind `demo`), **tile OSM** (Web Mercator quanh nhà, zoom theo tỉ lệ bản đồ, cache 300 ảnh, ghi công), **so sánh blackbox** (ghim chuyến mốc: đáp ứng bước đứt nét + bảng chỉ số), **xuất CSV**, **lịch sử tham số** (localStorage `aq-history`, ghi cũ→mới khi Áp dụng / khôi phục / mặc định, hoàn tác), bảng EKF.
 - WebAssembly: `tools/build_wasm.sh` (wasi-sdk, `-mexec-model=reactor`) biên dịch toàn bộ firmware + mô phỏng (~300 kB). `embed_web.py` nhúng base64 chỉ vào `AllQuad-Configurator.html` và trang của `configurator.py`, không vào bản gzip trên ESP32.
 - `analysis.js` dùng chung cho trình duyệt và Node: giải mã log, Welch FFT, đáp ứng bước bằng giải chập Wiener (cách của PID-Analyzer), luật gợi ý.
-- Phân vùng `partitions_allquad.csv`: app 1.5 MB, LittleFS 2.4 MB cho blackbox.
+- Phân vùng `partitions_allquad.csv` (4 MB): 2 ô app 1.5 MB (OTA), 896 KB blackbox thô, 64 KB coredump.
 
 ## Thêm cảm biến mới
 Viết lớp kế thừa `ImuDriver` / `BaroDriver` / `MagDriver` trong `src/sensors/`, chỉ dùng hàm `hal::`, đổi trục về FRD bằng `toFrd()`, rồi thêm vào danh sách `probe…()`. Cảm biến serial: viết parser thuần trong `serial_sensors.h` và thêm một `PortFn`.
@@ -147,3 +147,17 @@ sdcard task (100 Hz, ưu tiên 1)  sdlog::service(): gắn thẻ, mở /AQLOG/AQ
 - FreeRTOS: `uxCriticalNesting` khởi tạo 0 (thay vì 0xAAAAAAAA) để vùng găng trước khi scheduler chạy (cấp phát heap, tạo task) trả lại BASEPRI — nếu không, ngắt USB / timer ưu tiên ≥ 5 bị chặn tới khi scheduler chạy.
 - Ưu tiên ngắt (0 = khẩn nhất): UART 1, timer thời gian 2, timer vòng bay 5, EXTI IMU 5, USB 6. Ngắt ≤ 4 không gọi FreeRTOS.
 - QEMU (`env:stm32f405_qemu`, `-DAQ_QEMU`): bỏ cấu hình RCC, console ở USART1, ID chip cố định, không kiểm tra ưu tiên ngắt (QEMU mô phỏng 8 bit ưu tiên).
+
+## Độ tin cậy (v2.1)
+
+- **Bản ghi crash (STM32, `hal/stm32/system_stm32.cpp`):** HardFault / MemManage / BusFault / UsageFault (handler naked lấy khung stack MSP/PSP), tràn stack, hết heap, assert → một bản ghi `{loại, PC, LR, CFSR, HFSR, địa chỉ lỗi, thời gian, task / file:dòng, số lần}` trong RAM section `.noinit` (linker: không bị startup xoá), có magic + checksum, H7 clean D-cache trước `NVIC_SystemReset`. Lúc khởi động `crashBoot()` đọc cờ RCC một lần (power-on/brownout → xoá bản ghi; IWDG → tạo bản ghi "watchdog" từ breadcrumb mà tick hook ghi 64 ms/lần: task đang chạy). `resetReason()` trả 4 (PANIC) khi reset do bản ghi vừa tạo. CLI `crash`, JSON `crash`/`rr`/`wdt`, QEMU kiểm chứng (`crash test`).
+- **Watchdog IWDG:** LSI /64, reload 3400 ≈ 6,8 s (≥ 4,6 s với LSI nhanh nhất của F4). Bật trong task control khi vòng bay đã chạy > 2000 lần (board không có vòng bay vẫn vào được configurator), chỉ kick khi `bus::fastLoops` tăng. Kick ngay trước mỗi lần xoá sector flash (F4/F7 dừng CPU tới 4 s). Dừng khi debugger halt. ESP32 dùng watchdog của ESP-IDF.
+- **Cấu hình A/B (`hal/ee_ab.h`):** ảnh 8 KB + footer `{magic, seq, crc32, ~magic}`; H743 bank 2 sector 7/6, F405 sector 11/10 (firmware ≤ 768 KB). Lưu: ghi bản không dùng, đọc lại so sánh rồi mới chuyển. Ảnh cũ không footer đọc như bản A, lần lưu đầu sang B. Lưu đồng thời bị chặn bằng cờ; blackbox flash H7 nhường bank 2 khi đang lưu. Unit test giả lập mất điện ở từng bước.
+- **Bộ đếm UART:** `hal::portStats` (byte, tràn phần cứng, lỗi khung, nhiễu, đầy ring) đếm trong ISR (STM32) / `onReceiveError` (ESP32); receiver: byte, khung đúng, lỗi checksum (`RxParser::counters`). CLI `selftest`, tab Cổng.
+- **RPM:** `RpmGate` giữ lại một mẫu lệch xa (giải mã sai) đến khi mẫu sau xác nhận; motor mất telemetry → tần số 0 (notch tắt dần). Đang bay mà motor đã có RPM lúc arm mất telemetry → `WARN_RPM_LOST` (OSD, web).
+
+## Liên kết phụ
+
+- **Console thứ hai (`PortFn::CONFIGURATOR`):** UART mang cùng dòng byte như USB (aqlink, CLI, MAVLink, MSP). Mỗi lúc phục vụ một bên; bên kia chiếm khi bên đang dùng im 1,5 s và không có truyền aqlink. ESC passthrough chỉ qua USB.
+- **Cầu WiFi (`src/bridge/`, env `bridge_esp32c3`):** AP + captive portal, phục vụ trang (gzip như ESP32 FC), WebSocket `/link` ↔ UART 460800; `/bridge/info`, `/bridge/wifi`. Trang mở với `?bridge` tự nối và tự nối lại.
+- **MSP qua CRSF (`comms/crsf_msp.*`):** khung 0x7A/0x7C từ tay điều khiển (định dạng chunk của Betaflight `msp_shared`, v1 và v2) → `MspLink` thứ hai với reply hook → chunk 0x7B gửi trước telemetry (8 ms/khung). Lệnh MSP2 `0x4151` / `0x4152` / `0x4153` (tham số theo chỉ số / tên / ghi, giá trị ×1000) và `MSP_EEPROM_WRITE` (250). Ghi và lưu chỉ khi disarm.

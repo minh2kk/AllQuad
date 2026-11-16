@@ -60,6 +60,9 @@ class MspLink {
   // DisplayPort link: answer as Betaflight (FC variant BTFL) so DJI / Walksnail / HDZero load the
   // Betaflight font and read the arm flag from MSP_STATUS (the goggles leave low-power mode on arm)
   void setDisplayPort(bool on) { displayPort_ = on; }
+  // answers go to this function instead of the port (MSP over CRSF); error = not supported / refused
+  using ReplyHook = void (*)(void* ctx, const MspFrame& req, const uint8_t* payload, uint16_t len, bool error);
+  void setReplyHook(ReplyHook h, void* ctx) { hook_ = h; hookCtx_ = ctx; }
   void canvasRequest(int& cols, int& rows) const { cols = canvasCols_; rows = canvasRows_; }
 
  private:
@@ -71,6 +74,9 @@ class MspLink {
   uint8_t vtxType_ = 0xFF;
   bool displayPort_ = false;
   uint8_t canvasCols_ = 0, canvasRows_ = 0;
+  ReplyHook hook_ = nullptr;
+  void* hookCtx_ = nullptr;
+  void error(const MspFrame& req);
 };
 
 }  // namespace comms

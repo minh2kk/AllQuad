@@ -51,7 +51,7 @@ function proStatus(st) {
   const hz = PRO.rate.length / 2, pill = $("linkRate");
   if (pill) {
     pill.hidden = false;
-    pill.textContent = `${LINK.open ? (LINK.kind === "usb" ? "USB" : LINK.kind.toUpperCase()) : "WiFi"} · ${hz.toFixed(hz < 10 ? 1 : 0)} Hz`;
+    pill.textContent = `${LINK.open ? (LINK.kind === "usb" ? "USB" : LINK.kind === "bridge" ? "Cầu WiFi" : LINK.kind.toUpperCase()) : "WiFi"} · ${hz.toFixed(hz < 10 ? 1 : 0)} Hz`;
     pill.className = "rate-pill num" + (hz < 1 ? " bad" : "");
   }
   // RC link history (2 minutes)
@@ -65,12 +65,17 @@ function proStatus(st) {
   if (ok) PRO.lqMin = Math.min(PRO.lqMin, lq);
   if (shown("preflight")) pfRender(st);
   if (shown("modes")) rxLinkRender();
+  if (st.ports) portStatsRender(st);
+  crashRender(st);
 }
 function proTabShown(t) {
   if (t === "preflight") pfRender(S.status);
   if (t === "modes") rxLinkHost();
+  if (t === "ports") portStatsRender(S.status);
+  if (t === "system") crashRender(S.status);
   if (t === "params") profHost();
   if (t === "nav" && S.wp) wpStats();
+  if (t === "pid") { tuneHost(); tuneRender(); }
   markAdv();
 }
 
@@ -118,6 +123,8 @@ function pfItems(st) {
     add(!sn.gps ? "bad" : g.fix && g.sats >= 8 ? "ok" : "warn", "GPS (cần cho RTH / giữ vị trí)",
       !sn.gps ? "không có GPS nhưng đang dùng chế độ cần GPS" : g.fix ? `${g.sats} vệ tinh, sai số ${(+g.hacc || 0).toFixed(1)} m${g.sats < 8 ? " · chờ thêm vệ tinh" : ""}` : "chưa fix: chờ ngoài trời", "nav");
   } else if (sn.gps) add(g.fix ? "ok" : "off", "GPS", g.fix ? `${g.sats} vệ tinh` : "chưa fix (không bắt buộc)", "nav");
+  if (st.crash && st.crash.ago === 0) add("bad", "Lần khởi động trước", `FC tự reset vì lỗi: ${CRASH_VI[st.crash.kind] || st.crash.kind} (${st.crash.where || "?"}) - xem tab Hệ thống`, "system");
+  else if (st.rr === 9) add("warn", "Lần khởi động trước", "sụt áp (brownout): nguồn 5 V / 3.3 V yếu hoặc dây USB kém", "system");
   const bl = (st.blockers || []).filter((x) => x !== "CLI");
   add(st.armed ? "warn" : bl.length ? "bad" : "ok", "Điều kiện arm",
     st.armed ? "đang ARM" : bl.length ? "còn chặn: " + bl.map((x) => (BLOCK_HELP[x] || [x])[0]).join("; ") : "đạt (CLI chỉ chặn khi đang nối cấu hình)", "overview");
@@ -334,6 +341,148 @@ function rxLinkRender() {
   plot($("rxChart"), [{ x, y, color: "--pitch", width: 2 }, { x, y: lost, color: "--danger", width: 5 }], { xmin: -120, xmax: 0, ymin: 0, ymax: 100 });
 }
 
+// ---------------------------------------------------------------- reset reason, crash record, watchdog (System tab)
+const RR_VI = { 0: "không rõ", 1: "cấp nguồn", 2: "nút reset", 3: "phần mềm (lệnh reboot / nạp firmware)", 4: "LỖI FIRMWARE (crash)",
+  5: "watchdog ngắt", 6: "watchdog task", 7: "WATCHDOG (firmware bị treo)", 8: "thức dậy từ ngủ sâu", 9: "SỤT ÁP (brownout)", 10: "SDIO" };
+const CRASH_VI = { "hard fault": "hard fault", "memory fault": "truy cập bộ nhớ sai", "bus fault": "lỗi bus", "usage fault": "lệnh không hợp lệ",
+  "stack overflow": "tràn stack", "out of memory": "hết RAM", assert: "kiểm tra nội bộ thất bại (assert)", watchdog: "treo (watchdog)" };
+function crashHost() {
+  if ($("relPanel")) return true;
+  const sec = $("tab-system");
+  if (!sec || !sec.querySelector(".panel")) return false;
+  const p = document.createElement("div");
+  p.className = "panel"; p.id = "relPanel";
+  p.innerHTML = `<div class="card-h"><span class="dot"></span><h3>Khởi động &amp; sự cố</h3><span class="card-x num" id="relWdt"></span></div>
+    <div class="rx-stats" id="relStats"></div><div id="relCrash"></div>`;
+  sec.querySelector(".panel").after(p);
+  return true;
+}
+// WiFi bridge (page served by the ESP32-C3 bridge): its access point name / password
+async function bridgeHost() {
+  if (LINK.kind !== "bridge" || $("bridgePanel") || !$("relPanel")) return;
+  const p = document.createElement("div");
+  p.className = "panel"; p.id = "bridgePanel";
+  p.innerHTML = `<div class="card-h"><span class="dot"></span><h3>Cầu WiFi</h3><span class="card-x muted" id="brInfo"></span></div>
+    <p class="card-d" id="brWarn"></p>
+    <div class="fields"><div class="field"><label>Tên WiFi của cầu</label><input id="brSsid" maxlength="32" autocomplete="off"></div>
+    <div class="field"><label>Mật khẩu mới (8-63 ký tự)</label><input id="brPass" type="password" maxlength="63" autocomplete="new-password"></div></div>
+    <div class="row" style="margin-top:8px"><button type="button" class="btn" id="brSave">Lưu vào cầu (cầu khởi động lại)</button></div>`;
+  $("relPanel").after(p);
+  try {
+    const j = await (await fetch("/bridge/info", { cache: "no-store" })).json();
+    $("brSsid").value = j.ssid || "";
+    $("brInfo").textContent = `firmware cầu ${j.fw} · UART ${j.baud} baud`;
+    $("brWarn").textContent = j.defpw ? "Cầu đang dùng mật khẩu mặc định allquad123: ai ở gần cũng vào được trang cấu hình. Đổi ngay." : "Điện thoại / máy tính nối WiFi này rồi mở http://192.168.4.1";
+    $("brWarn").className = j.defpw ? "note bad" : "card-d";
+  } catch (e) { $("brInfo").textContent = "không đọc được thông tin cầu"; }
+  $("brSave").onclick = async () => {
+    const s = $("brSsid").value.trim(), pw = $("brPass").value;
+    if (!s || s.length > 32 || pw.length < 8 || pw.length > 63) { toast("Tên 1-32 ký tự, mật khẩu 8-63 ký tự"); return; }
+    try {
+      const r = await fetch("/bridge/wifi", { method: "POST", body: s + "\n" + pw });
+      toast(r.ok ? "Đã lưu: nối lại vào WiFi \"" + s + "\" với mật khẩu mới" : await r.text());
+    } catch (e) { toast("Cầu đang khởi động lại: nối lại WiFi \"" + s + "\""); }
+  };
+}
+function crashRender(st) {
+  if (!st || !shown("system") || !crashHost()) return;
+  bridgeHost();
+  const c = st.crash;
+  $("relWdt").textContent = st.wdt === true ? "watchdog: đang chạy" : st.wdt === false && st.rr !== undefined ? "watchdog: chưa chạy / ESP32 dùng watchdog riêng" : "";
+  setHtml($("relStats"), [
+    ["Lần reset gần nhất", st.rr !== undefined ? RR_VI[st.rr] || String(st.rr) : "—"],
+    ["Bản ghi crash", c ? `${c.n} lần` : "không có"],
+  ].map(([k, v]) => `<div><span>${k}</span><b class="${(st.rr === 4 || st.rr === 7 || st.rr === 9) && k[0] === "L" ? "bad" : ""}">${esc(v)}</b></div>`).join(""));
+  setHtml($("relCrash"), !c ? `<p class="muted" style="margin-bottom:0">Không có lỗi nào được ghi từ lúc cấp nguồn. Bản ghi nằm trong RAM: mất khi rút nguồn.</p>` :
+    `<div class="note${c.ago === 0 ? " bad" : ""}" style="margin-top:8px"><b>${esc(CRASH_VI[c.kind] || c.kind)}</b> ${c.ago === 0 ? "đã làm FC khởi động lại lần này" : `ở một lần chạy trước (${c.ago} lần khởi động trước)`},
+      sau ${(c.t / 1000).toFixed(1)} s, trong <b>${esc(c.where || "?")}</b>.
+      ${c.pc && c.pc !== "0x00000000" ? `<br><span class="num muted" style="font-size:12px">pc ${esc(c.pc)} · lr ${esc(c.lr)} · cfsr ${esc(c.cfsr)} - gửi kèm khi báo lỗi (arm-none-eabi-addr2line -e firmware.elf ${esc(c.pc)})</span>` : ""}
+      <div class="row" style="margin-top:8px"><button type="button" class="btn ghost" id="relCopy">Chép thông tin</button><button type="button" class="btn ghost" id="relClear">Xoá bản ghi</button></div></div>`);
+  if ($("relClear")) $("relClear").onclick = async () => { try { await api("/api/cli", { method: "POST", body: "crash clear", text: true, timeout: 4000 }); toast("Đã xoá bản ghi crash"); } catch (e) { toast("Lỗi: " + e.message, true); } };
+  if ($("relCopy")) $("relCopy").onclick = () => {
+    const t = `AllQuad ${st.fw && st.fw.version || ""} crash: ${c.kind} in ${c.where} after ${c.t} ms, pc ${c.pc} lr ${c.lr} cfsr ${c.cfsr}, ${c.n}x, boots ago ${c.ago}`;
+    try { navigator.clipboard.writeText(t); toast("Đã chép"); } catch (e) { toast(t); }
+  };
+}
+
+// ---------------------------------------------------------------- per-UART traffic and errors (Ports tab)
+// status.ports: [[hal port, rx bytes, tx bytes, overruns, framing, noise, dropped], ...]; status.rxc: receiver
+// [bytes, good frames, checksum errors]. Counters run from boot; the panel shows rates and what changed
+// since it was opened (or "Đặt lại").
+const PS = { last: null, base: null, rate: {} };
+function portStatsHost() {
+  if ($("portStatsPanel")) return true;
+  const t = $("portTable");
+  if (!t) return false;
+  const p = document.createElement("div");
+  p.className = "panel"; p.id = "portStatsPanel";
+  p.innerHTML = `<div class="card-h"><span class="dot"></span><h3>Lưu lượng &amp; lỗi đường truyền</h3><button type="button" class="btn ghost" id="psReset" style="margin-left:auto;min-height:28px;padding:2px 10px">Đặt lại</button></div>
+    <table class="ports" id="psTable"></table><p class="muted" id="psNote" style="margin-bottom:0"></p>`;
+  t.closest(".panel").after(p);
+  $("psReset").onclick = () => { PS.base = PS.last; psDraw(); };
+  return true;
+}
+function portStatsRender(st) {
+  if (!st || !Array.isArray(st.ports)) return;
+  // WebSocket frames between the once-a-second full ones repeat the same array: nothing new to count
+  if (st.ports !== PS.ref) { PS.ref = st.ports; psCount(st); }
+  if (shown("ports") && portStatsHost()) psDraw();
+}
+function psCount(st) {
+  const now = Date.now(), cur = { t: now, p: {}, rxc: Array.isArray(st.rxc) ? st.rxc : null };
+  for (const r of st.ports) if (Array.isArray(r) && r.length >= 7) cur.p[r[0]] = r;
+  const prev = PS.last;
+  if (prev && now - prev.t >= 300) {
+    const dt = (now - prev.t) / 1000;
+    for (const k in cur.p) {
+      const a = cur.p[k], b = prev.p[k];
+      if (b && a[1] >= b[1] && a[2] >= b[2]) PS.rate[k] = [(a[1] - b[1]) / dt, (a[2] - b[2]) / dt];
+    }
+  }
+  if (!prev || now - prev.t >= 300) PS.last = cur;
+  // counters restart when the FC reboots: start over
+  if (PS.base) for (const k in cur.p) { const b = PS.base.p[k]; if (b && cur.p[k][1] < b[1]) PS.base = null; }
+  if (PS.base && PS.base.rxc && cur.rxc && cur.rxc[0] < PS.base.rxc[0]) PS.base = null;
+  if (!PS.base) PS.base = cur;
+  if (prev && prev.rxc && cur.rxc && now - prev.t >= 300 && cur.rxc[1] >= prev.rxc[1]) PS.rxHz = (cur.rxc[1] - prev.rxc[1]) / ((now - prev.t) / 1000);
+}
+function psDraw() {
+  const cur = PS.last;
+  if (!cur) return;
+  const name = (idx) => { const e = typeof PORTS !== "undefined" && PORTS.find((x) => x[2] === idx); return e ? e[1] : "Port " + idx; };
+  const fnName = (idx) => {
+    const e = typeof PORTS !== "undefined" && PORTS.find((x) => x[2] === idx);
+    const f = e && has(e[0] + "_fn") ? S.params[e[0] + "_fn"].v : 0;
+    const t = typeof PORT_FN !== "undefined" && PORT_FN.find((x) => x[0] === f);
+    return t ? t[1] : "";
+  };
+  const fmtB = (v) => (v >= 10240 ? (v / 1024).toFixed(0) + " KB/s" : v >= 1024 ? (v / 1024).toFixed(1) + " KB/s" : v.toFixed(0) + " B/s");
+  let warn = [];
+  const rows = Object.keys(cur.p).map(Number).sort((a, b) => a - b).map((k) => {
+    const a = cur.p[k], b = (PS.base.p[k]) || a, r = PS.rate[k] || [0, 0];
+    const d = [3, 4, 5, 6].map((i) => Math.max(0, a[i] - b[i]));
+    const errs = d[0] + d[1] + d[2] + d[3];
+    if (d[0] || d[3]) warn.push(`${name(k)}: mất byte (tràn bộ đệm) - FC đọc không kịp hoặc baud quá cao`);
+    if (d[1] > 2) warn.push(`${name(k)}: lỗi khung - sai baud, sai đảo tín hiệu (SBUS) hoặc nhiễu / dây lỏng`);
+    const cls = errs ? "bad" : "";
+    return `<tr><td><b>${esc(name(k))}</b><div class="muted" style="font-size:12px">${esc(fnName(k))}</div></td>
+      <td class="num">↓ ${fmtB(r[0])}<br>↑ ${fmtB(r[1])}</td>
+      <td class="num ${cls}" title="tràn phần cứng / khung / nhiễu / đầy bộ đệm">${errs ? `<b>${errs}</b> lỗi<br><span class="muted" style="font-size:12px">tràn ${d[0]} · khung ${d[1]} · nhiễu ${d[2]} · đầy ${d[3]}</span>` : "0 lỗi"}</td></tr>`;
+  });
+  let rxRow = "";
+  if (cur.rxc) {
+    const b = PS.base.rxc || cur.rxc, fr = Math.max(0, cur.rxc[1] - b[1]), ce = Math.max(0, cur.rxc[2] - b[2]);
+    const pct = fr + ce ? (100 * ce) / (fr + ce) : 0;
+    if (pct > 2) warn.push(`Receiver: ${pct.toFixed(1)}% khung sai checksum - kiểm tra dây, mass chung, baud / giao thức`);
+    if (cur.rxc[0] > 0 && cur.rxc[1] === 0) warn.push("Receiver: có dữ liệu nhưng không có khung hợp lệ - sai giao thức (CRSF / SBUS / iBUS) hoặc sai đảo tín hiệu");
+    rxRow = `<tr><td><b>Receiver</b><div class="muted" style="font-size:12px">khung kênh</div></td><td class="num">${(PS.rxHz || 0).toFixed(0)} khung/s<br><span class="muted" style="font-size:12px">${fr} khung</span></td>
+      <td class="num ${pct > 2 ? "bad" : ""}">${ce} sai checksum<br><span class="muted" style="font-size:12px">${pct.toFixed(1)}%</span></td></tr>`;
+  }
+  setHtml($("psTable"), "<tr><th>Cổng</th><th>Lưu lượng</th><th>Lỗi (từ lúc đặt lại)</th></tr>" + rows.join("") + rxRow);
+  $("psNote").textContent = warn.length ? warn.join(". ") + "." : rows.length ? "Không có lỗi đường truyền." : "Chưa có cổng UART nào được mở.";
+  $("psNote").className = warn.length ? "note" : "muted";
+}
+
 // ---------------------------------------------------------------- blackbox: noise heatmap + events
 const MODE_NAMES = ["ACRO", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "FAILSAFE", "TURTLE", "CRUISE", "AUTOTUNE", "GUIDED", "SMARTRTL"];
 function bbProHost() {
@@ -443,18 +592,189 @@ function bbEventsRender() {
     $("tsChart").scrollIntoView({ behavior: "smooth", block: "center" });
   }));
 }
+// ---------------------------------------------------------------- blackbox: flight path (top view)
+// position from home (m) logged with every record; colour = height; the dot follows the time view
+function bbPathHost() {
+  if ($("bbPathPanel") || !$("bbHeatPanel")) return;
+  const p = document.createElement("div");
+  p.className = "panel"; p.id = "bbPathPanel";
+  p.innerHTML = `<div class="card-h"><span class="dot"></span><h3>Đường bay (nhìn từ trên)</h3><span class="card-x muted num" id="bbPathInfo"></span></div>
+    <canvas id="bbPathChart" class="chart" style="height:320px"></canvas>
+    <div class="legend"><span><i style="background:#2F8F5B"></i>thấp</span><span><i style="background:#E0A21B"></i>cao</span><span>⌂ nhà · ● vị trí ở thời điểm đang xem (thanh thời gian bên dưới)</span></div>`;
+  $("bbHeatPanel").after(p);
+}
+function bbPathPoints(fl) {
+  if (fl._path !== undefined) return fl._path;
+  const step = Math.max(1, Math.floor(fl.n / 4000)), pts = [];
+  for (let k = 0; k < fl.n; k += step)
+    if (fl.armed[k] && (fl.posN[k] || fl.posE[k])) pts.push([fl.posN[k], fl.posE[k], fl.alt[k], fl.t[k] - fl.t[0]]);
+  fl._path = pts.length >= 10 ? pts : null;
+  return fl._path;
+}
+function drawPath() {
+  const cv = $("bbPathChart"), fl = S.flight;
+  if (!cv || !fl || $("tab-blackbox").hidden) return;
+  const pts = fl.posN ? bbPathPoints(fl) : null;
+  const panel = $("bbPathPanel");
+  panel.hidden = !pts;
+  if (!pts) return;
+  const { g, w, h } = setupCanvas(cv);
+  g.clearRect(0, 0, w, h);
+  let nMin = 0, nMax = 0, eMin = 0, eMax = 0, aMin = Infinity, aMax = -Infinity, dist = 0, far = 0;
+  pts.forEach(([n, e, a], i) => {
+    nMin = Math.min(nMin, n); nMax = Math.max(nMax, n); eMin = Math.min(eMin, e); eMax = Math.max(eMax, e);
+    aMin = Math.min(aMin, a); aMax = Math.max(aMax, a); far = Math.max(far, Math.hypot(n, e));
+    if (i) dist += Math.hypot(n - pts[i - 1][0], e - pts[i - 1][1]);
+  });
+  const pad = 24, span = Math.max(nMax - nMin, eMax - eMin, 10);
+  const k = Math.min((w - 2 * pad) / span, (h - 2 * pad) / span);
+  const cx = w / 2 - ((eMin + eMax) / 2) * k, cy = h / 2 + ((nMin + nMax) / 2) * k;
+  const X = (e) => cx + e * k, Y = (n) => cy - n * k;
+  // grid with a round step
+  const stepM = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].find((s) => s * k >= 50) || 2000;
+  g.strokeStyle = css("--rule"); g.lineWidth = 1;
+  for (let e = Math.ceil((-cx / k) / stepM) * stepM; X(e) < w; e += stepM) { g.beginPath(); g.moveTo(X(e), 0); g.lineTo(X(e), h); g.stroke(); }
+  for (let n = Math.ceil(((cy - h) / k) / stepM) * stepM; Y(n) > 0; n += stepM) { g.beginPath(); g.moveTo(0, Y(n)); g.lineTo(w, Y(n)); g.stroke(); }
+  const col = (a) => {
+    const t = aMax > aMin ? (a - aMin) / (aMax - aMin) : 0;
+    return `rgb(${Math.round(47 + t * (224 - 47))},${Math.round(143 + t * (162 - 143))},${Math.round(91 + t * (27 - 91))})`;
+  };
+  g.lineWidth = 2.4; g.lineCap = "round";
+  for (let i = 1; i < pts.length; i++) {
+    const [n0, e0] = pts[i - 1], [n1, e1, a1] = pts[i];
+    if (Math.hypot(n1 - n0, e1 - e0) > 50) continue;  // a position reset: no line across
+    g.strokeStyle = col(a1); g.beginPath(); g.moveTo(X(e0), Y(n0)); g.lineTo(X(e1), Y(n1)); g.stroke();
+  }
+  g.fillStyle = css("--ink"); g.font = `bold 15px ${css("--num")}`; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText("⌂", X(0), Y(0));
+  // north arrow + scale
+  g.font = `11px ${css("--num")}`; g.fillStyle = css("--ink-2"); g.textAlign = "left";
+  g.fillText("N ↑", 8, 14);
+  g.fillRect(8, h - 12, stepM * k, 2); g.fillText(`${stepM} m`, 12 + stepM * k, h - 10);
+  // where the time view is
+  const span2 = fl.duration * (+$("tsZoom").value / 100);
+  const tv = (fl.duration - span2) * (+$("tsPos").value / 1000) + span2 / 2;
+  let best = pts[0];
+  for (const p of pts) if (Math.abs(p[3] - tv) < Math.abs(best[3] - tv)) best = p;
+  g.fillStyle = css("--danger"); g.beginPath(); g.arc(X(best[1]), Y(best[0]), 5, 0, 2 * Math.PI); g.fill();
+  $("bbPathInfo").textContent = `${dist.toFixed(0)} m bay · xa nhất ${far.toFixed(0)} m · cao ${aMin.toFixed(0)}–${aMax.toFixed(0)} m`;
+}
 {
   const _af = analyzeFlight;
   analyzeFlight = function (i) {
     _af(i);
     PRO.heat = {};
     bbProHost();
+    bbPathHost();
     PRO.events = S.flight ? bbEvents(S.flight) : [];
     bbEventsRender();
     drawHeat();
+    drawPath();
+    tuneAfterAnalysis();
   };
   const _db = drawBlackbox;
-  drawBlackbox = function () { _db(); drawHeat(); };
+  drawBlackbox = function () { _db(); drawHeat(); drawPath(); };
+  const _ts = drawTimeSeries;
+  drawTimeSeries = function () { _ts(); drawPath(); };
+  $("tsPos").oninput = drawTimeSeries;
+  $("tsZoom").oninput = drawTimeSeries;
+}
+
+// ---------------------------------------------------------------- PID tuning assistant (PID tab)
+// 1 frame -> base values; 2 test flight; 3 blackbox analysis -> plan; repeat until nothing is left.
+// Progress (rounds, metrics per round) stays in this browser.
+const TUNE_FRAMES = [
+  ["5", "5 inch freestyle", "Khung 5 inch freestyle"], ["3", "3 inch / toothpick", "Khung 3 inch / toothpick"],
+  ["cw", "Cinewhoop", "Cinewhoop (có ống bảo vệ)"], ["7", "7 inch bay xa", "Khung 7 inch bay xa"], ["keep", "Giữ PID hiện tại", null]];
+const TUNE_FLIGHT = ["Pin đầy, cánh mới, bay ở chế độ ACRO hoặc ANGLE nơi trống.", "Treo máy 10-15 giây ở ga hover.",
+  "5 lần giật cần roll hết cỡ mỗi bên (thả về giữa ngay), rồi 5 lần pitch.", "3 lần đẩy ga hết rồi thả về 0 (punch-out / prop wash).",
+  "Vài vòng xoay yaw, sau đó hạ cánh. 60-90 giây là đủ."];
+function tuneState() { return lsGet("aq-tune", { step: 0, frame: "", rounds: [] }); }
+function tuneSave(t) { lsSet("aq-tune", t); tuneRender(); }
+function tuneHost() {
+  if ($("tunePanel") || !$("pidMatrix")) return;
+  const p = document.createElement("div");
+  p.className = "panel"; p.id = "tunePanel";
+  $("pidMatrix").closest(".panel").before(p);
+  tuneRender();
+}
+function tuneChecks() {
+  const out = [];
+  const bb = has("bb_rate_hz") ? val("bb_rate_hz") : 0;
+  out.push([bb >= 500, bb >= 500 ? `blackbox ${bb} Hz` : `blackbox ${bb ? bb + " Hz (thấp)" : "đang tắt"}: cần ≥ 500 Hz`, bb >= 500 ? null : { bb_rate_hz: 500 }]);
+  if (has("dshot_bidir")) out.push([!!val("dshot_bidir") || !!val("esc_telemetry"), val("dshot_bidir") ? "RPM filter (bidirectional DShot) bật" : "không có RPM: lọc nhiễu motor kém hơn (bật dshot_bidir nếu ESC hỗ trợ)", null]);
+  if (has("acc_calibrated")) out.push([!!val("acc_calibrated"), val("acc_calibrated") ? "accel đã hiệu chuẩn" : "accel chưa hiệu chuẩn (tab Cảm biến)", null]);
+  return out;
+}
+function tuneRender() {
+  const host = $("tunePanel");
+  if (!host) return;
+  const t = tuneState(), steps = ["Khung", "Bay thử", "Phân tích", "Xong"];
+  const head = `<div class="card-h"><span class="dot"></span><h3>Trợ lý chỉnh PID</h3><span class="card-x muted">${t.rounds.length ? `vòng ${t.rounds.length}` : "từng bước, dựa trên blackbox"}</span></div>
+    <div class="tw-steps">${steps.map((s, i) => `<span class="${i < t.step ? "done" : i === t.step ? "cur" : ""}">${i + 1}. ${s}</span>`).join("")}</div>`;
+  let body = "";
+  if (t.step === 0) {
+    body = `<p class="card-d">Chọn loại khung để bắt đầu từ bộ PID / bộ lọc hợp lý, hoặc giữ giá trị đang có.</p>
+      <div class="row" style="flex-wrap:wrap;gap:6px">${TUNE_FRAMES.map(([k, l]) => `<button type="button" class="btn ghost" data-tf="${k}">${l}</button>`).join("")}</div>`;
+  } else if (t.step === 1) {
+    const ck = tuneChecks();
+    body = `<div class="pf-list">${ck.map(([ok, txt, fix]) => `<div class="pf-row ${ok ? "ok" : "warn"}"><i></i><div><b>${esc(txt)}</b></div>${fix ? `<button type="button" class="btn ghost" data-tfix='${JSON.stringify(fix)}'>Sửa</button>` : "<span></span>"}</div>`).join("")}</div>
+      <p class="card-d" style="margin-top:10px">Nhớ bấm <b>Áp dụng</b> rồi <b>Lưu</b> trước khi bay. Bài bay thử:</p><ol class="card-d">${TUNE_FLIGHT.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>
+      <div class="row"><button type="button" class="btn primary" id="tuneFlown">Đã bay xong: tải log và phân tích</button><button type="button" class="btn ghost" id="tuneBack">Chọn lại khung</button></div>`;
+  } else if (t.step === 2) {
+    const r = t.rounds[t.rounds.length - 1];
+    const n = (S.plan || []).length;
+    body = `<p class="card-d">Vòng ${t.rounds.length}: ${r ? tuneSummary(r) : ""}</p>
+      ${tuneTable(t)}
+      <p class="card-d">${n ? `Kế hoạch có <b>${n}</b> thay đổi (xem tab Blackbox). Đưa vào hàng chờ, Áp dụng, Lưu rồi bay lại.` : "Log này không cần đổi gì thêm."}</p>
+      <div class="row">${n ? `<button type="button" class="btn primary" id="tuneTake">Đưa ${n} thay đổi vào hàng chờ</button>` : ""}<button type="button" class="btn ${n ? "ghost" : "primary"}" id="tuneNext">${n ? "Bay vòng tiếp" : "Kết thúc"}</button><button type="button" class="btn ghost" id="tuneGoBb">Xem chi tiết</button></div>`;
+  } else {
+    body = `<p class="card-d">Đã xong ${t.rounds.length} vòng. Bay thử cảm nhận; muốn tinh chỉnh tiếp thì bắt đầu lại từ bước 2.</p>${tuneTable(t)}
+      <div class="row"><button type="button" class="btn" id="tuneMore">Bay thêm một vòng</button><button type="button" class="btn ghost" id="tuneReset">Bắt đầu lại từ đầu</button></div>`;
+  }
+  host.innerHTML = head + body;
+  host.querySelectorAll("[data-tf]").forEach((b) => (b.onclick = () => {
+    const f = TUNE_FRAMES.find((x) => x[0] === b.dataset.tf);
+    const pr = f[2] && typeof PRESET_LIST !== "undefined" ? PRESET_LIST.find((x) => x[0] === f[2]) : null;
+    let n = 0;
+    if (pr) for (const [k, v] of Object.entries(pr[2])) if (has(k) && Math.abs(val(k) - v) > 1e-6) { setEdit(k, v); n++; }
+    toast(n ? `${n} giá trị cho ${f[1]} đang chờ: bấm Áp dụng rồi Lưu.` : "Giữ giá trị hiện tại.");
+    tuneSave({ ...tuneState(), step: 1, frame: f[0] });
+  }));
+  host.querySelectorAll("[data-tfix]").forEach((b) => (b.onclick = () => {
+    for (const [k, v] of Object.entries(JSON.parse(b.dataset.tfix))) if (has(k)) setEdit(k, v);
+    toast("Đã đưa vào hàng chờ: Áp dụng rồi Lưu."); tuneRender();
+  }));
+  const on = (id, f) => { if ($(id)) $(id).onclick = f; };
+  on("tuneBack", () => tuneSave({ ...tuneState(), step: 0 }));
+  on("tuneFlown", () => { const s = tuneState(); s.waiting = true; lsSet("aq-tune", s); gotoTab("blackbox"); toast("Tải log (hoặc mở file log): phân tích xong trợ lý tự quay lại."); });
+  on("tuneTake", () => { (S.plan || []).forEach((p) => setEdit(p.name, p.to)); toast(`${(S.plan || []).length} thay đổi đang chờ: Áp dụng, Lưu, rồi bay lại.`); });
+  on("tuneNext", () => tuneSave({ ...tuneState(), step: (S.plan || []).length ? 1 : 3 }));
+  on("tuneGoBb", () => gotoTab("blackbox"));
+  on("tuneMore", () => tuneSave({ ...tuneState(), step: 1 }));
+  on("tuneReset", () => { if (confirm("Xoá tiến trình của trợ lý (không đổi tham số nào)?")) tuneSave({ step: 0, frame: "", rounds: [] }); });
+}
+function tuneSummary(r) {
+  return r.ax.map((a, i) => `${AXES[i]} vọt lố ${a.ov == null ? "—" : a.ov.toFixed(0) + "%"}, lên ${a.rise == null ? "—" : a.rise + " ms"}`).join(" · ");
+}
+function tuneTable(t) {
+  if (!t.rounds.length) return "";
+  const f = (v, d) => (v == null || !isFinite(v) ? "—" : v.toFixed(d));
+  return `<div style="overflow-x:auto"><table class="ports"><tr><th>Vòng</th>${AXES.map((a) => `<th>${a}: vọt lố</th><th>${a}: nhiễu</th>`).join("")}<th>Thay đổi</th></tr>
+    ${t.rounds.map((r, i) => `<tr><td>${i + 1}</td>${r.ax.map((a) => `<td class="num">${a.ov == null ? "—" : f(a.ov, 0) + "%"}</td><td class="num">${f(a.noise, 2)}</td>`).join("")}<td class="num">${r.plan}</td></tr>`).join("")}</table></div>`;
+}
+// a new analysis while the assistant waits for the test flight: one more round
+function tuneAfterAnalysis() {
+  const t = tuneState();
+  if (!t.waiting || !S.analysis || !S.flight) return;
+  const sig = `${S.flight.n}:${S.flight.duration.toFixed(2)}`;
+  if (t.rounds.some((r) => r.sig === sig)) return;  // the same log opened again
+  t.rounds.push({ sig, ax: S.analysis.axes.map((ax) => ({ ov: ax.step ? ax.step.overshoot * 100 : null, rise: ax.step ? ax.step.riseMs : null, noise: ax.noiseFilt })), plan: (S.plan || []).length });
+  t.step = 2;
+  t.waiting = false;
+  lsSet("aq-tune", t);
+  tuneRender();
+  toast("Trợ lý chỉnh PID: đã có kết quả vòng " + t.rounds.length + " (tab PID).");
 }
 
 // ---------------------------------------------------------------- mission: distance / time / battery
@@ -609,7 +929,7 @@ function setSimple(on) {
 $("viewBtn").onclick = () => { setSimple(!document.body.classList.contains("simple")); toast(document.body.classList.contains("simple") ? "Chế độ đơn giản: chỉ hiện các thông số chính. Tab Tham số vẫn đủ." : "Chế độ nâng cao: hiện mọi thông số."); };
 {
   const _bp = buildPid;
-  buildPid = function () { _bp(); markAdv(); if (shown("params")) profHost(); };
+  buildPid = function () { _bp(); markAdv(); tuneHost(); if (shown("params")) profHost(); };
 }
 
 // ---------------------------------------------------------------- theme: auto / light / dark / outdoor
@@ -694,7 +1014,9 @@ async function usbConnect(dev) {
   showConnect = function (msg, bad) {
     _sc(msg, bad);
     const webusb = "usb" in navigator, serial = "serial" in navigator;
-    $("usbPick").hidden = !webusb || serial;
+    // phones: Web Serial on Android does not list every USB CDC device, so WebUSB is offered there too
+    const phone = /Android|Mobi/i.test(navigator.userAgent);
+    $("usbPick").hidden = !webusb || (serial && !phone);
     if (!serial && webusb) {
       $("comPick").hidden = true;
       const err = $("comErr");
@@ -707,7 +1029,7 @@ async function usbConnect(dev) {
     try { dev = await navigator.usb.requestDevice({ filters: USB_FILTERS }); } catch (e) { return; }
     usbConnect(dev);
   };
-  if ("usb" in navigator && !("serial" in navigator)) {
+  if ("usb" in navigator && (!("serial" in navigator) || /Android|Mobi/i.test(navigator.userAgent))) {
     navigator.usb.addEventListener("disconnect", (ev) => { if (LINK.usbdev === ev.device) linkLost("Đã rút cáp USB."); });
     navigator.usb.addEventListener("connect", (ev) => { if (!LINK.open && !$("connect").hidden) usbConnect(ev.device); });
   }

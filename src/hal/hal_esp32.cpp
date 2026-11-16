@@ -60,6 +60,12 @@ static constexpr bool CONSOLE_UART = true;
 // minute. CP2102 / CH340 / CH9102 bridges all do it. (platformio.ini monitor_speed matches.)
 static constexpr uint32_t CONSOLE_BAUD = 921600;
 int resetReason() { return (int)esp_reset_reason(); }
+// the ESP-IDF panic handler and task watchdog report through the reset reason (and the coredump partition)
+bool lastCrash(CrashInfo&) { return false; }
+void crashClear() {}
+void watchdogStart() {}
+void watchdogKick() {}
+bool watchdogRunning() { return false; }
 int imuIntPin() {
 #if defined(PIN_IMU_INT)
   return PIN_IMU_INT;
@@ -170,6 +176,15 @@ void portOpen(Port p, uint32_t baud, UartFormat fmt, bool inverted) {
   s->setRxBufferSize(1024);
   s->setTxBufferSize(1024);
   s->begin(baud, fmt == UartFormat::F8E2 ? SERIAL_8E2 : fmt == UartFormat::F8N2 ? SERIAL_8N2 : SERIAL_8N1, rx, tx, inverted);
+  internal::portMarkOpen(p);
+  // line errors are reported by the UART driver's event task: counted per port (web: Cổng tab)
+  s->onReceiveError([p](hardwareSerial_error_t e) {
+    PortStats& st = internal::portStatsRef(p);
+    if (e == UART_FIFO_OVF_ERROR) st.overruns++;
+    else if (e == UART_BUFFER_FULL_ERROR) st.dropped++;
+    else if (e == UART_FRAME_ERROR || e == UART_BREAK_ERROR) st.framing++;
+    else if (e == UART_PARITY_ERROR) st.noise++;
+  });
 }
 
 // ---------------- UDP (WiFi access point) ----------------
@@ -535,6 +550,7 @@ bool storageLoad(Slot s, void* data, size_t len) {
   prefs.end();
   return n == len;
 }
+void storageInfo(int& copy, uint32_t& seq, int& copies) { copy = 0; seq = 0; copies = 0; }  // NVS
 bool storageSave(Slot s, const void* data, size_t len) {
   if (!prefs.begin("allquad", false)) return false;
   size_t n = prefs.putBytes(slotKey(s), data, len);
@@ -787,6 +803,8 @@ bool sdMount(uint8_t mode, uint8_t mhz, const uint8_t pin[6], char* err, size_t 
 }
 
 bool sdMounted() { return sdFs != nullptr; }
+void sdSetDma(bool) {}
+bool sdDmaActive() { return false; }
 const char* sdCardType() { return sdType; }
 bool sdSpace(uint64_t& total, uint64_t& used) {
   if (!sdFs) return false;

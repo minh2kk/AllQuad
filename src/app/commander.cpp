@@ -1112,6 +1112,7 @@ void Commander::publish(uint32_t now) {
   if (rescueLanding_ && armed_) w |= WARN_RESCUE;
   if (gcsFsDone_ && armed_) w |= WARN_GCS_LOST;
   if (bus::imuActive) w |= WARN_IMU2;
+  if (armed_ && bus::rpmLostMask) w |= WARN_RPM_LOST;
   st.warnings = w;
   bus::status.publish(st);
   EkfReport r{};

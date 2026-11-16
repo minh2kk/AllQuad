@@ -59,13 +59,34 @@ def ws_recv(rfile):
     return op, bytes(data)
 
 
+BRIDGE = {"ssid": "AllQuad-Link-SIM", "defpw": True}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def do_POST(self):
+        if self.path.split("?")[0] != "/bridge/wifi":
+            self.send_error(404)
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        lines = self.rfile.read(n).decode(errors="replace").split("\n")
+        ok = len(lines) == 2 and 1 <= len(lines[0]) <= 32 and 8 <= len(lines[1]) <= 63
+        if ok:
+            BRIDGE["ssid"], BRIDGE["defpw"] = lines[0], lines[1] == "allquad123"
+        body = b"saved: the bridge restarts with the new WiFi" if ok else b"name 1-32, password 8-63 characters"
+        self.send_response(200 if ok else 400)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         path = self.path.split("?")[0]
-        if path == "/sitl" and self.headers.get("Upgrade", "").lower() == "websocket":
+        # /link: what the ESP32-C3 WiFi bridge offers (src/bridge), here wired to the simulator: open
+        # http://localhost:8080/?bridge to try the bridge page without the hardware
+        if path in ("/sitl", "/link") and self.headers.get("Upgrade", "").lower() == "websocket":
             return self.sitl([SIM, "serve"] if os.access(SIM, os.X_OK) else None)
         # tests only: AQ_TEST_BRIDGES="name=command;..." exposes /bridge/<name> (e.g. a fake ESP32 ROM)
         if path.startswith("/bridge/") and self.headers.get("Upgrade", "").lower() == "websocket":
@@ -74,6 +95,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.sitl(cmd.split() if cmd else None)
         if path == "/sitl/available":
             body = json.dumps({"ok": os.access(SIM, os.X_OK)}).encode()
+            ctype = "application/json"
+        elif path == "/bridge/info":  # stand-in for the bridge's own page (the simulator has no WiFi)
+            body = json.dumps({"ok": True, "fw": "sim", "ssid": BRIDGE["ssid"], "baud": 460800, "defpw": BRIDGE["defpw"],
+                               "rx": 0, "tx": 0}).encode()
             ctype = "application/json"
         elif path in ("/", "/index.html"):
             body, ctype = page(), "text/html; charset=utf-8"

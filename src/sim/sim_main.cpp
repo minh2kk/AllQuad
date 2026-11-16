@@ -94,6 +94,8 @@ struct Options {
   bool imuDead = false;                 // first IMU stops answering (failover test)
   float magCmot = 0;                    // compass interference (G per A, body x)
   bool edtEsc = false;                  // ESCs answer DShot command 13 with extended telemetry (AM32)
+  int bidirDead = -1;                   // bidirectional DShot: this output stops answering (-1 none)
+  int bidirGlitchEvery = 0;             // every Nth answer of output 0 decodes to 4x its eRPM (0 = never)
   Vec3 gpsOffset;                       // injected GPS position error (glitch), m
   float (*terrain)(float n, float e) = nullptr;  // ground height under the craft (rangefinder only)
 };
@@ -208,11 +210,16 @@ void physicsTask(void*) {
         e.frames++;
       }
   }
-  if (hal::host::bidir)  // bidirectional DShot: each ESC answers with its eRPM (+1 % noise)
+  if (hal::host::bidir) {  // bidirectional DShot: each ESC answers with its eRPM (+1 % noise)
+    static uint32_t answers = 0;
+    answers++;
     for (int i = 0; i < 4; i++) {
       float pairs = bus::config.motor_poles * 0.5f;
       hal::host::erpm[i] = quad.m[i] > 0.02f ? quad.motorHz(i) * 60.0f * pairs * (1.0f + gauss(0.01f)) : 0.0f;
+      if (i == opt.bidirDead) hal::host::erpm[i] = -1;  // no valid answer
+      if (i == 0 && opt.bidirGlitchEvery && answers % opt.bidirGlitchEvery == 0) hal::host::erpm[i] *= 4.0f;
     }
+  }
 }
 
 void simIoTask(void*) {
@@ -1056,6 +1063,78 @@ void scenarioBidir() {
   check("RPM filter with bidirectional DShot > 10x", filtRms < rawRms / 10.0f, "filtered/raw = %.3f", filtRms / rawRms);
 }
 
+void scenarioRpmLoss() {
+  printf("\n== rpmloss: RPM decode glitches, then one ESC stops answering in flight ==\n");
+  opt.vibration = true;
+  opt.bidirGlitchEvery = 37;
+  setup([](Config& c) { c.esc_telemetry = 0; c.dshot_bidir = 1; });
+  double rawSq = 0, filtSq = 0;
+  int n = 0;
+  bool warnEarly = false, warnLost = false, warnAfter = false;
+  uint8_t mask = 0;
+  float maxTilt = 0;
+  run(26, [&](float t) {
+    if (t >= 3.0f) rcIn.ch[4] = 2000;
+    if (t >= 3.5f && t < 6.0f) rcIn.ch[RC_THROTTLE] = 1560;
+    if (t >= 6.0f && t < 22.0f) { rcIn.ch[5] = 2000; rcIn.ch[RC_THROTTLE] = 1500; }
+    opt.bidirDead = t >= 14.0f ? 2 : -1;
+    if (t >= 22.0f) { rcIn.ch[RC_THROTTLE] = 1000; rcIn.ch[4] = 1000; }
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (t > 8 && t < 13.9f && (s.warnings & WARN_RPM_LOST)) warnEarly = true;
+    if (t > 14.5f && t < 21 && (s.warnings & WARN_RPM_LOST)) { warnLost = true; mask = bus::rpmLostMask; }
+    if (t > 25 && (s.warnings & WARN_RPM_LOST)) warnAfter = true;
+    if (t > 14.5f && t < 21) maxTilt = fmaxf(maxTilt, fmaxf(fabsf(quad.q.roll()), fabsf(quad.q.pitch())) * RAD2DEG);
+    if (t > 8 && t < 13.5f && fmodf(t, 0.004f) < 0.0005f) {
+      AttitudeState a = bus::attitude.get();
+      PidDebug p = bus::pid.get();
+      Vec3 truth = quad.w * RAD2DEG;
+      Vec3 er = p.gyroRaw - truth, ef = a.rateDps - truth;
+      rawSq += er.dot(er);
+      filtSq += ef.dot(ef);
+      n++;
+    }
+  });
+  opt.vibration = false;
+  opt.bidirGlitchEvery = 0;
+  opt.bidirDead = -1;
+  float rawRms = (float)sqrt(rawSq / n), filtRms = (float)sqrt(filtSq / n);
+  check("RPM filter > 10x with decode glitches", filtRms < rawRms / 10.0f, "filtered/raw = %.3f", filtRms / rawRms);
+  check("No RPM warning while all ESCs answer", !warnEarly, "%.0f", warnEarly);
+  check("RPM TELEMETRY LOST for motor 3 only", warnLost && mask == 4, "mask %.0f", mask);
+  check("Still flies level without motor 3's notches", maxTilt < 10.0f, "max tilt %.1f deg", maxTilt);
+  check("Warning gone after disarm", !warnAfter, "%.0f", warnAfter);
+}
+
+void scenarioConsole() {
+  printf("\n== console: configurator UART (WiFi bridge) and USB share the console ==\n");
+  setup([](Config& c) { c.port_fn[0] = (uint8_t)PortFn::CONFIGURATOR; });
+  auto send = [](hal::Port p, const char* s) { for (const char* q = s; *q; q++) hal::host::in(p).push_back((uint8_t)*q); };
+  std::string& uart = hal::host::out(hal::Port::SERIAL1);
+  std::string& usb = hal::host::out(hal::Port::CONSOLE);
+  bool bridgeAnswer = false, usbIgnored = false, usbTakesOver = false, bridgeIgnored = false;
+  run(6, [&](float t) {
+    if (fabsf(t - 1.0f) < 0.0005f) { uart.clear(); usb.clear(); send(hal::Port::SERIAL1, "version\n"); }
+    if (fabsf(t - 1.5f) < 0.0005f) {
+      bridgeAnswer = uart.find("AllQuad") != std::string::npos && usb.find("AllQuad") == std::string::npos;
+      usb.clear();
+      send(hal::Port::CONSOLE, "version\n");  // 0.5 s after the bridge spoke: not served
+    }
+    if (fabsf(t - 2.0f) < 0.0005f) usbIgnored = usb.find("AllQuad") == std::string::npos;
+    if (fabsf(t - 3.5f) < 0.0005f) { uart.clear(); send(hal::Port::CONSOLE, "version\n"); }
+    if (fabsf(t - 4.0f) < 0.0005f) {
+      usbTakesOver = usb.find("AllQuad") != std::string::npos && uart.find("AllQuad") == std::string::npos;
+      uart.clear();
+      send(hal::Port::SERIAL1, "version\n");  // USB just spoke: the bridge waits
+    }
+    if (fabsf(t - 4.5f) < 0.0005f) bridgeIgnored = uart.find("AllQuad") == std::string::npos;
+  }, [](float) {});
+  check("Bridge UART answered on the bridge only", bridgeAnswer, "%.0f", bridgeAnswer);
+  check("USB not served while the bridge is in use", usbIgnored, "%.0f", usbIgnored);
+  check("USB takes over after 1.5 s of bridge silence", usbTakesOver, "%.0f", usbTakesOver);
+  check("Bridge waits while USB is in use", bridgeIgnored, "%.0f", bridgeIgnored);
+}
+
 void scenarioEdt() {
   printf("\n== edt: AM32 extended DShot telemetry, no battery divider / current sensor on the FC ==\n");
   opt.adc = false;
@@ -1598,7 +1677,7 @@ int main(int argc, char** argv) {
       {"flow", scenarioFlow}, {"vibration", scenarioVibration}, {"turtle", scenarioTurtle}, {"tune", scenarioTune}, {"wind", scenarioWind},
       {"glitch", scenarioGlitch}, {"hover", scenarioHover}, {"nomag", scenarioNoMag}, {"terrain", scenarioTerrain},
       {"cruise", scenarioCruise}, {"mission2", scenarioMission2}, {"autotune", scenarioAutotune},
-      {"autotune_abort", scenarioAutotuneAbort}, {"motortest", scenarioMotorTest}, {"motormap", scenarioMotorMap}, {"bidir", scenarioBidir}, {"edt", scenarioEdt},
+      {"autotune_abort", scenarioAutotuneAbort}, {"motortest", scenarioMotorTest}, {"motormap", scenarioMotorMap}, {"bidir", scenarioBidir}, {"rpmloss", scenarioRpmLoss}, {"console", scenarioConsole}, {"edt", scenarioEdt},
       {"guided", scenarioGuided}, {"smartrtl", scenarioSmartRtl}, {"crash", scenarioCrash}, {"gcsfs", scenarioGcsFailsafe},
       {"spin", scenarioSpin}, {"logic", scenarioLogic}, {"profiles", scenarioProfiles}, {"polyfence", scenarioPolyFence},
       {"imufail", scenarioImuFail}, {"acc6", scenarioAcc6}, {"compassmot", scenarioCompassMot}, {"feel", scenarioFeel},

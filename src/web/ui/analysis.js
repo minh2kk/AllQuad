@@ -182,7 +182,7 @@
       t: new Float64Array(n), gyro: mk(3), gyroRaw: mk(3), sp: mk(3), P: mk(3), I: mk(3), D: mk(3), F: mk(3),
       motor: mk(4), thr: new Float32Array(n), rc: mk(4), att: mk(3), alt: new Float32Array(n),
       vz: new Float32Array(n), vbat: new Float32Array(n), cur: new Float32Array(n),
-      mode: new Uint8Array(n), armed: new Uint8Array(n),
+      mode: new Uint8Array(n), armed: new Uint8Array(n), posN: new Float32Array(n), posE: new Float32Array(n),
     };
     for (let r = 0; r < n; r++) {
       let o = f.rows[r] + 2;
@@ -198,7 +198,8 @@
       for (let a = 0; a < 3; a++) c.att[a][r] = i16() / 10;
       c.alt[r] = i32() / 100;
       c.vz[r] = i16() / 100;
-      o += 8;  // posN, posE
+      c.posN[r] = i32() / 100;  // m from home (0, 0 = no position)
+      c.posE[r] = i32() / 100;
       c.vbat[r] = u16() / 100;
       c.cur[r] = i16() / 100;
       c.mode[r] = dv.getUint8(o); o += 2;  // mode, navPhase

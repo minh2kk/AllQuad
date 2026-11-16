@@ -182,7 +182,9 @@ static esp_err_t onOta(httpd_req_t* req) {
   if (armed()) return reply(req, 423, "disarm first");
   const esp_partition_t* slot = esp_ota_get_next_update_partition(nullptr);
   if (!slot) return reply(req, 400, "no update slot (flash the OTA partition table over USB once)");
-  if (req->content_len < 64 * 1024 || req->content_len > slot->size) return reply(req, 400, "not a firmware image");
+  if (req->content_len < 64 * 1024) return reply(req, 400, "not a firmware image");
+  if (req->content_len > slot->size)  // older, smaller partition table on this board
+    return reply(req, 400, "firmware larger than the update slot: flash it over USB once (new partition table)");
   bus::otaActive = true;  // arming blocked while the flash is being written
   esp_ota_handle_t h = 0;
   esp_err_t err = esp_ota_begin(slot, OTA_WITH_SEQUENTIAL_WRITES, &h);

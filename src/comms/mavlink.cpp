@@ -332,7 +332,7 @@ void MavlinkLink::sendAutopilotVersion() {
   // MISSION_FENCE | MISSION_RALLY
   w.u64(4 | 2 | 8 | 128 | 256 | 8192 | 16384 | 32768);
   w.u64(0);
-  w.u32((2u << 24) | (0u << 16) | (0u << 8) | 255);  // 2.0.0 official
+  w.u32((2u << 24) | (1u << 16) | (0u << 8) | 255);  // 2.1.0 official
   w.u32(0); w.u32(0); w.u32(0);
   w.u16(0); w.u16(0);
   w.str("AllQuad", 8);

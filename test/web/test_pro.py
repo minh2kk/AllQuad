@@ -89,6 +89,19 @@ async def part_mock(b):
     check(await pg.evaluate("!$('tab-sensors').hidden"), "pre-flight: Sửa opens the tab to fix")
     await pg.screenshot(path=os.path.join(SHOTS, "pro-preflight.png"))
 
+    bad = await pg.evaluate("[...document.querySelectorAll('#pfAuto .pf-row.bad b')].map(e => e.textContent)")
+    check("Lần khởi động trước" in bad, "pre-flight: a crash reset is flagged")
+    # reset reason / crash record (System tab)
+    await tab(pg, "system")
+    await pg.wait_for_selector("#relCrash .note", timeout=4000)
+    txt = await pg.inner_text("#relPanel")
+    check("LỖI FIRMWARE" in txt and "telemetry" in txt and "0x0800F4E6" in txt and "watchdog: đang chạy" in txt, "system: reset reason, crash record, watchdog")
+    await pg.screenshot(path=os.path.join(SHOTS, "pro-crash.png"))
+    await pg.click("#relClear")
+    await pg.wait_for_function("!S.status.crash", timeout=5000)
+    await pg.wait_for_timeout(400)
+    check("không có" in await pg.inner_text("#relPanel"), "system: crash record cleared")
+
     # review / undo / apply / save reminder
     await pg.evaluate("setEdit('rth_alt', 35); setEdit('roll_p', 50); setEdit('airmode', 0)")
     await pg.click("#reviewBtn")
@@ -137,6 +150,29 @@ async def part_mock(b):
     await pg.wait_for_timeout(800)
     check("100%" in await pg.inner_text("#rxStats"), "RC link: statistics shown")
 
+    # per-UART traffic / errors (Ports tab)
+    await tab(pg, "ports")
+    await pg.wait_for_function("document.querySelectorAll('#psTable tr').length >= 4", timeout=6000)
+    await pg.wait_for_timeout(2500)
+    txt = await pg.inner_text("#psTable")
+    check("UART1" in txt and "UART2" in txt and "Receiver" in txt and "khung/s" in txt, "ports: per-UART traffic and receiver frames")
+    check(await pg.evaluate("PS.rxHz > 100 && PS.rate[0] && PS.rate[0][0] > 1000"), "ports: rates from the counters (rx %s)" % await pg.evaluate("PS.rxHz"))
+    await pg.screenshot(path=os.path.join(SHOTS, "pro-ports.png"), full_page=True)
+    await pg.click("#psReset")
+    check("0 lỗi" in await pg.inner_text("#psTable"), "ports: reset starts the error count over")
+
+    # PID tuning assistant: frame -> test flight -> analysis round
+    await pg.evaluate("localStorage.removeItem('aq-tune')")
+    await tab(pg, "pid")
+    await pg.wait_for_selector("#tunePanel [data-tf='5']", timeout=4000)
+    await pg.click("#tunePanel [data-tf='5']")
+    await pg.wait_for_selector("#tuneFlown", timeout=3000)
+    check(await pg.evaluate("tuneState().step === 1 && Object.keys(S.edits).length >= 0"), "tuning assistant: frame chosen, test-flight step")
+    await pg.click("#tuneFlown")
+    await pg.wait_for_timeout(400)
+    check(await pg.evaluate("!$('tab-blackbox').hidden"), "tuning assistant: goes to the blackbox tab")
+    await pg.evaluate("$('discardBtn') && $('discardBtn').click()")
+
     # blackbox heatmap + events
     await tab(pg, "blackbox")
     await pg.click("#bbDownload")
@@ -145,6 +181,20 @@ async def part_mock(b):
     check(rows >= 1, "blackbox: noise vs throttle heatmap (%d throttle bands)" % rows)
     await pg.click("#bbEvents .ev >> nth=1")
     check(await pg.evaluate("+$('tsPos').value >= 0"), "blackbox: event moves the time view")
+    path = await pg.evaluate("$('bbPathPanel') && !$('bbPathPanel').hidden ? $('bbPathInfo').textContent : ''")
+    check("m bay" in path, "blackbox: flight path from the logged position (%s)" % path)
+    if path:
+        await pg.locator("#bbPathPanel").screenshot(path=os.path.join(SHOTS, "pro-path.png"))
+    t = await pg.evaluate("tuneState()")
+    check(t["step"] == 2 and len(t["rounds"]) == 1, "tuning assistant: the analysed log is round 1")
+    await pg.click("#bbPin")
+    check(await pg.evaluate("bbRefSpec(0).length === 2"), "compare: pinned flight's spectrum overlaid")
+    await pg.click("#bbUnpin")
+    await tab(pg, "pid")
+    await pg.wait_for_selector("#tunePanel table", timeout=3000)
+    check("Vòng" in await pg.inner_text("#tunePanel"), "tuning assistant: round table on the PID tab")
+    await pg.screenshot(path=os.path.join(SHOTS, "pro-tune.png"))
+    await tab(pg, "blackbox")
     await pg.screenshot(path=os.path.join(SHOTS, "pro-blackbox.png"), full_page=True)
 
     # mission statistics
@@ -194,6 +244,54 @@ async def part_webusb(b):
     await pg.close()
 
 
+async def part_pages(b):
+    """GitHub Pages copy: firmware offered from firmware/manifest.json, downloaded and checked"""
+    import http.server, threading, shutil, tempfile, json, functools
+    d = tempfile.mkdtemp()
+    if subprocess.call([sys.executable, os.path.join(ROOT, "tools", "make_pages.py"), d], stdout=subprocess.DEVNULL) != 0:
+        check(False, "make_pages.py")
+        return
+    man = json.load(open(os.path.join(d, "firmware", "manifest.json")))
+    stm = [f for f in man["files"] if f["target"] == "stm"]
+    if not stm:
+        print("(no STM32 build in .pio: Pages firmware check skipped)")
+        return
+    # a second, corrupted copy of the first STM32 file (SHA-256 must catch it)
+    bad = dict(stm[0], file="corrupt.bin", name="corrupt")
+    open(os.path.join(d, "firmware", "corrupt.bin"), "wb").write(b"\0" * bad["size"])
+    man["files"].append(bad)
+    json.dump(man, open(os.path.join(d, "firmware", "manifest.json"), "w"))
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 8097), functools.partial(Quiet, directory=d))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    pg = await b.new_page(viewport={"width": 1200, "height": 900})
+    errs = []
+    pg.on("pageerror", lambda e: errs.append(str(e)))
+    try:
+        await pg.goto("http://127.0.0.1:8097/")
+        await pg.wait_for_selector("#connect:not([hidden])", timeout=8000)
+        await pg.click("#connect .flOpen")
+        await pg.click("#flTarget [data-t=stm]")
+        await pg.wait_for_selector("#flRel:not([hidden])", timeout=5000)
+        n = await pg.evaluate("$('flRelSel').options.length")
+        check(n == len(stm) + 1, "Pages: %d STM32 firmware files offered from the manifest" % n)
+        await pg.click("#flRelGet")
+        await pg.wait_for_function("/STM32/.test($('flInfo').textContent)", timeout=8000)
+        check(await pg.evaluate("!$('flGo').disabled && FL.data.length") == stm[0]["size"], "Pages: firmware downloaded, size + SHA-256 checked, ready to flash")
+        await pg.select_option("#flRelSel", str(len(man["files"]) - 1))
+        await pg.click("#flRelGet")
+        await pg.wait_for_function("/SHA-256/.test($('flInfo').textContent)", timeout=8000)
+        check(await pg.evaluate("$('flGo').disabled"), "Pages: a file that does not match its SHA-256 is refused")
+        await pg.screenshot(path=os.path.join(SHOTS, "pro-pages.png"))
+        check(not errs, "Pages part: no page errors %s" % errs)
+    finally:
+        srv.shutdown()
+        shutil.rmtree(d, ignore_errors=True)
+        await pg.close()
+
+
 async def main():
     os.makedirs(SHOTS, exist_ok=True)
     async with async_playwright() as p:
@@ -201,6 +299,7 @@ async def main():
         b = await p.chromium.launch(**({"executable_path": exe} if exe else {}))
         await part_mock(b)
         await part_webusb(b)
+        await part_pages(b)
         await b.close()
 
 

@@ -75,6 +75,15 @@ def live_status():
     s["fw"] = {"version": "2.0", "slot": "ota_0", "ota": True, "pending": False}
     s["perf"] = [38.0, 41.5, 12.8, 9.6, 6.1, 108.0, 171.0, 1000.0, 10.8]  # ESP32-like numbers (illustrative)
     s["late"] = 0
+    # per-UART counters: RX on UART1 (CRSF 420000 baud, 150 Hz frames) with a few framing errors, GPS on UART2
+    k = int(t * 150)
+    s["ports"] = [[0, k * 26, int(t * 40) * 12, 0, 3 if t > 5 else 0, 0, 0], [1, int(t * 1100), int(t * 4), 0, 0, 0, 0]]
+    s["rxc"] = [k * 26, k, 2 if t > 5 else 0]
+    # last reset: a hard fault in the telemetry task (STM32 crash record), watchdog running
+    s["rr"] = 4 if CRASH else 3
+    s["wdt"] = True
+    if CRASH:
+        s["crash"] = dict(CRASH)
     s["tasks"] = [{"n": "fast", "hz": 1000, "us": 210, "max": 340, "over": 0, "stk": 2100},
                   {"n": "io", "hz": 500, "us": 60, "max": 140, "over": 0, "stk": 2600},
                   {"n": "control", "hz": 250, "us": 180, "max": 420, "over": 0, "stk": 3900},
@@ -94,6 +103,7 @@ def item(cmd, n=0.0, e=0.0, alt=0.0, p1=0.0, p3=0.0):
 
 
 MOTOR = [0.0, 0.0, 0.0, 0.0]
+CRASH = {"kind": "hard fault", "where": "telemetry", "t": 148210, "ago": 0, "n": 1, "pc": "0x0800F4E6", "lr": "0x0800E5AF", "cfsr": "0x00010000"}
 MISSION = {"home": True, "lat": 21.0285, "lon": 105.8542, "fence": 150,
            "items": [item(22, alt=10), item(195, 0, 40), item(16, 30, 0, 10), item(197), item(18, 30, 30, 10, 1, 10),
                      item(177, p1=2), item(115, p1=90), item(16, 50, 50, 12), item(20)],
@@ -148,7 +158,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", accept.decode())
         self.end_headers()
         WS_CLIENTS[0] += 1
-        SLOW = ("tasks", "perf", "late", "sensors", "log", "ssid", "fw", "defpw")
+        SLOW = ("tasks", "perf", "late", "ports", "rxc", "rr", "wdt", "crash", "sensors", "log", "ssid", "fw", "defpw")
         frame = 0
         try:
             while True:
@@ -271,6 +281,9 @@ class H(BaseHTTPRequestHandler):
             if line.startswith("get"):
                 f = line[3:].strip()
                 out = "".join("%s = %s\r\n" % (k, p["v"]) for k, p in by_name.items() if f in k)
+            elif line == "crash clear":
+                CRASH.clear()
+                out = "crash record cleared\r\n"
             elif line == "help":
                 out = "status | tasks | perf | get [filter] | set <name> <value> | save\r\n"
             elif line.startswith("logic"):

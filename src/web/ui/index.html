@@ -605,6 +605,10 @@ table.ports th { text-transform: uppercase; letter-spacing: .04em; font-size: .7
 .pf-cols > .panel { margin: 0; }
 .pf-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--grid); }
 .pf-row:last-child { border-bottom: 0; }
+.tw-steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
+.tw-steps span { font-size: .8rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); }
+.tw-steps span.cur { border-color: var(--accent, var(--pitch)); color: var(--ink); font-weight: 600; }
+.tw-steps span.done { background: color-mix(in srgb, var(--ok) 14%, var(--sheet)); border-color: transparent; color: var(--ink); }
 .pf-row i { width: 11px; height: 11px; border-radius: 50%; background: var(--rule); }
 .pf-row.ok i { background: var(--ok); } .pf-row.warn i { background: var(--amber); } .pf-row.bad i { background: var(--danger); }
 .pf-row b { display: block; font-size: .92rem; }
@@ -998,7 +1002,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
       <form class="cliline" id="cliForm"><span>#</span><input id="cliIn" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Lệnh CLI" placeholder="help"><button class="btn" type="submit">Gửi</button></form>
       <div class="row" id="cliQuick">
         <button class="btn" data-c="status">status</button><button class="btn" data-c="diff">diff</button><button class="btn" data-c="dump">dump</button>
-        <button class="btn" data-c="tasks">tasks</button><button class="btn" data-c="perf">perf</button><button class="btn" data-c="help">help</button>
+        <button class="btn" data-c="selftest">selftest</button><button class="btn" data-c="tasks">tasks</button><button class="btn" data-c="perf">perf</button><button class="btn" data-c="help">help</button>
         <button class="btn" data-c="save">save</button><button class="btn" id="cliClear" type="button">Xoá màn hình</button>
       </div>
     </div>
@@ -1119,7 +1123,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
     <h2 id="comTitle" style="margin-top:0">Kết nối với flight controller</h2>
     <p class="muted" style="margin-bottom:4px">Cắm cáp USB vào FC rồi chọn cổng COM của nó.</p>
     <button class="btn primary" id="comPick">Chọn cổng COM</button>
-    <button class="btn primary" id="usbPick" hidden>Kết nối USB (điện thoại / WebUSB)</button>
+    <button class="btn primary" id="usbPick" hidden>Kết nối USB trực tiếp (điện thoại, WebUSB)</button>
     <button class="btn" id="comAgain" hidden>Kết nối lại cổng vừa dùng</button>
     <button class="btn" id="sitlBtn" hidden>Mô phỏng trên máy (SITL, không cần board)</button>
     <button class="btn" id="demoBtn" hidden>Thử với drone ảo (demo, chạy trong trình duyệt)</button>
@@ -1147,6 +1151,8 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
       <button aria-pressed="true" data-t="esp">ESP32 / ESP32-S3</button><button aria-pressed="false" data-t="stm">STM32 (DFU)</button>
     </div>
     <p class="muted" id="flHow"></p>
+    <div id="flRel" hidden style="margin-bottom:8px"><label for="flRelSel" class="muted" style="font-size:.85rem">Bản phát hành trên trang này</label>
+      <div class="row" style="flex-wrap:nowrap"><select id="flRelSel" style="flex:1"></select><button type="button" class="btn" id="flRelGet">Dùng bản này</button></div></div>
     <label class="btn" for="flFile" style="display:flex;align-items:center;justify-content:center">Chọn file firmware (.bin)</label>
     <input type="file" id="flFile" accept=".bin,application/octet-stream" hidden>
     <p class="num" id="flInfo"></p>
@@ -1410,6 +1416,7 @@ async function connected(h, label) {
   $("secNote").textContent = "Qua USB không cần mật khẩu cũ: dùng khi quên mật khẩu WiFi hoặc web.";
   $("otaPick").hidden = true;
   $("otaNote").textContent = LINK.kind === "sitl" || LINK.kind === "demo" ? "Mô phỏng: không có firmware để cập nhật."
+    : LINK.kind === "bridge" ? "Qua cầu WiFi: nạp firmware FC bằng USB (DFU / pio upload)."
     : "Qua USB: nạp firmware bằng PlatformIO (pio run -t upload) hoặc esptool / STM32 DFU. Qua WiFi thì cập nhật được ngay trên trang này.";
   S.status = null; S.lastFullMs = 0;
   await loadParams();
@@ -1444,20 +1451,34 @@ $("comAgain").onclick = async () => {
   const ports = await navigator.serial.getPorts();
   if (ports.length) connectPort(ports[ports.length - 1]);
 };
-$("sitlBtn").onclick = () => {
-  connBusy("Đang khởi động firmware mô phỏng…");
-  const ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/sitl");
+// raw byte stream over a WebSocket: the simulator (/sitl on the laptop launcher) or the ESP32-C3 WiFi
+// bridge (/link, wired to a UART with the "Configurator" function on the FC)
+function wsLink(path, kind, baud, label, failMsg, lostMsg, onLost) {
+  const ws = new WebSocket(location.origin.replace(/^http/, "ws") + path);
   ws.binaryType = "arraybuffer";
   LINK.ws = ws;
   ws.onmessage = (ev) => linkFeed(new Uint8Array(ev.data));
   ws.onopen = async () => {
-    LINK.kind = "sitl"; LINK.baud = 2000000; LINK.rx = new Uint8Array(0); LINK.closing = false; LINK.open = true;
+    LINK.kind = kind; LINK.baud = baud; LINK.rx = new Uint8Array(0); LINK.closing = false; LINK.open = true;
     LINK.send = async (f) => ws.send(f);
-    try { const h = await hello(8); connBusy(""); connected(h, "SITL"); }
-    catch (e) { connBusy(""); linkLost("Firmware mô phỏng không chạy (build/sim). Chạy tools/build_host.sh rồi thử lại."); }
+    try { const h = await hello(8); connBusy(""); connected(h, label); }
+    catch (e) { connBusy(""); linkLost(failMsg); if (onLost) onLost(); }
   };
-  ws.onclose = () => { if (LINK.ws === ws && !LINK.closing) linkLost("Mô phỏng đã dừng."); };
+  ws.onclose = () => { if (LINK.ws === ws && !LINK.closing) { linkLost(lostMsg); if (onLost) onLost(); } };
+}
+$("sitlBtn").onclick = () => {
+  connBusy("Đang khởi động firmware mô phỏng…");
+  wsLink("/sitl", "sitl", 2000000, "SITL", "Firmware mô phỏng không chạy (build/sim). Chạy tools/build_host.sh rồi thử lại.", "Mô phỏng đã dừng.");
 };
+// page served by the WiFi bridge (http://192.168.4.1/?bridge): connect by itself, again after a loss
+function bridgeConnect() {
+  if (LINK.open || (LINK.ws && LINK.ws.readyState <= 1)) return;
+  showConnect();
+  connBusy("Đang nối với FC qua cầu WiFi…");
+  wsLink("/link", "bridge", 460800, "cầu WiFi",
+    "FC không trả lời qua cầu WiFi: kiểm tra dây TX/RX chéo, GND chung, cổng UART của FC đặt chức năng Configurator (460800 baud).",
+    "Mất kết nối cầu WiFi.", () => { clearTimeout(bridgeConnect.t); bridgeConnect.t = setTimeout(bridgeConnect, 3000); });
+}
 $("comClose").onclick = async () => { await closeLink(); linkState(false); showConnect("Đã ngắt kết nối."); };
 if ("serial" in navigator) {
   // plugged back in (or the STM32 rebooted and re-enumerated): reconnect by itself
@@ -1609,7 +1630,9 @@ const HINT = {
   osd_stats: "Màn hình thống kê sau khi disarm (giây, 0 = tắt)", rpm_w1: "RPM filter: mức notch hài bậc 1 (%)",
   rpm_w2: "RPM filter: mức notch hài bậc 2 (%)", rpm_w3: "RPM filter: mức notch hài bậc 3 (%, thấp = ít trễ hơn)",
   osd_esct_pos: "Vị trí OSD: nhiệt độ ESC", osd_dist_pos: "Vị trí OSD: tổng quãng đường", osd_eff_pos: "Vị trí OSD: mAh/km",
-  osd_tleft_pos: "Vị trí OSD: thời gian bay còn lại",
+  osd_tleft_pos: "Vị trí OSD: thời gian bay còn lại", osd_batbar_pos: "Vị trí OSD: thanh pin", osd_cell_pos: "Vị trí OSD: điện áp mỗi cell",
+  osd_rssi_pos: "Vị trí OSD: RSSI (dBm)", osd_blink: "OSD: cảnh báo và pin yếu nhấp nháy",
+  sd_dma: "Thẻ SD dùng DMA (STM32H7: CPU rảnh hơn khi ghi; tắt = cách cũ, chắc chắn nhất)",
   level_trim_roll: "Cân bằng ANGLE: roll (°)", level_trim_pitch: "Cân bằng ANGLE: pitch (°)", acc_calibrated: "Accel đã hiệu chuẩn",
 };
 for (const x of "xyz") {
@@ -2649,7 +2672,7 @@ function drawBlackbox() {
     { x: ax.specRaw.f, y: ax.specRaw.amp, color: "--ink-2", width: 1.4 },
     { x: ax.specFilt.f, y: ax.specFilt.amp, color: "--ink", width: 2 },
     { x: ax.specD.f, y: ax.specD.amp.map((v) => v / 10), color: "--yaw", width: 1.4 },
-  ], { xmin: 0, ymin: 0, xunit: " Hz" });
+  ].concat(typeof bbRefSpec === "function" ? bbRefSpec(S.specAxis) : []), { xmin: 0, ymin: 0, xunit: " Hz" });
   drawTimeSeries();
   if (typeof bbCompareRender === "function") bbCompareRender();
 }
@@ -2785,7 +2808,8 @@ $("secSsid").oninput = () => { $("secSsid").dataset.touched = "1"; };
 /*PRO_JS*/
 // opened from a file or the laptop launcher (?usb): connect over USB; served by the drone: WiFi
 // the laptop / phone copy (AllQuad-Configurator.html carries the demo firmware) also when hosted on https
-if (location.protocol === "file:" || /[?&]usb\b/.test(location.search) || typeof window.AQ_DEMO_WASM === "string") showConnect();
+if (/[?&]bridge\b/.test(location.search)) bridgeConnect();
+else if (location.protocol === "file:" || /[?&]usb\b/.test(location.search) || typeof window.AQ_DEMO_WASM === "string") showConnect();
 else { loadParams(); startLive(); }
 </script>
 </body>

@@ -172,17 +172,17 @@ Cùng một giao diện, ba cách kết nối:
 | **Tổng quan** | Khung sẵn sàng arm (xanh = sẵn sàng, đỏ = liệt kê từng lý do kèm cách sửa, bấm để tới đúng tab), ô trạng thái (pin, tín hiệu, GPS, chế độ, độ cao, thời gian bay còn lại, tải CPU), chân trời nhân tạo lớn có thang nghiêng, gyro so với setpoint, motor, kênh RC, danh sách tình trạng cảm biến có đèn trạng thái, cảnh báo rung / EKF | `bat_capacity` (để tính thời gian còn lại) |
 | **Trước bay** | Danh sách kiểm tra trước khi bay: tự kiểm tra (kết nối, IMU, accel / compass đã hiệu chuẩn, baro, tay điều khiển + số lần mất sóng, công tắc ARM, failsafe, pin / V-cell, GPS khi dùng chế độ cần GPS, điều kiện arm, cấu hình đã lưu, chỗ trống blackbox, rung) và 7 mục kiểm tra bằng mắt (tự bỏ tích sau 12 giờ); điểm tổng và nút *Sửa* tới đúng tab | — |
 | **Thiết lập** | Trình thiết lập 9 bước, kiểm tra bằng số liệu thật | `imu_align`, `board_roll/pitch/yaw` |
-| **PID & lọc** | Bảng P/I/D/F 3 profile, thanh trượt chỉnh nhanh (độ mạnh chung, giảm chấn, feedforward, I); cảm giác bay & bảo vệ; rates kèm đồ thị; bộ lọc kèm đồ thị đáp ứng tần số & độ trễ | `roll_p…yaw_f`, `p2_*`, `p3_*`, `*_rc_rate`, `*_max_rate`, `*_expo`, `gyro_lpf_hz`, `dterm_lpf_hz`, `dyn_notch_*`, `rpm_harmonics`, `rpm_w1..3` |
+| **PID & lọc** | **Trợ lý chỉnh PID** (chọn khung → bài bay thử → phân tích blackbox → đưa kế hoạch vào hàng chờ, lặp lại; bảng vọt lố / nhiễu từng vòng), bảng P/I/D/F 3 profile, thanh trượt chỉnh nhanh (độ mạnh chung, giảm chấn, feedforward, I); cảm giác bay & bảo vệ; rates kèm đồ thị; bộ lọc kèm đồ thị đáp ứng tần số & độ trễ | `roll_p…yaw_f`, `p2_*`, `p3_*`, `*_rc_rate`, `*_max_rate`, `*_expo`, `gyro_lpf_hz`, `dterm_lpf_hz`, `dyn_notch_*`, `rpm_harmonics`, `rpm_w1..3` |
 | **Chế độ & an toàn** | **Tín hiệu tay điều khiển**: LQ 2 phút gần nhất, trung bình / thấp nhất, số lần và thời gian mất sóng dài nhất; gán chế độ cho khoảng kênh AUX (kéo, Thấp / Giữa / Cao), xem công tắc trực tiếp; failsafe, pin, geofence | `mrN_mode/ch/lo/hi`, `fs_action`, `bat_fs_action`, `fence_*` |
 | **Điều hướng** | Bản đồ (nhà, drone, vệt bay, waypoint, rally, geofence, gió; bản đồ nền OSM); **soạn nhiệm vụ** (chạm thêm, kéo dời), **quét khu vực**, **geofence đa giác**, **bay tới điểm chạm** (GUIDED), nhập / xuất `.waypoints`; **thống kê nhiệm vụ** (quãng đường, thời gian, xa nhà nhất, cao nhất, mAh ước tính theo dòng đo được, cảnh báo khi > 70 % pin); bảng EKF | `rth_alt`, `wp_speed`, `nav_*`, `fence_poly`, `gcs_fs` |
 | **Cảm biến** | Mô hình 3D, đồ thị gyro / accel / compass / độ cao, cảm biến khoảng cách, optical flow, RPM + nhiệt ESC; hiệu chuẩn & hướng lắp | `acc_*`, `mag_*`, `level_trim_*` |
 | **Motor & ESC** | **Thử motor** (khoá đến khi tích "đã tháo cánh"), đo rung từng motor, kiểm tra phản ứng (không cần arm), thứ tự & chiều quay (tìm tự động), giao thức ESC, bíp / đảo chiều từng motor, hiệu chuẩn ESC PWM, **ESC passthrough** (esc-configurator.com) | `motor_protocol`, `dshot_bidir`, `dshot_edt`, `motor_poles`, `yaw_reversed`, `motorN_out` |
-| **Cổng & thiết bị** | Chức năng + baud từng UART (cảnh báo trùng), VTX (băng / kênh / công suất / pit, bảng VTX riêng), dải LED | `serialN_fn`, `serialN_baud`, `vtx_*`, `vtxt_*`, `led_*` |
-| **OSD** | Kéo thả phần tử, bật / tắt, analog hay kính số, lưới chữ, icon hay chữ, xem trước HD, hướng dẫn DJI / Walksnail / HDZero | `osd_backend`, `osd_canvas`, `osd_font`, `osd_stats`, `osd_*_pos` |
-| **Blackbox** | Tải log từ drone hoặc mở file, **thẻ SD** (trạng thái, danh sách, phân tích / lưu / xoá từng file), phân tích, **kế hoạch chỉnh**, bảng ESC, ghim chuyến mốc để so sánh, xuất CSV, **bản đồ nhiệt nhiễu theo mức ga** (vệt chéo = nhiễu motor, vệt đứng = cộng hưởng khung, có vạch cắt lọc), **sự kiện chuyến bay** (arm / disarm, đổi chế độ, motor chạm 100 %, điện áp thấp nhất, tốc độ quay lớn nhất; bấm để nhảy tới đoạn đó) | `bb_rate_hz`, `bb_backend`, `sd_*` |
+| **Cổng & thiết bị** | Chức năng + baud từng UART (cảnh báo trùng), **lưu lượng & lỗi từng UART** (byte/s, tràn, lỗi khung, nhiễu; khung receiver/s + % sai checksum, kèm gợi ý nguyên nhân), chức năng **Configurator** cho cầu WiFi, VTX (băng / kênh / công suất / pit, bảng VTX riêng), dải LED | `serialN_fn`, `serialN_baud`, `vtx_*`, `vtxt_*`, `led_*` |
+| **OSD** | Kéo thả phần tử (thêm thanh pin, V/cell, RSSI dBm), nhấp nháy cảnh báo + pin yếu (`osd_blink`), bật / tắt, analog hay kính số, lưới chữ, icon hay chữ, xem trước HD, hướng dẫn DJI / Walksnail / HDZero | `osd_backend`, `osd_canvas`, `osd_font`, `osd_stats`, `osd_*_pos` |
+| **Blackbox** | Tải log từ drone hoặc mở file, **thẻ SD** (trạng thái, danh sách, phân tích / lưu / xoá từng file), phân tích, **kế hoạch chỉnh**, bảng ESC, ghim chuyến mốc để so sánh, xuất CSV, **bản đồ nhiệt nhiễu theo mức ga** (vệt chéo = nhiễu motor, vệt đứng = cộng hưởng khung, có vạch cắt lọc), **sự kiện chuyến bay** (arm / disarm, đổi chế độ, motor chạm 100 %, điện áp thấp nhất, tốc độ quay lớn nhất; bấm để nhảy tới đoạn đó), **đường bay nhìn từ trên** (màu theo độ cao, chấm đi theo thanh thời gian), so sánh với chuyến mốc cả **phổ nhiễu** (đường đứt nét) | `bb_rate_hz`, `bb_backend`, `sd_*` |
 | **Tham số** | **Hồ sơ drone** (lưu cấu hình theo tên trong trình duyệt, nạp vào hàng chờ, xuất / nhập file `.json`; không chép hiệu chuẩn cảm biến, WiFi, cổng), preset (5 inch, 3 inch, cinewhoop, 7 inch, bộ lọc, rates, an toàn GPS), mọi tham số theo nhóm, tìm kiếm, lịch sử thay đổi + hoàn tác + CSV | — |
 | **CLI** | Dòng lệnh như Betaflight, nhớ lệnh, Tab tự hoàn thành, nút nhanh | — |
-| **Hệ thống** | Lưu / khởi động lại / mặc định / sáng-tối, sao lưu & khôi phục, so sánh với file sao lưu, nạp firmware USB, cập nhật WiFi (OTA), WiFi & bảo mật, **cài đặt blackbox + thẻ SD**, cảnh báo giọng nói, logic conditions, bảng task và thời gian từng khâu vòng bay | `wifi_enable`, `web_enable`, `wifi_armed`, `mav_sysid` |
+| **Hệ thống** | **Khởi động & sự cố** (lý do reset, bản ghi crash STM32 kèm PC / LR, watchdog), cài đặt cầu WiFi (khi nối qua cầu), Lưu / khởi động lại / mặc định / sáng-tối, sao lưu & khôi phục, so sánh với file sao lưu, nạp firmware USB, cập nhật WiFi (OTA), WiFi & bảo mật, **cài đặt blackbox + thẻ SD**, cảnh báo giọng nói, logic conditions, bảng task và thời gian từng khâu vòng bay | `wifi_enable`, `web_enable`, `wifi_armed`, `mav_sysid` |
 
 **Không đè tải lên FC:**
 - Trạng thái được đẩy qua **một WebSocket**: 10 Hz ở tab cần dữ liệu nhanh, 2 Hz ở các tab khác, 2 Hz khi armed.
@@ -207,6 +207,8 @@ Cùng một giao diện, ba cách kết nối:
 |---|---|---|
 | ESP32 / ESP32-S3 | WiFi `AllQuad-xxxx`, mở `192.168.4.1` | Không cần cáp; mọi điện thoại |
 | **STM32** (F411 / F405 / F722 / H743) | **Android + cáp OTG** (USB-C/micro-USB OTG ↔ cổng USB của FC), Chrome mở trang cấu hình | Chrome 148+ dùng Web Serial; Chrome cũ hơn dùng WebUSB (nút *Kết nối USB (điện thoại / WebUSB)*). iPhone không có Web Serial / WebUSB nên không nối USB được |
+
+**Cầu WiFi cho STM32** (không cần cáp, cả iPhone): một ESP32-C3 SuperMini (~2 USD) nạp `pio run -e bridge_esp32c3 -t upload`. Nối GPIO21 (TX) → RX một UART của FC, GPIO20 (RX) ← TX, GND chung, nguồn 5 V. Trên FC đặt cổng đó chức năng **Configurator** (460800 baud). Điện thoại vào WiFi `AllQuad-Link-xxxx` (mật khẩu `allquad123`, đổi ngay ở tab Hệ thống), trang tự mở (hoặc vào `192.168.4.1`) và tự nối với FC. USB và cầu dùng chung console: bên nào nói trước thì được phục vụ, bên kia đợi 1,5 s im lặng. Nạp firmware FC và ESC passthrough vẫn qua USB. Cầu chưa thử trên phần cứng.
 
 Trang cấu hình cho STM32 là một file (`build/web/AllQuad-Configurator.html`, gồm cả drone ảo). Web Serial / WebUSB chỉ chạy trên trang **https** (hoặc file mở trực tiếp trên máy tính), nên với điện thoại hãy đặt file này lên một chỗ https một lần (GitHub Pages, Netlify…, đổi tên thành `index.html`), rồi mở link đó bằng Chrome và *Thêm vào màn hình chính*. Trang tự nhận ra mình là bản USB (không đi tìm drone qua WiFi).
 
@@ -502,6 +504,26 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 
 ---
 
+### Telemetry trên tay điều khiển (CRSF / ELRS, EdgeTX)
+
+FC gửi về tay điều khiển qua ExpressLRS (CRSF), luân phiên mỗi 40 ms một gói: tư thế (`Ptch` `Roll` `Yaw`), pin (`RxBt` `Curr` `Capa` `Bat%`), chế độ bay (`FM`, có `*` khi chưa arm), vario (`VSpd`), độ cao baro so với điểm cất cánh (`Alt`), GPS (`GPS` `GSpd` `Hdg` `Sats`, chỉ khi có fix). Tay điều khiển tự thêm `RQly` `1RSS` `2RSS` `RSNR` `TPWR`.
+
+**Màn hình telemetry cho tay điều khiển màn đen trắng 128×64** (RadioMaster Pocket, Zorro, Boxer, TX12…): `tools/edgetx/SCRIPTS/TELEMETRY/aqtlm.lua`.
+
+| Trang | Nội dung |
+|---|---|
+| 1 Bay | Chế độ, đồng hồ bay, LQ (nhấp nháy khi < 50 %); điện áp to, V/cell, số cell, % pin + thanh; độ cao, vario, tốc độ, số vệ tinh; khoảng cách về nhà + mũi tên chỉ hướng nhà; dòng, mAh, công suất phát |
+| 2 Sóng & GPS | Chân trời nhỏ, RSSI 2 ăng-ten, SNR, công suất, roll / pitch, hướng, toạ độ |
+| 3 Tổng kết | Tự hiện khi disarm sau chuyến bay: thời gian, cao nhất, nhanh nhất, xa nhất, điện áp thấp nhất, dòng lớn nhất, mAh đã dùng |
+
+- Cảnh báo: pin < 3,5 V/cell nhấp nháy + rung một lần; < 3,3 V/cell rung ba lần (sửa `CELL_WARN`, `CELL_CRIT` ở đầu file).
+- Điểm nhà = vị trí GPS lúc arm (cần ≥ 6 vệ tinh).
+- Cài: chép thư mục `SCRIPTS` vào thẻ SD của tay điều khiển → MODEL → DISPLAY (Telemetry screens) → Screen 1: *Script* → `aqtlm` → MODEL → TELEMETRY → *Discover new* (bật drone) → về màn hình chính, giữ **TELE** (Pocket) để mở. Nút ENTER / PAGE đổi trang.
+- ELRS: bật Telemetry Ratio (mặc định `Std` là đủ; `1:8` cập nhật nhanh hơn).
+- Xem trước trên máy tính: `python3 tools/edgetx/preview.py` (chạy script bằng Lua 5.2 như EdgeTX, xuất ảnh màn hình).
+
+**Chỉnh FC từ tay điều khiển** (`tools/edgetx/SCRIPTS/TOOLS/aqcfg.lua`, cần CRSF trên cổng receiver): 4 trang PID / RATES / FILTER / VTX, đọc và ghi qua chính link ELRS (MSP trong khung CRSF 0x7A / 0x7B, cùng cách các script Lua của Betaflight dùng). Cài: chép vào `/SCRIPTS/TOOLS/` → SYS → Tools → `aqcfg`. Con lăn / +- chọn, ENTER sửa rồi ENTER gửi, PAGE đổi trang, mục **SAVE TO FC** để giữ sau khi tắt nguồn. Chỉ đổi được khi đã disarm. Script được thử với chính mã MSP-over-CRSF của firmware (`preview.py`), chưa thử trên tay thật.
+
 ## Hiệu chuẩn
 
 | Việc | Cách |
@@ -536,6 +558,8 @@ Ví dụ: `logic 1 1 2 1 2 0 1200 1 0 0` = độ cao > 120 m → kêu còi.
 | Lệnh | Làm gì |
 |---|---|
 | `help`, `version`, `status` | trợ giúp, phiên bản, trạng thái cảm biến / arm / pin / GPS / gió, thời gian chạy, lý do khởi động lại |
+| `selftest` | kiểm tra nhanh một màn hình, mỗi dòng `[ OK ]` / `[WARN]` / `[FAIL]`: lý do reset, crash, vòng bay, stack, IMU, I2C, baro, compass, receiver (khung / lỗi checksum / LQ), lỗi từng UART, GPS, pin, nơi lưu cấu hình, watchdog, điều kiện arm |
+| `crash [clear\|test\|hang]` | bản ghi lỗi firmware gần nhất (STM32: loại lỗi, task, PC / LR để tra bằng `arm-none-eabi-addr2line`); `test` / `hang` (đã disarm, tháo cánh) cố ý gây lỗi / treo để thử bản ghi và watchdog |
 | `tasks`, `perf` | tải và thời gian từng task; thời gian từng khâu vòng bay nhanh |
 | `get [lọc]`, `set <tên> <giá trị>`, `save`, `defaults` | tham số |
 | `diff`, `dump` | sao lưu (chỉ phần đã đổi / tất cả) dạng lệnh CLI |
@@ -561,7 +585,10 @@ Ví dụ: `logic 1 1 2 1 2 0 1200 1 0 0` = độ cao > 120 m → kêu còi.
 - **Cập nhật qua WiFi (ESP32):**
   - Chọn `firmware.bin`; ghi vào ô OTA còn lại.
   - Không chạy bình thường trong 15 s đầu thì tự quay về bản cũ.
-- **Nâng cấp giữ cấu hình:** tham số mới chỉ thêm vào cuối. Cấu hình cũ (v15 trở lên) tự chuyển sang **v25** với giá trị mặc định cho trường mới.
+- **Nạp firmware từ trang (GitHub Pages):** `python3 tools/make_pages.py` tạo thư mục `pages/` = trang + `firmware/*.bin` + `manifest.json` (kích thước, SHA-256). Đưa thư mục lên Pages; hộp *Nạp firmware* có mục *Bản phát hành trên trang này*, tự chọn đúng board, tải về và kiểm SHA-256 trước khi nạp.
+- **Nâng cấp giữ cấu hình:** tham số mới chỉ thêm vào cuối. Cấu hình cũ (v15 trở lên) tự chuyển sang **v26** với giá trị mặc định cho trường mới.
+- **v2.1, ESP32 DevKit 4 MB:** ô firmware tăng 1,375 → 1,5 MB (blackbox còn 896 KB). Board đang chạy bảng phân vùng cũ phải nạp **file gộp** qua USB một lần (cấu hình về mặc định: sao lưu trước); cập nhật qua WiFi sẽ báo lỗi chứ không ghi hỏng. ESP32-S3 / C6 / P4 không đổi.
+- **STM32 lưu cấu hình hai bản (H743, F405):** mỗi lần lưu ghi vào bản không dùng, có số thứ tự + CRC; mất điện giữa lúc lưu thì lần sau dùng bản cũ còn nguyên. F405 vì vậy giới hạn firmware 768 KB (đang ~300 KB); H743 blackbox flash còn 6 sector (768 KB). F722 / F411 không còn sector trống: một bản như trước.
 
 ---
 
@@ -605,9 +632,11 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 
 | Hạng mục | Kết quả |
 |---|---|
-| Biên dịch PlatformIO | 9 / 9 board, 0 cảnh báo trong mã dự án |
-| Unit test (kèm AddressSanitizer + UBSan) | **186 / 186** |
-| Mô phỏng toàn hệ thống | 38 kịch bản đạt (EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, EDT…) |
+| Biên dịch PlatformIO | 12 / 12 môi trường (6 ESP32, 5 STM32 + QEMU, cầu WiFi C3) |
+| Unit test (kèm AddressSanitizer + UBSan) | **206 / 206** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, OSD v26, migrate v25 → v26) |
+| Mô phỏng toàn hệ thống | 40 kịch bản đạt (EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT…) |
+| QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset |
+| Script Lua EdgeTX | `aqtlm` + `aqcfg` chạy trong Lua 5.2, `aqcfg` nói chuyện với mã MSP-over-CRSF thật |
 | MAVLink đối chiếu pymavlink | 17 / 17 |
 | Bộ phân tích blackbox | 18 / 18 (gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp) |
 | Firmware WebAssembly | 5 / 5 |
@@ -615,7 +644,7 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 
 **CI:** `.github/workflows/ci.yml` chạy unit test (cả sanitizer), mô phỏng, bộ phân tích và build 9 board cho mỗi lần push. File firmware giữ 14 ngày. Để dùng: đưa thư mục dự án lên GitHub (`git init`, `git add .`, `git commit`, `git push`).
 
-**Chưa kiểm chứng trên phần cứng:** DShot / bidir trên chip thật, RMT, OSD MAX7456, khởi tạo từng cảm biến, thẻ SD trên chip thật, các board F405 / F722 / C6 / P4. Khi thử trên bàn, gửi kèm kết quả `status`, `perf`, `tasks`, `sd`, `esc` để kiểm tra.
+**Chưa kiểm chứng trên phần cứng:** DShot / bidir trên chip thật, RMT, OSD MAX7456, khởi tạo từng cảm biến, thẻ SD trên chip thật (cả `sd_dma`), watchdog IWDG và lưu A/B trên flash thật, cầu WiFi ESP32-C3, script `aqcfg` trên tay thật, các board F405 / F722 / C6 / P4. Khi thử trên bàn, gửi kèm kết quả `status`, `perf`, `tasks`, `sd`, `esc` để kiểm tra.
 
 ---
 

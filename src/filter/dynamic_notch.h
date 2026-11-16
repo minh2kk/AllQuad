@@ -5,6 +5,9 @@
 // strongest resonance between minHz and maxHz is located with parabolic
 // interpolation, smoothed, and notches are re-tuned to it.
 #pragma once
+#include <math.h>
+#include <stdint.h>
+
 #include "../common/cycles.h"
 #include "../common/filters.h"
 
@@ -44,6 +47,27 @@ class DynamicNotch {
   float center_[3][MAX_PEAKS];
   Biquad notch_[3][MAX_PEAKS];
   Pt1 smooth_[3][MAX_PEAKS];
+};
+
+// One motor's RPM samples before the RPM filter: a lone sample far from the current value (a decode
+// glitch that passed the checksum, a telemetry frame from the wrong ESC) is held back until the next
+// sample confirms it; 0 (no valid telemetry / motor stopped) is taken at once, so the motor's notches
+// fade out instead of sitting on a stale frequency.
+struct RpmGate {
+  float cur = 0, pending = 0;
+  uint32_t rejected = 0;
+  float update(float hz) {
+    if (!(hz > 0)) { cur = 0; pending = 0; return cur; }
+    bool far = cur > 0 && fabsf(hz - cur) > fmaxf(80.0f, 0.5f * cur);
+    if (far && !(pending > 0 && fabsf(hz - pending) < 0.2f * hz)) {
+      pending = hz;
+      rejected++;
+      return cur;
+    }
+    pending = 0;
+    cur = hz;
+    return cur;
+  }
 };
 
 // RPM filter: notches on motor rotation frequency harmonics, for every motor and

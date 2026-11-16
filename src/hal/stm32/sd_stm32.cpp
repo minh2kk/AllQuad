@@ -1,7 +1,9 @@
 // AllQuad - microSD card on SDMMC1 (STM32H7 boards with the slot on the PCB) with FatFs.
-// 4-bit bus, polled transfers: the card's hardware flow control stops the bus clock whenever the FIFO is
-// full / empty, so a flight task preempting the low-priority "sdcard" task never causes an over/underrun.
-// No DMA, so the data cache needs no maintenance. Other STM32 boards: no SD support (stubs).
+// 4-bit bus. Default: polled transfers - the card's hardware flow control stops the bus clock whenever the
+// FIFO is full / empty, so a flight task preempting the low-priority "sdcard" task never causes an
+// over/underrun. sd_dma 1: the SDMMC's own DMA (IDMA) moves the blocks through a 32-byte aligned bounce
+// buffer (cache cleaned / invalidated around it) while the task sleeps; any DMA error or timeout aborts
+// the transfer, repeats it polled and keeps polling until the next mount. Other STM32 boards: stubs.
 #if defined(AQ_STM32) && !defined(ALLQUAD_HOST)
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +12,7 @@
 #include "task.h"
 #include "../board.h"
 #include "../hal.h"
+#include "board_stm32.h"
 #include "stm32_hal.h"
 
 #if defined(AQ_HAS_SDMMC) && defined(STM32H7xx)
@@ -40,6 +43,42 @@ bool waitTransfer(uint32_t timeoutMs) {
 }
 
 uint8_t clockDiv = 2;  // SDMMC_CK = 100 MHz / (2 x div): 25 MHz
+
+// ---- DMA (IDMA) transfers
+bool dmaWanted = false, dmaOn = false;
+volatile int dmaState = 0;  // 1 running, 2 done, -1 error
+constexpr UINT DMA_BLOCKS = 8;
+alignas(32) uint8_t dmaBuf[DMA_BLOCKS * 512];
+
+bool dmaWait(uint32_t timeoutMs) {
+  uint32_t t0 = HAL_GetTick();
+  while (dmaState == 1) {
+    if (HAL_GetTick() - t0 > timeoutMs) return false;
+    yield1();
+  }
+  return dmaState == 2;
+}
+void dmaFail() {
+  HAL_SD_Abort(&hsd);
+  dmaOn = false;  // polled from now on (until the next mount)
+}
+// one chunk (<= DMA_BLOCKS) by DMA; false = do it polled
+bool dmaRead(BYTE* buf, uint32_t sector, UINT n) {
+  dmaState = 1;
+  if (HAL_SD_ReadBlocks_DMA(&hsd, dmaBuf, sector, n) != HAL_OK) { dmaState = 0; dmaFail(); return false; }
+  if (!dmaWait(1000)) { dmaFail(); return false; }
+  SCB_InvalidateDCache_by_Addr((uint32_t*)dmaBuf, (int32_t)(n * 512));
+  memcpy(buf, dmaBuf, n * 512);
+  return true;
+}
+bool dmaWrite(const BYTE* buf, uint32_t sector, UINT n) {
+  memcpy(dmaBuf, buf, n * 512);
+  SCB_CleanDCache_by_Addr((uint32_t*)dmaBuf, (int32_t)(n * 512));
+  dmaState = 1;
+  if (HAL_SD_WriteBlocks_DMA(&hsd, dmaBuf, sector, n) != HAL_OK) { dmaState = 0; dmaFail(); return false; }
+  if (!dmaWait(1500)) { dmaFail(); return false; }
+  return true;
+}
 
 bool cardInit() {
   // PC8-PC11 = D0-D3, PC12 = CK, PD2 = CMD (AF12); pull-ups on CMD / data
@@ -77,16 +116,36 @@ DSTATUS disk_initialize(BYTE pdrv) {
 DSTATUS disk_status(BYTE pdrv) { return (pdrv || !cardUp) ? STA_NOINIT : 0; }
 DRESULT disk_read(BYTE pdrv, BYTE* buf, LBA_t sector, UINT count) {
   if (pdrv || !cardUp) return RES_NOTRDY;
+  while (dmaOn && count) {
+    UINT n = count < DMA_BLOCKS ? count : DMA_BLOCKS;
+    if (!waitTransfer(500)) return RES_ERROR;
+    if (!dmaRead(buf, (uint32_t)sector, n)) break;  // the rest goes polled
+    buf += n * 512; sector += n; count -= n;
+  }
+  if (!count) return waitTransfer(500) ? RES_OK : RES_ERROR;
   if (!waitTransfer(500)) return RES_ERROR;
   if (HAL_SD_ReadBlocks(&hsd, buf, (uint32_t)sector, count, 1000) != HAL_OK) return RES_ERROR;
   return waitTransfer(500) ? RES_OK : RES_ERROR;
 }
 DRESULT disk_write(BYTE pdrv, const BYTE* buf, LBA_t sector, UINT count) {
   if (pdrv || !cardUp) return RES_NOTRDY;
-  if (!waitTransfer(500)) return RES_ERROR;
+  while (dmaOn && count) {
+    UINT n = count < DMA_BLOCKS ? count : DMA_BLOCKS;
+    if (!waitTransfer(1000)) return RES_ERROR;
+    if (!dmaWrite(buf, (uint32_t)sector, n)) break;
+    buf += n * 512; sector += n; count -= n;
+  }
+  if (!count) return waitTransfer(1000) ? RES_OK : RES_ERROR;
+  if (!waitTransfer(1000)) return RES_ERROR;
   if (HAL_SD_WriteBlocks(&hsd, (uint8_t*)buf, (uint32_t)sector, count, 1000) != HAL_OK) return RES_ERROR;
   return waitTransfer(1000) ? RES_OK : RES_ERROR;
 }
+// SDMMC1 interrupt (DMA transfers only)
+void SDMMC1_IRQHandler(void) { HAL_SD_IRQHandler(&hsd); }
+void HAL_SD_TxCpltCallback(SD_HandleTypeDef*) { dmaState = 2; }
+void HAL_SD_RxCpltCallback(SD_HandleTypeDef*) { dmaState = 2; }
+void HAL_SD_ErrorCallback(SD_HandleTypeDef*) { dmaState = -1; }
+void HAL_SD_AbortCallback(SD_HandleTypeDef*) { if (dmaState == 1) dmaState = -1; }
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buf) {
   if (pdrv || !cardUp) return RES_NOTRDY;
   HAL_SD_CardInfoTypeDef ci;
@@ -101,6 +160,8 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buf) {
 }
 
 namespace hal {
+void sdSetDma(bool on) { dmaWanted = on; }
+bool sdDmaActive() { return dmaOn; }
 uint8_t sdModes() { return 1 << 3; }  // SD bus 4-bit only (fixed wiring)
 bool sdPinsFixed() { return true; }
 void sdDefaultPins(uint8_t p[6]) {
@@ -114,6 +175,14 @@ bool sdMount(uint8_t, uint8_t mhz, const uint8_t*, char* err, size_t n) {
   if (!clockDiv) clockDiv = 1;
   cardUp = false;
   if (disk_initialize(0)) { snprintf(err, n, "no card (SDMMC1)"); return false; }
+  // DMA from the start (the FAT mount reads go through it too); polled again after any DMA error
+  dmaOn = dmaWanted;
+  if (dmaOn) {
+    HAL_NVIC_SetPriority(SDMMC1_IRQn, AQ_PRIO_SD, 0);
+    HAL_NVIC_EnableIRQ(SDMMC1_IRQn);
+  } else {
+    HAL_NVIC_DisableIRQ(SDMMC1_IRQn);
+  }
   FRESULT r = f_mount(&fs, "", 1);
   if (r != FR_OK) {
     snprintf(err, n, r == FR_NO_FILESYSTEM ? "card not FAT formatted" : "mount failed (%d)", (int)r);
@@ -125,6 +194,7 @@ bool sdMount(uint8_t, uint8_t mhz, const uint8_t*, char* err, size_t n) {
   return true;
 }
 void sdUnmount() {
+  dmaOn = false;
   if (fwOpen) { f_close(&fw); fwOpen = false; }
   sdReadClose();
   if (mounted) f_mount(nullptr, "", 0);
@@ -223,6 +293,8 @@ bool sdMount(uint8_t, uint8_t, const uint8_t*, char* err, size_t n) {
   snprintf(err, n, "no SD card support on this board");
   return false;
 }
+void sdSetDma(bool) {}
+bool sdDmaActive() { return false; }
 void sdUnmount() {}
 bool sdMounted() { return false; }
 const char* sdCardType() { return ""; }

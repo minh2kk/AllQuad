@@ -194,6 +194,19 @@ bool spiWriteRaw(SpiDev d, const uint8_t* data, size_t len) {
 }
 
 // ---------------- serial ports ----------------
+static PortStats pStats[(int)Port::COUNT];
+static bool pOpen[(int)Port::COUNT];
+PortStats& internal::portStatsRef(Port p) { return pStats[(int)p < (int)Port::COUNT ? (int)p : 0]; }
+void internal::portMarkOpen(Port p) {
+  if ((int)p >= (int)Port::COUNT) return;
+  pStats[(int)p] = PortStats{};
+  pOpen[(int)p] = true;
+}
+bool portStats(Port p, PortStats& out) {
+  if ((int)p >= (int)Port::COUNT || !pOpen[(int)p]) return false;
+  out = pStats[(int)p];
+  return true;
+}
 bool portExists(Port p) {
   if (p == Port::CONSOLE) return true;
   if (p == Port::UDP) return internal::udpSupported();
@@ -208,7 +221,9 @@ int portRead(Port p) {
   if (p == Port::UDP) return internal::udpRead();
   HardwareSerial* s = internal::serialPort(p);
   if (!s || !s->available()) return -1;
-  return s->read();
+  int c = s->read();
+  if (c >= 0) pStats[(int)p].rxBytes++;
+  return c;
 }
 
 size_t portWrite(Port p, const uint8_t* data, size_t len) {
@@ -218,7 +233,9 @@ size_t portWrite(Port p, const uint8_t* data, size_t len) {
   if (p == Port::CONSOLE) return Serial.write(data, len);
   if (p == Port::UDP) return internal::udpWrite(data, len);
   HardwareSerial* s = internal::serialPort(p);
-  return s ? s->write(data, len) : 0;
+  size_t n = s ? s->write(data, len) : 0;
+  pStats[(int)p].txBytes += (uint32_t)n;
+  return n;
 }
 
 size_t portWriteSpace(Port p) {

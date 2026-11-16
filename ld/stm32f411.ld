@@ -97,6 +97,15 @@ SECTIONS
     __bss_end__ = _ebss;
   } >RAM
 
+  /* not zeroed by the startup code: the crash record survives a reset (system_stm32.cpp) */
+  .noinit (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.noinit)
+    *(.noinit*)
+    . = ALIGN(32);
+  } >RAM
+
   ._stack_check :
   {
     . = ALIGN(8);

@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 25;
+constexpr uint16_t CONFIG_VERSION = 26;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -32,6 +32,7 @@ enum class PortFn : uint8_t {
   BLACKBOX = 8,     // OpenLog style serial logger
   VTX_SA = 9,       // analog video transmitter, TBS SmartAudio (half duplex on the TX pin)
   VTX_TRAMP = 10,   // analog video transmitter, ImmersionRC Tramp
+  CONFIGURATOR = 11,  // a second configurator link (ESP32-C3 WiFi bridge, Bluetooth serial): same as USB
 };
 constexpr int NUM_PORTS = 4;  // UART1, UART2, UART3, UDP (ESP32 WiFi)
 constexpr int NUM_PORTS_EXT = 2;  // UART4, UART5 (v22, boards with more UARTs: H743, F405, F722)
@@ -66,6 +67,10 @@ enum OsdElement : uint8_t {
 // v24 OSD elements (second position array, appended to the config)
 enum Osd2Element : uint8_t {
   OSD2_ESC_TEMP = 0, OSD2_DIST_TOTAL, OSD2_EFFICIENCY, OSD2_TIME_LEFT, OSD2_COUNT
+};
+// v26 OSD elements
+enum Osd3Element : uint8_t {
+  OSD3_BAT_BAR = 0, OSD3_CELL_V, OSD3_RSSI_DBM, OSD3_COUNT
 };
 
 struct AxisPid { float p, i, d, f; };  // Betaflight-compatible scale (e.g. P45 I80 D30 F60)
@@ -304,6 +309,10 @@ struct Config {
   uint8_t sd_mhz;     // bus clock (MHz), 0 = default for the mode
   uint8_t sd_pin[6];  // CLK, CMD, D0, D1, D2, D3 (SPI: SCK, MOSI, MISO, -, -, CS); 255 = board default
   uint8_t sd_keep;    // card nearly full: 1 = delete the oldest logs to make room, 0 = stop logging
+  // ---- v26: OSD extras, SD card DMA ----
+  uint16_t osd_pos3[OSD3_COUNT];  // battery bar, average cell voltage, RSSI (dBm)
+  uint8_t osd_blink;              // 1: critical warnings (failsafe, battery critical...) and a low battery blink
+  uint8_t sd_dma;                 // STM32H7 SDMMC: 1 = blocks moved by the controller's DMA, 0 = by the CPU (polled)
 
   uint32_t crc;
 };

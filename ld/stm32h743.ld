@@ -1,5 +1,5 @@
 /* AllQuad - linker script for the STM32H743VI (STM32Cube build, no Arduino).
-   Bank 1 (1 MB) holds the firmware; bank 2 holds the blackbox (sectors 0-6) and the settings (sector 7). RAM: AXI SRAM (DMA reachable). */
+   Bank 1 (1 MB) holds the firmware; bank 2 holds the blackbox (sectors 0-5) and two copies of the settings (sectors 6, 7). RAM: AXI SRAM (DMA reachable). */
 ENTRY(Reset_Handler)
 
 MEMORY
@@ -95,6 +95,15 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;
     __bss_end__ = _ebss;
+  } >RAM
+
+  /* not zeroed by the startup code: the crash record survives a reset (system_stm32.cpp) */
+  .noinit (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.noinit)
+    *(.noinit*)
+    . = ALIGN(32);
   } >RAM
 
   ._stack_check :

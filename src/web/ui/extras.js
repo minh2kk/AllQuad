@@ -42,6 +42,8 @@ function extrasStatus(st) {
   if (st.warn & 1024) w.push('<span class="chip bad">EKF: cảm biến bị loại, xem tab Điều hướng</span>');
   if (st.warn & 2048) w.push('<span class="chip">Launch control: đẩy ga để phóng</span>');
   if (st.warn & 4096) w.push('<span class="chip bad">GPS Rescue: bay về không tiến triển, đang hạ cánh</span>');
+  if (st.warn & 16384) w.push('<span class="chip bad">Đang bay bằng IMU thứ hai: kiểm tra IMU chính</span>');
+  if (st.warn & 32768) w.push(`<span class="chip bad">Mất RPM telemetry${st.rpml ? " motor " + [1, 2, 3, 4].filter((m) => st.rpml & (1 << (m - 1))).join(", ") : ""}: RPM filter của motor đó đã tắt</span>`);
   const host = $("xWarn");
   if (host) { setHtml(host, w.join("")); host.hidden = !w.length; }
   if (shown("nav")) ekfRender(st);
@@ -493,12 +495,18 @@ function bbRefSeries() {
   if (!BB.ref) return [];
   return BB.ref.steps.map((s, k) => (s ? { x: s.t, y: s.y, color: AXCOL[k], width: 1.4, dash: [5, 4] } : null)).filter(Boolean);
 }
+// the pinned flight's spectra (dashed) on the spectrum chart of the open flight, same axis
+function bbRefSpec(axis) {
+  const r = BB.ref && BB.ref.spec && BB.ref.spec[axis];
+  if (!r) return [];
+  return [{ x: r.f, y: r.raw, color: "--ink-2", width: 1, dash: [5, 4] }, { x: r.f, y: r.amp, color: "--ink", width: 1.4, dash: [5, 4] }];
+}
 function bbCompareRender() {
   const host = $("bbCmp");
   if (!host || !S.analysis) return;
   const cur = bbMetrics(S.analysis), ref = BB.ref;
   $("bbUnpin").hidden = !ref;
-  if (!ref) { host.innerHTML = '<p class="muted">Ghim chuyến này làm mốc, đổi PID/bộ lọc, bay lại rồi mở log mới: đường đứt nét trên biểu đồ đáp ứng bước là chuyến mốc.</p>'; return; }
+  if (!ref) { host.innerHTML = '<p class="muted">Ghim chuyến này làm mốc, đổi PID/bộ lọc, bay lại rồi mở log mới: đường đứt nét trên biểu đồ đáp ứng bước và phổ nhiễu là chuyến mốc.</p>'; return; }
   const f = (v, d = 0) => (v === null || v === undefined || !isFinite(v) ? "—" : v.toFixed(d));
   const delta = (a, b, d, lowerBetter = true) => {
     if (a === null || b === null || !isFinite(a) || !isFinite(b)) return "";
@@ -507,7 +515,7 @@ function bbCompareRender() {
     return ` <span class="${(x < 0) === lowerBetter ? "good" : "bad"}">${x > 0 ? "+" : ""}${x.toFixed(d)}</span>`;
   };
   const rows = [["Vọt lố (%)", "ov", 0], ["Lên 90% (ms)", "rise", 0], ["Nhiễu gyro sau lọc (°/s)", "noise", 2], ["Nhiễu gyro thô (°/s)", "raw", 1], ["Nhiễu D-term", "dn", 1], ["Sai lệch bám (°/s RMS)", "trk", 1]];
-  host.innerHTML = `<p class="muted">Mốc: ${esc(ref.label)}. Số màu xanh là tốt hơn mốc.</p><table class="ports"><tr><th></th>${AXES.map((a) => `<th>${a}: mốc</th><th>${a}: chuyến này</th>`).join("")}</tr>` +
+  host.innerHTML = `<p class="muted">Mốc: ${esc(ref.label)}. Số màu xanh là tốt hơn mốc. Đường đứt nét trên đáp ứng bước và phổ nhiễu: chuyến mốc.</p><table class="ports"><tr><th></th>${AXES.map((a) => `<th>${a}: mốc</th><th>${a}: chuyến này</th>`).join("")}</tr>` +
     rows.map(([t, k, d]) => `<tr><td>${t}</td>${[0, 1, 2].map((a) => `<td class="num">${f(ref.m[a][k], d)}</td><td class="num">${f(cur[a][k], d)}${delta(cur[a][k], ref.m[a][k], d)}</td>`).join("")}</tr>`).join("") + "</table>";
 }
 function bbPin() {
@@ -516,6 +524,7 @@ function bbPin() {
   BB.ref = {
     label: `${$("bbFlight").selectedOptions[0] ? $("bbFlight").selectedOptions[0].textContent : "chuyến bay"}, PID ${AXES.map((a) => (fl.pid[a] ? `${fl.pid[a].p}/${fl.pid[a].i}/${fl.pid[a].d}` : "?")).join(" · ")}`,
     steps: S.analysis.axes.map((ax) => (ax.step ? { t: Array.from(ax.step.t), y: Array.from(ax.step.y) } : null)),
+    spec: S.analysis.axes.map((ax) => ({ f: Array.from(ax.specFilt.f), amp: Array.from(ax.specFilt.amp), raw: Array.from(ax.specRaw.amp) })),
     m: bbMetrics(S.analysis),
   };
   toast("Đã ghim làm mốc. Mở log khác để so sánh.");

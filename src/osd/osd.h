@@ -23,6 +23,9 @@ constexpr char RSSI = 0x01, THR = 0x04, VOLT = 0x06, MAH = 0x07, M = 0x0C, HOME 
                AH_CENTER = 0x73, AH_CENTER_R = 0x74, TEMP = 0x7A, LQ = 0x7B, ALT = 0x7F;
 constexpr char AH_BAR0 = (char)0x80, LAT = (char)0x89, BATT = (char)0x97, LON = (char)0x98, AMP = (char)0x9A,
                FLY_M = (char)0x9C, KPH = (char)0x9E, MPS = (char)0x9F;
+// progress bar (Betaflight font)
+constexpr char PB_START = (char)0x8A, PB_FULL = (char)0x8B, PB_HALF = (char)0x8C, PB_EMPTY = (char)0x8D,
+               PB_END = (char)0x8E;
 }  // namespace sym
 
 enum class Canvas : uint8_t { AUTO = 0, SD = 1, HD50 = 2, HD53 = 3, HD60 = 4 };

@@ -152,6 +152,162 @@ void Cli::cmdStatus() {
   }
 }
 
+// One-screen health check: each line [ OK ] / [WARN] / [FAIL] with what to look at. Read-only; it
+// reads the same live values as "status" (nothing is reset, no bus traffic but one I2C line read).
+void Cli::cmdSelftest() {
+  int nWarn = 0, nFail = 0;
+  auto line = [&](int lvl, const char* what, const char* fmt, ...) {
+    char buf[150];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (lvl == 1) nWarn++;
+    if (lvl == 2) nFail++;
+    print("[%s] %-9s %s\r\n", lvl == 0 ? " OK " : lvl == 1 ? "WARN" : "FAIL", what, buf);
+  };
+  VehicleStatus st = bus::status.get();
+  AttitudeState a = bus::attitude.get();
+  RcInput rc = bus::rc.get();
+  BatteryState b = bus::battery.get();
+  const Config& c = bus::config;
+  print("AllQuad %s on %s, up %lu s%s\r\n", info_ ? info_->version : "?", hal::platformName(),
+        (unsigned long)(hal::millis() / 1000), st.armed ? " (ARMED: values are in flight)" : "");
+
+  int rr = hal::resetReason();
+  static const char* const rrName[] = {"unknown", "power-on", "external pin", "software", "PANIC", "INT WATCHDOG",
+                                       "TASK WATCHDOG", "WATCHDOG", "deep sleep", "BROWNOUT", "SDIO"};
+  const char* rrn = rr >= 0 && rr <= 10 ? rrName[rr] : "?";
+  if (rr == 4 || rr == 5 || rr == 6 || rr == 7) line(2, "reset", "last reset: %s - the firmware crashed or hung (see 'crash')", rrn);
+  else if (rr == 9) line(1, "reset", "last reset: BROWNOUT - supply dipped (weak 5 V / 3.3 V regulator, bad USB cable)");
+  else line(0, "reset", "last reset: %s", rrn);
+  {
+    hal::CrashInfo ci;
+    if (hal::lastCrash(ci))
+      line(ci.bootsAgo ? 1 : 2, "crash", "%s in %s, %lu s after boot (%s) - 'crash' for details", hal::crashKindName(ci.kind),
+           ci.where[0] ? ci.where : "?", (unsigned long)(ci.uptimeMs / 1000), ci.bootsAgo ? "an earlier run" : "last reset");
+  }
+
+  // fast loop
+  {
+    const volatile bus::LoopPerf& p = bus::loopPerf;
+    uint32_t per = os::taskCount() ? os::taskStats(0).periodUs : 0;
+    float hz = per ? 1e6f / per : 0;
+    float want = c.loop_hz ? (float)c.loop_hz : hz;
+    if (!per || hz < want * 0.9f) line(2, "loop", "%.0f Hz, set %u Hz - loop too slow (lower loop_hz)", (double)hz, (unsigned)c.loop_hz);
+    else if (p.loadPct > 85) line(1, "loop", "%.0f Hz, load %.0f%% - close to the limit (lower loop_hz / filters)", (double)hz, (double)p.loadPct);
+    else line(0, "loop", "%.0f Hz, load %.0f%%, worst %.0f us, started by %s", (double)hz, (double)p.loadPct, (double)p.maxTotalUs, os::triggerSource());
+    if (p.lateLoops) line(1, "loop", "%lu late iterations since boot (flash writes / WiFi bursts cause a few)", (unsigned long)p.lateLoops);
+  }
+  // tasks: stack headroom and overruns
+  {
+    int worst = -1;
+    uint32_t worstFree = 0xFFFFFFFF, over = 0;
+    for (int i = 0; i < os::taskCount(); i++) {
+      os::TaskStats t = os::taskStats(i);
+      over += t.overruns;
+      if (t.stackFree && t.stackFree < worstFree) { worstFree = t.stackFree; worst = i; }
+    }
+    if (worst >= 0 && worstFree < 256) line(2, "stack", "task %s has only %lu B free", os::taskStats(worst).name, (unsigned long)worstFree);
+    else if (worst >= 0 && worstFree < 512) line(1, "stack", "task %s has %lu B free", os::taskStats(worst).name, (unsigned long)worstFree);
+    else line(0, "stack", "%d tasks, lowest free %lu B", os::taskCount(), (unsigned long)(worst >= 0 ? worstFree : 0));
+    if (over) line(1, "tasks", "%lu overruns (a task missed its period; 'tasks' shows which)", (unsigned long)over);
+  }
+  // IMU
+  if (!info_ || !info_->imu) line(2, "imu", "no IMU detected - check SPI wiring / CS ('scan')");
+  else if (!a.valid) line(2, "imu", "%s detected but no attitude yet", info_->imu);
+  else {
+    float g = sqrtf(a.accBody.x * a.accBody.x + a.accBody.y * a.accBody.y + a.accBody.z * a.accBody.z);
+    float r = sqrtf(a.rateDps.x * a.rateDps.x + a.rateDps.y * a.rateDps.y + a.rateDps.z * a.rateDps.z);
+    if (!st.armed && (g < 8.3f || g > 11.3f)) line(1, "imu", "%s: accel %.2f m/s^2 at rest (expect 9.8) - calibrate / check the scale", info_->imu, (double)g);
+    else if (!st.armed && r > 5) line(1, "imu", "%s: gyro %.1f deg/s at rest - keep the quad still, recalibrate gyro", info_->imu, (double)r);
+    else line(0, "imu", "%s: accel %.2f m/s^2, gyro %.1f deg/s, vibration %.1f", info_->imu, (double)g, (double)r, (double)a.vibration);
+    if (!c.acc_calibrated) line(1, "imu", "accelerometer not calibrated (calib_acc, quad level)");
+    if (st.armBlockers & ARM_IMU_FAIL) line(2, "imu", "failed over to the second IMU - check the first one's wiring");
+  }
+  // I2C sensors
+  {
+    bool sda = true, scl = true;
+    hal::i2cLineLevels(sda, scl);
+    if (!sda || !scl) line(2, "i2c", "line held LOW (SDA %s, SCL %s): short, missing pull-up or a stuck chip", sda ? "high" : "LOW", scl ? "high" : "LOW");
+    BaroSample bs = bus::baro.get();
+    if (!info_ || !info_->baro) line(1, "baro", "none - no altitude hold ('scan' lists what answers on I2C)");
+    else if (!bs.healthy) line(2, "baro", "%s detected but not reading", info_->baro);
+    else line(0, "baro", "%s %.0f Pa %.1f C", info_->baro, (double)bs.pressurePa, (double)bs.tempC);
+    MagSample ms = bus::mag.get();
+    if (!info_ || !info_->mag) line(c.gps_heading ? 0 : 1, "compass", "none%s", c.gps_heading ? " (heading from GPS when moving)" : " - GPS modes need a heading source");
+    else if (!ms.healthy) line(2, "compass", "%s detected but not reading", info_->mag);
+    else {
+      float f = sqrtf(ms.field.x * ms.field.x + ms.field.y * ms.field.y + ms.field.z * ms.field.z);
+      if (f < 0.15f || f > 0.9f) line(1, "compass", "%s field %.2f G (Earth 0.25-0.65) - calibrate or move it away from wires", info_->mag, (double)f);
+      else line(0, "compass", "%s field %.2f G", info_->mag, (double)f);
+    }
+  }
+  // receiver
+  {
+    uint32_t by = bus::rxLink.bytes, fr = bus::rxLink.frames, ce = bus::rxLink.crcErrors;
+    if (!by && !rc.everReceived) line(1, "rx", "no data on the receiver port (port function, TX/RX swapped, RX powered and bound?)");
+    else if (by && !fr && !rc.everReceived) line(2, "rx", "%lu bytes but no valid frame - wrong protocol / baud / inversion", (unsigned long)by);
+    else {
+      float bad = fr + ce ? 100.0f * ce / (fr + ce) : 0;
+      bool now = hal::millis() - rc.lastFrameMs < 500;
+      if (!now) line(2, "rx", "signal lost (last frame %lu ms ago)", (unsigned long)(hal::millis() - rc.lastFrameMs));
+      else if (bad > 2) line(1, "rx", "%.1f%% frames with bad checksum - wiring / ground / noise", (double)bad);
+      else if (rc.linkQuality && rc.linkQuality < 70) line(1, "rx", "LQ %u%% - antenna position / range", rc.linkQuality);
+      else line(0, "rx", "%lu frames, %lu bad, LQ %u%%", (unsigned long)fr, (unsigned long)ce, rc.linkQuality);
+    }
+  }
+  // UARTs
+  {
+    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5"};
+    int open = 0;
+    for (int i = 0; i < (int)hal::Port::COUNT; i++) {
+      hal::PortStats ps;
+      if (i == (int)hal::Port::UDP || i == (int)hal::Port::CONSOLE || !hal::portStats((hal::Port)i, ps)) continue;
+      open++;
+      if (ps.overruns || ps.dropped || ps.framing > 10 || ps.noise > 10)
+        line(1, "uart", "%s: overrun %lu, dropped %lu, framing %lu, noise %lu", pn[i], (unsigned long)ps.overruns,
+             (unsigned long)ps.dropped, (unsigned long)ps.framing, (unsigned long)ps.noise);
+      else line(0, "uart", "%s: rx %lu B, tx %lu B, no line errors", pn[i], (unsigned long)ps.rxBytes, (unsigned long)ps.txBytes);
+    }
+    if (!open) line(0, "uart", "no UART opened");
+  }
+  // GPS
+  if (bus::gps.seq()) {
+    GpsData g = bus::gps.get();
+    if (!g.fix3d) line(1, "gps", "%u satellites, no 3D fix yet (needs open sky)", g.sats);
+    else line(0, "gps", "3D fix, %u satellites, hAcc %.1f m", g.sats, (double)g.hAcc);
+  }
+  // battery
+  if (b.voltage < 2.0f) line(1, "battery", "%.2f V - no battery (USB only) or voltage sensing not wired / scaled", (double)b.voltage);
+  else line(0, "battery", "%.2f V, %u cells, %u%%", (double)b.voltage, b.cells, b.percent);
+  // settings storage
+  {
+    int copy, copies;
+    uint32_t seq;
+    hal::storageInfo(copy, seq, copies);
+    if (copies >= 2) line(0, "storage", "settings in copy %c of 2 (save #%lu) - a power loss while saving keeps the other", 'A' + copy, (unsigned long)seq);
+    else if (copies == 1) line(0, "storage", "settings in one flash copy (no spare sector on this chip)");
+    else line(0, "storage", "settings in NVS");
+  }
+  // watchdog (STM32 IWDG; ESP32 uses the ESP-IDF task watchdog)
+#if defined(AQ_STM32)
+  if (hal::watchdogRunning()) line(0, "watchdog", "running (resets a hung firmware after ~7 s)");
+  else line(1, "watchdog", "not running yet (starts once the flight loop runs)");
+#endif
+  // arming
+  if (!st.armBlockers) line(0, "arming", "ready");
+  else {
+    char buf[140];
+    size_t n = 0;
+    buf[0] = 0;
+    for (int i = 0; i < ARM_COUNT_BITS && n < sizeof(buf) - 16; i++)
+      if (st.armBlockers & (1u << i)) n += snprintf(buf + n, sizeof(buf) - n, " %s", armCheckName(i));
+    line(1, "arming", "blocked by%s", buf);
+  }
+  print("selftest: %d warning(s), %d failure(s)%s\r\n", nWarn, nFail, nFail ? " - fix the FAIL lines before flying" : "");
+}
+
 void Cli::cmdTasks() {
   print("%-10s %7s %7s %7s %6s %8s %9s\r\n", "task", "rate_hz", "last_us", "max_us", "load%", "overruns", "stack_free");
   for (int i = 0; i < os::taskCount(); i++) {
@@ -225,7 +381,7 @@ void Cli::exec(char* line, uint32_t now) {
   if (!cmd) return;
   bool armed = bus::status.get().armed;
   if (!strcmp(cmd, "help")) {
-    print("status | tasks | perf | esc | get [filter] | set <name> <value> | save | defaults\r\n"
+    print("status | selftest | crash [clear|test|hang] | tasks | perf | esc | get [filter] | set <name> <value> | save | defaults\r\n"
           "calib_acc | calib_acc6 | calib_mag [s] | calib_gyro | compassmot | mission [clear|add ...] | rally [clear|add ...]\r\n"
           "fence [clear|add <latE7> <lonE7>] | logic [n ...] | log [erase] | sd [ls | rm <file> | mount] | goto <latE7> <lonE7> [alt] (GUIDED)\r\n"
           "diff (backup: changed settings) | dump (backup: everything)\r\n"
@@ -340,6 +496,35 @@ void Cli::exec(char* line, uint32_t now) {
     }
   } else if (!strcmp(cmd, "tasks")) {
     cmdTasks();
+  } else if (!strcmp(cmd, "selftest")) {
+    cmdSelftest();
+  } else if (!strcmp(cmd, "crash")) {
+    hal::CrashInfo ci;
+    if (a1 && !strcmp(a1, "clear")) { hal::crashClear(); print("crash record cleared\r\n"); return; }
+#if !defined(ALLQUAD_HOST)
+    // bench check of the crash record / watchdog (disarmed, props off): "crash test" faults on purpose,
+    // "crash hang" stops everything with interrupts off (only the hardware watchdog brings it back)
+    if (a1 && (!strcmp(a1, "test") || !strcmp(a1, "hang"))) {
+      if (armed) { print("disarm first\r\n"); return; }
+      print(!strcmp(a1, "test") ? "faulting now...\r\n" : "hanging now (watchdog %s)...\r\n", hal::watchdogRunning() ? "running" : "OFF: power-cycle to recover");
+      hal::delayMs(100);
+      if (!strcmp(a1, "test")) __builtin_trap();
+#if defined(AQ_STM32)
+      __asm volatile("cpsid i");
+#endif
+      for (;;) {}
+    }
+#endif
+    if (!hal::lastCrash(ci)) {
+      print("no crash recorded since power-on%s\r\n", hal::watchdogRunning() ? " (watchdog running)" : "");
+      return;
+    }
+    print("%s %s, %lu s after boot, in %s\r\n", hal::crashKindName(ci.kind),
+          ci.bootsAgo ? "(an earlier run)" : "(caused the last reset)", (unsigned long)(ci.uptimeMs / 1000),
+          ci.where[0] ? ci.where : "?");
+    if (ci.pc) print("pc 0x%08lX lr 0x%08lX  (arm-none-eabi-addr2line -e firmware.elf <pc>)\r\n", (unsigned long)ci.pc, (unsigned long)ci.lr);
+    if (ci.cfsr || ci.hfsr) print("cfsr 0x%08lX hfsr 0x%08lX addr 0x%08lX\r\n", (unsigned long)ci.cfsr, (unsigned long)ci.hfsr, (unsigned long)ci.addr);
+    print("%u crash(es) recorded, %u boot(s) ago | 'crash clear' forgets it\r\n", ci.count, ci.bootsAgo);
   } else if (!strcmp(cmd, "get")) {
     cmdGet(a1);
   } else if (!strcmp(cmd, "set") && a1 && a2) {
@@ -495,7 +680,7 @@ void Cli::exec(char* line, uint32_t now) {
       return;
     }
     static const char* modes[] = {"off", "SPI", "SD 1-bit", "SD 4-bit"};
-    print("sd: %s, mode %s, %s %s\r\n", sdlog::stateName(i.state), modes[i.mode & 3], i.type, i.err);
+    print("sd: %s, mode %s%s, %s %s\r\n", sdlog::stateName(i.state), modes[i.mode & 3], hal::sdDmaActive() ? " (DMA)" : "", i.type, i.err);
     if (i.total) print("  %.1f / %.1f GB used, %u logs\r\n", i.used / 1e9, i.total / 1e9, (unsigned)i.files);
     print("  file %s %lu bytes, queue %lu / %lu, dropped %lu, slowest write %lu ms\r\n", i.file, (unsigned long)i.fileBytes,
           (unsigned long)i.queued, (unsigned long)i.queueSize, (unsigned long)i.dropped, (unsigned long)i.maxWriteMs);

@@ -56,6 +56,14 @@ static void v25Defaults(Config& c) {
   for (int i = 0; i < SD_PINS; i++) c.sd_pin[i] = 255;
   c.sd_keep = 1;
 }
+static void v26Defaults(Config& c) {
+  // hidden until ticked in the OSD tab (then shown at these places)
+  c.osd_pos3[OSD3_BAT_BAR] = osdPos(12, 1, false);
+  c.osd_pos3[OSD3_CELL_V] = osdPos(5, 1, false);
+  c.osd_pos3[OSD3_RSSI_DBM] = osdPos(3, 23, false);
+  c.osd_blink = 1;
+  c.sd_dma = 0;
+}
 static void v23Defaults(Config& c) {
   c.osd_canvas = 0;  // auto
   c.osd_font = 0;    // Betaflight glyphs
@@ -267,6 +275,7 @@ void configDefaults(Config& c) {
   v23Defaults(c);
   v24Defaults(c);
   v25Defaults(c);
+  v26Defaults(c);
   configSeal(c);
 }
 
@@ -293,6 +302,7 @@ bool configMigrate(Config& c) {
   if (c.version < 23) v23Defaults(d);
   if (c.version < 24) v24Defaults(d);
   if (c.version < 25) v25Defaults(d);
+  if (c.version < 26) v26Defaults(d);
   configSeal(d);
   c = d;
   return true;

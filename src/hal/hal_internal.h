@@ -18,6 +18,8 @@ bool udpSupported();
 int udpRead();
 size_t udpWrite(const uint8_t* data, size_t len);
 void commonInit();
+PortStats& portStatsRef(Port p);    // counters kept for each opened UART
+void portMarkOpen(Port p);
 #if defined(AQ_CONSOLE_DUAL)
 // console on two physical ports (native USB + USB-UART bridge on UART0)
 int consoleRead();

@@ -18,7 +18,8 @@ enum : uint16_t {
   MSP_BATTERY_STATE = 130, MSP_STATUS_EX = 150, MSP_DISPLAYPORT = 182, MSP_SET_OSD_CANVAS = 188, MSP_OSD_CANVAS = 189,
   MSP_FEATURE_CONFIG = 36, MSP_VTX_CONFIG = 88, MSP_SET_VTX_CONFIG = 89, MSP_ADVANCED_CONFIG = 90,
   MSP_MOTOR_3D_CONFIG = 124, MSP_MOTOR_CONFIG = 131, MSP_UID = 160, MSP_SET_MOTOR = 214,
-  MSP_SET_PASSTHROUGH = 245,
+  MSP_SET_PASSTHROUGH = 245, MSP_EEPROM_WRITE = 250,
+  MSP2_AQ_PARAM_INFO = 0x4151, MSP2_AQ_PARAM_FIND = 0x4152, MSP2_AQ_PARAM_SET = 0x4153,  // AllQuad ("AQ" range)
   MSP2_SENSOR_RANGEFINDER = 0x1F01, MSP2_SENSOR_OPTIC_FLOW = 0x1F02,
 };
 
@@ -97,10 +98,32 @@ struct B {
   void u32(uint32_t v) { u16((uint16_t)v); u16((uint16_t)(v >> 16)); }
   void str(const char* s) { while (*s) u8((uint8_t)*s++); }
 };
+// parameter answer: u16 index, u16 count, u8 type, u8 flags (1 = needs a reboot), i32 value, min, max (x 1000),
+// name (up to 16 characters, no terminator: the rest of the payload)
+void paramAnswer(B& o, int i) {
+  const ParamInfo& p = paramInfo(i);
+  auto x1000 = [](float v) { float s = v * 1000.0f; return (uint32_t)(int32_t)(s > 2.0e9f ? 2.0e9f : s < -2.0e9f ? -2.0e9f : (s < 0 ? s - 0.5f : s + 0.5f)); };
+  o.u16((uint16_t)i);
+  o.u16((uint16_t)paramCount());
+  o.u8((uint8_t)p.type);
+  o.u8(p.reboot ? 1 : 0);
+  o.u32(x1000(paramGet(bus::config, i)));
+  o.u32(x1000(p.min));
+  o.u32(x1000(p.max));
+  for (int k = 0; p.name[k] && k < 16; k++) o.u8((uint8_t)p.name[k]);
+}
 int32_t rd32(const uint8_t* p) { return (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24)); }
 }  // namespace
 
+void MspLink::error(const MspFrame& req) {
+  if (hook_) { hook_(hookCtx_, req, nullptr, 0, true); return; }
+  uint8_t buf[16];
+  size_t n = mspPack(buf, req.v2, '!', req.cmd, nullptr, 0);
+  if (hal::portWriteSpace(port_) >= n) hal::portWrite(port_, buf, n);
+}
+
 void MspLink::reply(const MspFrame& req, const uint8_t* payload, uint16_t len) {
+  if (hook_) { hook_(hookCtx_, req, payload, len, false); return; }
   uint8_t buf[300];
   size_t n = mspPack(buf, req.v2, '>', req.cmd, payload, len);
   if (hal::portWriteSpace(port_) >= n) hal::portWrite(port_, buf, n);
@@ -280,12 +303,39 @@ void MspLink::handle(const MspFrame& f, uint32_t now) {
       bus::flow.publish(s);
       return;
     }
-    default: {
-      uint8_t buf[16];
-      size_t n = mspPack(buf, f.v2, '!', f.cmd, nullptr, 0);  // unsupported
-      hal::portWrite(port_, buf, n);
-      return;
+    // ---- AllQuad parameters (radio Lua script over CRSF, or any MSP port): value / min / max x 1000
+    case MSP2_AQ_PARAM_INFO:
+    case MSP2_AQ_PARAM_FIND: {
+      int i = -1;
+      if (f.cmd == MSP2_AQ_PARAM_INFO && f.len >= 2) i = f.payload[0] | (f.payload[1] << 8);
+      if (f.cmd == MSP2_AQ_PARAM_FIND && f.len >= 1 && f.len <= 24) {
+        char name[25];
+        memcpy(name, f.payload, f.len);
+        name[f.len] = 0;
+        i = paramFind(name);
+      }
+      if (i < 0 || i >= paramCount()) { error(f); return; }
+      paramAnswer(o, i);
+      break;
     }
+    case MSP2_AQ_PARAM_SET: {  // u16 index, i32 value x 1000 -> the answer of PARAM_INFO with the new value
+      if (f.len < 6) { error(f); return; }
+      int i = f.payload[0] | (f.payload[1] << 8);
+      if (i < 0 || i >= paramCount() || bus::status.get().armed) { error(f); return; }
+      if (!paramSet(bus::config, i, rd32(f.payload + 2) * 0.001f)) { error(f); return; }
+      bus::configChanged();
+      paramAnswer(o, i);
+      break;
+    }
+    case MSP_EEPROM_WRITE: {  // save the settings (disarmed); answers u8 1 = saved
+      if (bus::status.get().armed) { error(f); return; }
+      configSeal(bus::config);
+      o.u8(hal::storageSave(hal::Slot::CONFIG, &bus::config, sizeof(Config)) ? 1 : 0);
+      break;
+    }
+    default:
+      error(f);  // unsupported
+      return;
   }
   reply(f, o.b, o.n);
 }

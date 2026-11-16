@@ -15,6 +15,8 @@
 #include "../../src/bus/bus.h"
 #include "../../src/comms/aqlink.h"
 #include "../../src/comms/cli.h"
+#include "../../src/comms/crsf_msp.h"
+#include "../../src/hal/ee_ab.h"
 #include "../../src/comms/fourway.h"
 #include "../../src/app/leds.h"
 #include "../../src/vtx/vtx.h"
@@ -77,11 +79,22 @@ static void testRx() {
   got = false;
   for (uint8_t c : f) got |= rx.feed(c, 20);
   CHECK(!got, "CRSF bad CRC rejected");
+  CHECK(rx.counters().frames == 1 && rx.counters().crcErrors == 1 && rx.counters().bytes == 52,
+        "RX counters: good frames, checksum failures, bytes");
   drv::RxTelemetry tel{};
   tel.mode = "ANGLE";
   uint8_t out[64];
   size_t n = rx.buildTelemetry(tel, out);
   CHECK(n == 10 && out[2] == 0x1E && drv::crsfCrc8(out + 2, 7) == out[9], "CRSF telemetry frame valid");
+  {  // the rotation: no GPS fix -> the GPS slot is skipped, barometric altitude follows
+    bool seen09 = false, seen02 = false;
+    for (int k = 0; k < 12; k++) {
+      size_t m = rx.buildTelemetry(tel, out);
+      if (m && out[2] == 0x09) { seen09 = true; uint16_t v = (uint16_t)(out[3] << 8 | out[4]); CHECK(m == 6 && drv::crsfCrc8(out + 2, 3) == out[5] && v == (uint16_t)lroundf(tel.altitude * 10.0f) + 10000, "CRSF baro altitude frame"); }
+      if (m && out[2] == 0x02) seen02 = true;
+    }
+    CHECK(seen09 && seen02 == tel.gpsValid, "CRSF telemetry rotation: baro sent, GPS only with a fix");
+  }
 
   rx.begin(RxProtocol::SBUS);
   uint8_t s[25] = {0x0F};
@@ -319,6 +332,33 @@ static void testOsdBlackbox() {
   CHECK(strstr(r.row(14), "16.4V") != nullptr, "OSD plain-text font");
   bus::config.osd_font = 0;
   {
+    // battery bar / cell voltage (v26), and the low-battery blink while armed
+    BatteryState lb{};
+    lb.voltage = 14.0f; lb.cells = 4; lb.percent = 31;
+    bus::battery.publish(lb);
+    bus::config.osd_font = 1;
+    bus::config.osd_pos3[OSD3_BAT_BAR] |= 0x8000;
+    bus::config.osd_pos3[OSD3_CELL_V] |= 0x8000;
+    VehicleStatus vs{};
+    vs.armed = true;
+    vs.warnings = WARN_BAT_LOW;
+    bus::status.publish(vs);
+    osd::Renderer br;
+    br.begin(nullptr, true);
+    br.render(400);   // blink phase "on"
+    if (getenv("AQ_SHOW_OSD")) for (int q = 0; q < 16; q++) printf("|%s|\n", br.row(q));
+    bool barOn = strstr(br.row(12), "[##=-----]") != nullptr && strstr(br.row(5), "3.50V/C") != nullptr && strstr(br.row(14), "14.0V");
+    br.render(800);   // "off"
+    bool barOff = !strstr(br.row(12), "[") && !strstr(br.row(14), "14.0V") && strstr(br.row(14), "MAH");
+    bus::config.osd_blink = 0;
+    br.render(1200);
+    bool steady = strstr(br.row(12), "[") && strstr(br.row(14), "14.0V");
+    CHECK(barOn && barOff && steady, "OSD battery bar + cell voltage; low battery blinks unless osd_blink 0");
+    configDefaults(bus::config);
+    bus::status.publish(VehicleStatus{});
+    bus::battery.publish(b);
+  }
+  {
     // flight statistics: distance and maxima while armed, the stats screen after disarm
     osd::Renderer sr;
     sr.begin(nullptr, true);
@@ -412,6 +452,175 @@ static void testJsonNumbers() {
         "WebSocket frames: estimator / GPS every other frame, autotune block only while it runs");
 }
 
+// STM32 settings A/B copies: what the next boot reads after a power loss at every point of a save
+static void testEeAb() {
+  static uint8_t A[ee::SIZE], B[ee::SIZE], img[ee::SIZE];
+  uint8_t* cp[2] = {A, B};
+  const uint8_t* cc[2] = {A, B};
+  memset(A, 0x11, sizeof(A));        // settings saved by an older firmware: no footer
+  memset(A + 7800, 0xFF, ee::SIZE - 7800);
+  memset(B, 0xFF, sizeof(B));        // spare sector: erased (or old blackbox data)
+  uint32_t seq;
+  int act = ee::pick(cc, 2, seq);
+  CHECK(act == 0 && seq == 0, "settings A/B: image without footer read from A");
+  // save 1: written to B, A untouched
+  memcpy(img, cp[act], ee::SIZE);
+  img[0] = 0x22;
+  uint32_t ns;
+  int tgt = ee::seal(img, act, seq, 2, ns);
+  bool okT = tgt == 1 && ns == 1;
+  // power lost half way through programming B: still the old A
+  memset(B, 0xFF, sizeof(B));
+  memcpy(B, img, 4000);
+  act = ee::pick(cc, 2, seq);
+  bool okHalf = act == 0 && seq == 0 && A[0] == 0x11;
+  memcpy(B, img, ee::SIZE);
+  act = ee::pick(cc, 2, seq);
+  CHECK(okT && okHalf && act == 1 && seq == 1 && B[0] == 0x22, "settings A/B: first save goes to B, a half-written B is ignored");
+  // save 2 erases A: lost during the erase -> B (save 1) is used
+  memcpy(img, cp[act], ee::SIZE);
+  img[0] = 0x33;
+  tgt = ee::seal(img, act, seq, 2, ns);
+  memset(A, 0xFF, sizeof(A));
+  int a2 = ee::pick(cc, 2, seq);
+  bool okErase = tgt == 0 && a2 == 1 && seq == 1;
+  memcpy(A, img, ee::SIZE);
+  act = ee::pick(cc, 2, seq);
+  CHECK(okErase && act == 0 && seq == 2 && A[0] == 0x33, "settings A/B: power loss while erasing keeps the previous save");
+  // a flipped bit in the newest copy -> the older one
+  A[100] ^= 4;
+  act = ee::pick(cc, 2, seq);
+  bool okFlip = act == 1 && seq == 1;
+  A[100] ^= 4;
+  // sequence wrap-around: 0xFFFFFFFF -> 1 is newer
+  memcpy(img, A, ee::SIZE);
+  ee::seal(img, 1, 0xFFFFFFFEu, 2, ns);
+  memcpy(B, img, ee::SIZE);   // B = 0xFFFFFFFF
+  memcpy(img, B, ee::SIZE);
+  img[0] = 0x44;
+  ee::seal(img, 1, 0xFFFFFFFFu, 2, ns);
+  memcpy(A, img, ee::SIZE);   // A = 1
+  act = ee::pick(cc, 2, seq);
+  CHECK(okFlip && ns == 1 && act == 0 && A[0] == 0x44, "settings A/B: corrupt copy skipped, sequence wraps");
+  // one copy (F722 / F411)
+  const uint8_t* one[1] = {A};
+  act = ee::pick(one, 1, seq);
+  CHECK(act == 0 && ee::seal(img, 0, seq, 1, ns) == 0, "settings: single copy always rewritten in place");
+}
+
+// MSP over CRSF the way the radio's Lua script sends it: 8-byte chunks in 0x7A frames through the receiver
+static std::vector<std::vector<uint8_t>> luaMspFrames(bool v2, uint16_t cmd, const std::vector<uint8_t>& data, uint8_t& seq) {
+  std::vector<uint8_t> body;
+  if (v2) body = {0, (uint8_t)cmd, (uint8_t)(cmd >> 8), (uint8_t)data.size(), (uint8_t)(data.size() >> 8)};
+  else body = {(uint8_t)data.size(), (uint8_t)cmd};
+  body.insert(body.end(), data.begin(), data.end());
+  if (!v2) { uint8_t x = 0; for (size_t i = 0; i < body.size(); i++) x ^= body[i]; body.push_back(x); }
+  std::vector<std::vector<uint8_t>> frames;
+  for (size_t pos = 0; pos < body.size(); pos += 7) {
+    std::vector<uint8_t> pl = {0xC8, 0xEA, (uint8_t)((v2 ? 0x40 : 0x20) | (pos == 0 ? 0x10 : 0) | (seq++ & 0x0F))};
+    for (size_t i = pos; i < body.size() && i < pos + 7; i++) pl.push_back(body[i]);
+    std::vector<uint8_t> f = {0xC8, (uint8_t)(pl.size() + 2), 0x7A};
+    f.insert(f.end(), pl.begin(), pl.end());
+    f.push_back(drv::crsfCrc8(f.data() + 2, (uint8_t)(f.size() - 2)));
+    frames.push_back(f);
+  }
+  return frames;
+}
+// response frames -> {error, payload}; checks CRC, addresses and the chunk sequence like the Lua script
+static bool luaMspAnswer(const std::string& wire, bool& err, std::vector<uint8_t>& out) {
+  out.clear();
+  size_t i = 0, size = 0;
+  bool started = false;
+  int lastSeq = -1;
+  while (i + 2 < wire.size()) {
+    const uint8_t* f = (const uint8_t*)wire.data() + i;
+    uint8_t len = f[1];
+    if (i + 2 + len > wire.size()) return false;
+    if (f[0] != 0xC8 || drv::crsfCrc8(f + 2, (uint8_t)(len - 1)) != f[len + 1]) return false;
+    i += 2 + len;
+    if (f[2] != 0x7B) continue;  // telemetry
+    if (f[3] != 0xEA || f[4] != 0xC8) return false;
+    const uint8_t* c = f + 5;
+    size_t n = len - 4;
+    uint8_t st = c[0];
+    if (st & 0x10) {
+      err = st & 0x80;
+      bool v2 = ((st >> 5) & 3) == 2;
+      size = v2 ? (c[4] | c[5] << 8) : c[1];
+      size_t h = v2 ? 6 : 3;
+      out.assign(c + h, c + std::min(n, h + size));
+      started = true;
+    } else {
+      if (!started || (st & 0x0F) != ((lastSeq + 1) & 0x0F)) return false;
+      for (size_t k = 1; k < n && out.size() < size; k++) out.push_back(c[k]);
+    }
+    lastSeq = st & 0x0F;
+  }
+  return started && out.size() == size;
+}
+static void testCrsfMsp() {
+  hal::host::reset();
+  configDefaults(bus::config);
+  bus::status.publish(VehicleStatus{});
+  drv::RxParser rx;
+  rx.begin(RxProtocol::CRSF);
+  comms::MspLink link;
+  comms::CrsfMsp cm;
+  link.begin(hal::Port::SERIAL1);
+  link.setReplyHook([](void* ctx, const comms::MspFrame& q, const uint8_t* p, uint16_t n, bool e) {
+    static_cast<comms::CrsfMsp*>(ctx)->respond(q, p, n, e); }, &cm);
+  uint8_t seq = 0;
+  auto ask = [&](bool v2, uint16_t cmd, const std::vector<uint8_t>& d, bool& err, std::vector<uint8_t>& ans) {
+    for (auto& f : luaMspFrames(v2, cmd, d, seq))
+      for (uint8_t b : f) {
+        rx.feed(b, 10);
+        const uint8_t* ch; size_t cn; uint8_t org; comms::MspFrame mf;
+        if (rx.takeMsp(ch, cn, org) && cm.feed(ch, cn, org, mf)) link.handle(mf, 10);
+      }
+    std::string wire;
+    uint8_t fr[64];
+    size_t n;
+    while ((n = cm.nextFrame(fr))) wire.append((const char*)fr, n);
+    return luaMspAnswer(wire, err, ans);
+  };
+  auto i32 = [](const std::vector<uint8_t>& a, size_t o) { return (int32_t)(a[o] | a[o + 1] << 8 | a[o + 2] << 16 | (uint32_t)a[o + 3] << 24); };
+  bool err = true;
+  std::vector<uint8_t> a;
+  std::string nm = "dterm_lpf_hz";
+  bool ok1 = ask(true, 0x4152, std::vector<uint8_t>(nm.begin(), nm.end()), err, a) && !err && a.size() >= 18 &&
+             std::string(a.begin() + 18, a.end()) == nm && fabsf(i32(a, 6) * 0.001f - bus::config.dterm_lpf_hz) < 0.01f;
+  int idx = a.size() >= 2 ? a[0] | a[1] << 8 : -1;
+  CHECK(ok1 && idx == paramFind("dterm_lpf_hz"), "MSP over CRSF: parameter found by name (request in 3 chunks)");
+  int32_t v = 87500;
+  std::vector<uint8_t> set = {(uint8_t)idx, (uint8_t)(idx >> 8), (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24)};
+  bool ok2 = ask(true, 0x4153, set, err, a) && !err && fabsf(bus::config.dterm_lpf_hz - 87.5f) < 0.01f && i32(a, 6) == 87500;
+  CHECK(ok2, "MSP over CRSF: parameter set (dterm_lpf_hz 87.5)");
+  bool ok3 = ask(true, 0x4151, {0xFF, 0x7F}, err, a) && err;
+  bool ok4 = ask(false, 250, {}, err, a) && !err && a.size() == 1 && a[0] == 1;
+  CHECK(ok3 && ok4, "MSP over CRSF: bad index refused, settings saved (MSP_EEPROM_WRITE, v1)");
+  VehicleStatus armedSt{};
+  armedSt.armed = true;
+  bus::status.publish(armedSt);
+  bool ok5 = ask(true, 0x4153, set, err, a) && err;
+  bus::status.publish(VehicleStatus{});
+  // a long answer (MSP_BOARD_INFO / a name) spans several 0x7B frames; bad CRC frames are ignored
+  bool ok6 = ask(false, 4, {}, err, a) && !err && a.size() >= 4;
+  CHECK(ok5 && ok6, "MSP over CRSF: no changes while armed; v1 answers");
+  {
+    comms::MspFrame q{};
+    q.v2 = true; q.cmd = 0x4151;
+    uint8_t big[150];
+    for (int k = 0; k < 150; k++) big[k] = (uint8_t)(k * 7);
+    cm.respond(q, big, 150, false);
+    std::string wire;
+    uint8_t fr[64];
+    size_t n, frames = 0;
+    while ((n = cm.nextFrame(fr))) { wire.append((const char*)fr, n); frames++; if (n > 64) frames = 99; }
+    bool same = luaMspAnswer(wire, err, a) && a.size() == 150 && !memcmp(a.data(), big, 150);
+    CHECK(same && frames == 3, "MSP over CRSF: 150-byte answer in 3 frames of <= 64 bytes");
+  }
+}
+
 static void testCli() {
   hal::host::reset();
   configDefaults(bus::config);
@@ -429,6 +638,15 @@ static void testCli() {
   for (char ch : std::string("goto 210285000 1058542000 20\n")) cli.feed((uint8_t)ch, 300, false);
   CHECK(hal::host::out(hal::Port::CONSOLE).find("arm first") != std::string::npos && !bus::webGcs,
         "CLI goto (web tap-to-fly) refused while disarmed");
+  hal::host::out(hal::Port::CONSOLE).clear();
+  for (char ch : std::string("selftest\n")) cli.feed((uint8_t)ch, 400, false);
+  {
+    const std::string& so = hal::host::out(hal::Port::CONSOLE);
+    CHECK(so.find("[ OK ] reset") != std::string::npos && so.find("[WARN] baro") != std::string::npos &&
+              so.find("[WARN] rx") != std::string::npos && so.find("selftest: ") != std::string::npos,
+          "CLI selftest: one line per check, summary");
+    if (getenv("AQ_SHOW_SELFTEST")) printf("%s", so.c_str());
+  }
 }
 
 // ---------------------------------------------------------------- MAVLink conversation (pymavlink)
@@ -1304,6 +1522,28 @@ static void testConfigMigrationV21() {
         "Parameters: serial4/serial5 entries; console index has no function");
 }
 
+static void testConfigMigrationV25() {
+  Config old;
+  configDefaults(old);
+  old.pid[0].p = 47;
+  old.sd_keep = 0;
+  old.osd_stats = 9;
+  size_t oldSize = ((offsetof(Config, sd_keep) + 1 + 3) & ~(size_t)3) + 4;  // v25: ... sd_keep, crc
+  memset((uint8_t*)&old + offsetof(Config, sd_keep) + 1, 0x5A, oldSize - 4 - offsetof(Config, sd_keep) - 1);
+  old.version = 25;
+  old.size = (uint16_t)oldSize;
+  uint32_t crc = crc32(&old, oldSize - 4);
+  memcpy((uint8_t*)&old + oldSize - 4, &crc, 4);
+  memset((uint8_t*)&old + oldSize, 0xEE, sizeof(Config) - oldSize);
+  Config c = old;
+  bool ok = configMigrate(c);
+  CHECK(ok && configValid(c) && c.pid[0].p == 47 && c.sd_keep == 0 && c.osd_stats == 9 && c.osd_blink == 1 && c.sd_dma == 0 &&
+            !(c.osd_pos3[OSD3_BAT_BAR] & 0x8000) && !(c.osd_pos3[OSD3_RSSI_DBM] & 0x8000),
+        "Config v25 -> v26: settings kept, OSD extras hidden, blinking on, SD DMA off");
+  CHECK(paramFind("osd_batbar_pos") >= 0 && paramFind("sd_dma") >= 0 && paramFind("osd_blink") >= 0,
+        "Parameters: v26 entries");
+}
+
 static void testFlightFeel() {
   // thrust linearisation: the output gives exactly the requested thrust through (1-e)t + e t^2
   bool lin = true;
@@ -1838,8 +2078,46 @@ static void testSdCard() {
   hal::host::reset();
 }
 
+// "crsf-msp": the FC side of MSP over CRSF on stdin / stdout, for the radio Lua script preview
+// (tools/edgetx/preview.py): each input line = one CRSF frame in hex from the radio; the answer frames
+// (hex, one per line) follow, then a line "."
+static int crsfMspServe() {
+  hal::host::reset();
+  configDefaults(bus::config);
+  bus::status.publish(VehicleStatus{});
+  static drv::RxParser rx;
+  rx.begin(RxProtocol::CRSF);
+  static comms::MspLink link;
+  static comms::CrsfMsp cm;
+  link.begin(hal::Port::SERIAL1);
+  link.setReplyHook([](void* ctx, const comms::MspFrame& q, const uint8_t* p, uint16_t n, bool e) {
+    static_cast<comms::CrsfMsp*>(ctx)->respond(q, p, n, e); }, &cm);
+  char line[512];
+  uint32_t t = 1000;
+  while (fgets(line, sizeof(line), stdin)) {
+    t += 5;
+    for (char* c = line; c[0] && c[1] && c[0] != '\n'; c += 2) {
+      unsigned v;
+      if (sscanf(c, "%2x", &v) != 1) break;
+      rx.feed((uint8_t)v, t);
+      const uint8_t* ch; size_t cn; uint8_t org; comms::MspFrame mf;
+      if (rx.takeMsp(ch, cn, org) && cm.feed(ch, cn, org, mf)) link.handle(mf, t);
+    }
+    uint8_t fr[64];
+    size_t n;
+    while ((n = cm.nextFrame(fr))) {
+      for (size_t i = 0; i < n; i++) printf("%02x", fr[i]);
+      printf("\n");
+    }
+    printf(".\n");
+    fflush(stdout);
+  }
+  return 0;
+}
+
 int main(int argc, char** argv) {
   if (argc == 3 && !strcmp(argv[1], "web-dump")) return webDump(argv[2]);
+  if (argc == 2 && !strcmp(argv[1], "crsf-msp")) return crsfMspServe();
   if (argc == 4 && !strcmp(argv[1], "mavlink-io")) return mavlinkIo(argv[2], argv[3]);
   testRx();
   testGps();
@@ -1855,6 +2133,7 @@ int main(int argc, char** argv) {
   testOsdBlackbox();
   testJsonNumbers();
   testCli();
+  testCrsfMsp();
   testIcm45686();
   testQmc5883p();
   testWebApi();
@@ -1873,6 +2152,7 @@ int main(int argc, char** argv) {
   testDshotEdt();
   testConfigMigrationV20();
   testConfigMigrationV21();
+  testConfigMigrationV25();
   testFlightFeel();
   testEllipsoidFit();
   testPolygonFenceAndPath();
@@ -1882,6 +2162,14 @@ int main(int argc, char** argv) {
   testEkf();
   testAutotuneSteps();
   testSdCard();
+  testEeAb();
+  {  // RPM samples: a lone glitch is held back, a real change goes through one sample later, loss at once
+    fc::RpmGate g;
+    float a = g.update(200), b = g.update(205), c = g.update(900), d = g.update(210), e = g.update(420), f = g.update(430);
+    float z = g.update(0), y = g.update(250);
+    CHECK(a == 200 && b == 205 && c == 205 && d == 210 && e == 210 && f == 430 && z == 0 && y == 250 && g.rejected == 2,
+          "RPM gate: decode glitch rejected, step confirmed by the next sample, telemetry loss taken at once");
+  }
   {  // a stamp 1 ms "in the future" (published by a higher-priority task after this one read the clock)
     CHECK(fc::ageMs(1000, 1001) == 0 && fc::ageMs(1000, 900) == 100 && fc::ageMs(5, 0xFFFFFFFEu) == 7,
           "ageMs: newer stamps are age 0 (no false RC loss), wraps at 2^32");

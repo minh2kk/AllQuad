@@ -60,11 +60,48 @@ void portOpen(Port p, uint32_t baud, UartFormat fmt = UartFormat::F8N1, bool inv
 int portRead(Port p);  // -1 if empty
 size_t portWrite(Port p, const uint8_t* data, size_t len);
 size_t portWriteSpace(Port p);
+// counters of an opened UART (since it was opened): bytes, line errors, bytes lost because the
+// receive ring was full. false = no such port / not opened.
+struct PortStats {
+  uint32_t rxBytes, txBytes;
+  uint32_t overruns;   // hardware overrun (a byte arrived before the previous one was read)
+  uint32_t framing;    // framing errors / breaks (wrong baud, inverted signal, noise)
+  uint32_t noise;      // noise / parity errors
+  uint32_t dropped;    // receive ring full: the task did not read in time
+};
+bool portStats(Port p, PortStats& out);
 // USB console: UART baud rate (921600 on ESP32 boards with a USB-UART bridge), 0 = native USB (CDC)
 uint32_t consoleBaud();
 // why the chip last started: 1 power-on, 3 software reset, 4 panic / exception, 5-7 watchdog,
 // 8 deep sleep, 9 brownout, 0 unknown (ESP-IDF esp_reset_reason_t numbering; STM32 maps its flags)
 int resetReason();
+// ---- crash record and watchdog (STM32; ESP32 keeps its own: reset reason PANIC / WATCHDOG + coredump) ----
+// A fault, failed assert, stack overflow, out-of-memory or watchdog reset leaves one record in RAM
+// that survives the reset (not a power cycle). Shown by the CLI "crash" and the configurator.
+struct CrashInfo {
+  uint8_t kind;          // CrashKind
+  uint32_t pc, lr;       // where the fault happened (fault kinds), 0 = unknown
+  uint32_t cfsr, hfsr;   // Cortex-M fault status registers
+  uint32_t addr;         // faulting data address when the CPU latched one, else 0
+  uint32_t uptimeMs;     // time since boot when it happened
+  uint16_t bootsAgo;     // 0 = the reset just before this boot
+  uint16_t count;        // crashes recorded since the record was last cleared
+  char where[24];        // task name, or file:line of an assert
+};
+enum CrashKind : uint8_t { CRASH_NONE = 0, CRASH_HARDFAULT, CRASH_MEMMANAGE, CRASH_BUSFAULT, CRASH_USAGEFAULT,
+                           CRASH_STACK, CRASH_NOMEM, CRASH_ASSERT, CRASH_WATCHDOG };
+inline const char* crashKindName(uint8_t kind) {
+  static const char* const n[] = {"none", "hard fault", "memory fault", "bus fault", "usage fault", "stack overflow",
+                                  "out of memory", "assert", "watchdog"};
+  return kind < sizeof(n) / sizeof(n[0]) ? n[kind] : "?";
+}
+bool lastCrash(CrashInfo& out);  // false = no record
+void crashClear();
+// Hardware watchdog (STM32 IWDG, ~6.5 s): started once the tasks run, then kept alive only while the
+// flight loop makes progress (app control task). It cannot be stopped until the next reset.
+void watchdogStart();
+void watchdogKick();
+bool watchdogRunning();
 int imuIntPin();  // GPIO wired to the IMU's INT1 (data ready), -1 = none
 // one line with the bus pins of this board (CLI "scan")
 const char* pinSummary();
@@ -99,6 +136,9 @@ void buzzerSet(bool on);
 enum class Slot : uint8_t { CONFIG = 0, MISSION = 1, RALLY = 2, WIFI = 3, FENCE = 4 };
 bool storageLoad(Slot s, void* data, size_t len);
 bool storageSave(Slot s, const void* data, size_t len);
+// where the settings live: copy in use, its save counter, copies kept (2 = A/B, survives a power loss
+// during a save; 0 copies = key-value store such as the ESP32 NVS)
+void storageInfo(int& copy, uint32_t& seq, int& copies);
 
 // ---- onboard log storage (ESP32: raw flash partition; false elsewhere) ----
 // In flight only 256-byte page programs happen (no erase, no filesystem metadata). Erasing is done
@@ -129,6 +169,10 @@ void sdDefaultPins(uint8_t pin[6]);  // 255 = none
 bool sdMount(uint8_t mode, uint8_t mhz, const uint8_t pin[6], char* err, size_t n);
 void sdUnmount();
 bool sdMounted();
+// STM32H7 SDMMC: move the blocks with the controller's DMA (falls back to polled transfers by itself
+// after a DMA error); other targets ignore it. Takes effect at the next mount.
+void sdSetDma(bool on);
+bool sdDmaActive();
 const char* sdCardType();             // "SDHC", "SDSC", "MMC" ...
 bool sdSpace(uint64_t& total, uint64_t& used);
 // RAM for the log queue: as much as the chip can spare up to `want` (PSRAM on the S3 N16R8)

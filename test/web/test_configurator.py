@@ -72,6 +72,27 @@ async def main():
             b = await p.chromium.launch(**({"executable_path": exe} if exe else {}))
             errs = []
 
+            # ---------------- 0. page as served by the WiFi bridge (?bridge): connects through /link by itself
+            pg = await b.new_page(viewport={"width": 412, "height": 900}, is_mobile=True, has_touch=True)
+            pg.on("pageerror", lambda e: errs.append(str(e)))
+            await pg.goto("http://127.0.0.1:%d/?bridge" % PORT)
+            await pg.wait_for_function("LINK.open && LINK.kind === 'bridge' && Object.keys(S.params).length > 100", timeout=15000)
+            await pg.wait_for_function("S.status && S.status.mode", timeout=8000)
+            check(await pg.is_hidden("#connect") and "Cầu WiFi" in await pg.inner_text("#linkRate"),
+                  "WiFi bridge page: connected to the FC through /link without a click")
+            await pg.screenshot(path=os.path.join(SHOTS, "bridge.png"))
+            await pg.click("nav button[data-tab=system]")
+            await pg.wait_for_selector("#brSsid", timeout=5000)
+            await pg.wait_for_function("$('brSsid').value === 'AllQuad-Link-SIM'", timeout=3000)
+            check("mặc định" in await pg.inner_text("#brWarn"), "WiFi bridge: System tab warns about the default password")
+            await pg.fill("#brSsid", "MyQuad")
+            await pg.fill("#brPass", "secret-pass-1")
+            await pg.click("#brSave")
+            await pg.wait_for_timeout(500)
+            info = await pg.evaluate("fetch('/bridge/info').then(r => r.json())")
+            check(info["ssid"] == "MyQuad" and not info["defpw"], "WiFi bridge: name / password saved to the bridge")
+            await pg.close()
+
             # ---------------- 1. simulator button, laptop-sized window
             pg = await b.new_page(viewport={"width": 1280, "height": 800})
             pg.on("pageerror", lambda e: errs.append(str(e)))

@@ -141,6 +141,25 @@ static void slowStatus(JsonOut& j) {
     vec(j, "perf", pf, 9, 1);
     j.key("late"); j.num(p.lateLoops, 0);
   }
+  // per-UART counters (Ports tab): [port, rx bytes, tx bytes, overruns, framing, noise, dropped]
+  j.key("ports");
+  j.begin('[');
+  for (int i = 0; i < (int)hal::Port::COUNT; i++) {
+    hal::PortStats ps;
+    if ((hal::Port)i == hal::Port::UDP || (hal::Port)i == hal::Port::CONSOLE || !hal::portStats((hal::Port)i, ps)) continue;
+    uint32_t v[7] = {(uint32_t)i, ps.rxBytes, ps.txBytes, ps.overruns, ps.framing, ps.noise, ps.dropped};
+    j.begin('[');
+    for (int k = 0; k < 7; k++) { j.comma(); j.num(v[k], 0); }
+    j.end(']');
+  }
+  j.end(']');
+  {
+    uint32_t rc[3] = {bus::rxLink.bytes, bus::rxLink.frames, bus::rxLink.crcErrors};
+    j.key("rxc");
+    j.begin('[');
+    for (int k = 0; k < 3; k++) { j.comma(); j.num(rc[k], 0); }
+    j.end(']');
+  }
   j.key("sensors");
   j.begin('{');
   j.key("imu"); j.str(sys && sys->imu ? sys->imu : "");
@@ -156,6 +175,29 @@ static void slowStatus(JsonOut& j) {
   j.key("busy"); j.raw(hal::logBusy() ? "true" : "false");
   j.end('}');
   j.key("ssid"); j.str(creds::ssid());
+  // last reset (hal::resetReason numbering), crash record and watchdog (System tab, pre-flight)
+  j.key("rr"); j.num(hal::resetReason(), 0);
+  j.key("wdt"); j.raw(hal::watchdogRunning() ? "true" : "false");
+  {
+    hal::CrashInfo ci;
+    if (hal::lastCrash(ci)) {
+      j.key("crash");
+      j.begin('{');
+      j.key("kind"); j.str(hal::crashKindName(ci.kind));
+      j.key("where"); j.str(ci.where);
+      j.key("t"); j.num(ci.uptimeMs, 0);
+      j.key("ago"); j.num(ci.bootsAgo, 0);
+      j.key("n"); j.num(ci.count, 0);
+      char hex[12];
+      snprintf(hex, sizeof(hex), "0x%08lX", (unsigned long)ci.pc);
+      j.key("pc"); j.str(hex);
+      snprintf(hex, sizeof(hex), "0x%08lX", (unsigned long)ci.lr);
+      j.key("lr"); j.str(hex);
+      snprintf(hex, sizeof(hex), "0x%08lX", (unsigned long)ci.cfsr);
+      j.key("cfsr"); j.str(hex);
+      j.end('}');
+    }
+  }
   {
     hal::FirmwareInfo fw = hal::firmwareInfo();
     j.key("fw");
@@ -286,6 +328,7 @@ void statusJson(Sink s, void* ctx, bool full) {
   j.end('}');
   }  // mid
   j.key("warn"); j.num(st.warnings, 0);
+  j.key("rpml"); j.num(bus::rpmLostMask, 0);
   j.key("vibe"); j.num(a.vibration, 1);
   {
     EkfReport k = bus::ekf.get();

@@ -214,7 +214,7 @@ ESC trả eRPM ngược lại trên chính dây tín hiệu motor ngay sau mỗi
 
 ## Web configurator & blackbox trên ESP32
 
-- Cần module có **flash 4 MB trở lên** (ESP32-C6 cần 8 MB). Bảng phân vùng có hai ô firmware để cập nhật qua WiFi: 4 MB (`partitions_allquad.csv`) = 2 × 1.375 MB firmware + 1.125 MB blackbox (~24 s ở 500 Hz); ESP32-S3 8 MB (`partitions_allquad_8mb.csv`) = 2 × 2 MB + 3.9 MB blackbox. Lần nạp đầu (hoặc khi bảng phân vùng đổi) dùng `pio run -t upload` qua USB; sau đó cập nhật qua web được. Log và firmware cũ trong flash sẽ mất khi đổi bảng phân vùng.
+- Cần module có **flash 4 MB trở lên** (ESP32-C6 cần 8 MB). Bảng phân vùng có hai ô firmware để cập nhật qua WiFi: 4 MB (`partitions_allquad.csv`) = 2 × 1.5 MB firmware + 896 KB blackbox (~19 s ở 500 Hz; từ v2.1 — board đang chạy bảng cũ 1.375 MB phải nạp qua USB một lần, web sẽ từ chối file lớn hơn ô firmware); ESP32-S3 8 MB (`partitions_allquad_8mb.csv`) = 2 × 2 MB + 3.9 MB blackbox. Lần nạp đầu (hoặc khi bảng phân vùng đổi) dùng `pio run -t upload` qua USB; sau đó cập nhật qua web được. Log và firmware cũ trong flash sẽ mất khi đổi bảng phân vùng.
 - Xoá log (web hoặc `log erase`) chạy nền khoảng 25 s khi drone đứng yên; trong lúc đó chưa arm được. Ghi blackbox vào flash chạy tốt ở vòng 1 kHz; ở 2 kHz nên dùng OpenLog qua cổng serial.
 - WiFi chỉ bật khi `wifi_enable 1` hoặc `web_enable 1`. WiFi làm sụt áp và gây nhiễu: dùng nguồn 3.3 V ổn định (LDO ≥ 500 mA), tụ 10–100 µF gần ESP32, để anten xa dây motor. Bay xong, tắt `web_enable` nếu không cần.
 - Phạm vi WiFi AP vài chục mét: dùng để cấu hình và tải log khi drone nằm trên mặt đất, không phải để điều khiển.

@@ -10,6 +10,7 @@
 
 #include "../bus/bus.h"
 #include "../comms/aqlink.h"
+#include "../comms/crsf_msp.h"
 #include "../comms/fourway.h"
 #include "../vtx/vtx.h"
 #include "leds.h"
@@ -53,6 +54,8 @@ comms::MavlinkLink mav[NPORTS];
 comms::MspLink msp[NPORTS];
 comms::Cli cli;
 comms::AqLink aqlink;  // configurator over the USB console (Web Serial)
+comms::MspLink mspCrsf;  // MSP requests from the radio's Lua scripts, carried in CRSF frames
+comms::CrsfMsp crsfMsp;
 comms::FourWay fourWay;  // ESC passthrough (esc-configurator.com) on the USB console
 vtx::Driver vtxDrv;
 bool ledsOn = false;
@@ -62,6 +65,7 @@ osd::Max7456 osdMax;
 osd::DisplayPort* osdDp = nullptr;
 logging::Blackbox blackbox;
 Port rxPort = Port::COUNT, gpsPort = Port::COUNT, escPort = Port::COUNT, rangePort = Port::COUNT;
+Port cfgPort = Port::COUNT;  // UART with the "configurator" function (WiFi bridge / Bluetooth)
 bool osdActive = false;
 
 // every serial / network port except the USB console (it always speaks CLI, MSP, MAVLink)
@@ -111,6 +115,7 @@ FAST_CODE void fastTask(void*) {
   static float motorHz[4] = {0, 0, 0, 0};
   static MotorMode lastMode = MotorMode::STOPPED;
   static int imuErrors = 0;
+  static bool fastArmed = false;  // armed state of the previous iteration
   const Config& c = bus::config;
   static uint32_t gainsGen = 0;
   if (gen != bus::configGeneration) { gen = bus::configGeneration; gainsGen = bus::gainsGeneration; loop.configure(c, loopHz); }
@@ -124,6 +129,7 @@ FAST_CODE void fastTask(void*) {
   if (dt <= 0 || dt > 0.02f) dt = 1.0f / loopHz;
   lastUs = now;
   tick++;
+  bus::fastLoops = tick;
 
   static Vec3 g, a;  // last good sample is reused after a single failed read
   Vec3 gn, an;
@@ -195,26 +201,45 @@ FAST_CODE void fastTask(void*) {
   if (tick % 8 == 0) {
     bus::mag.read(mag);
     if (bus::magRejected) mag.healthy = false;  // EKF: compass inconsistent with the GPS heading
+    // RPM per motor for the RPM filter; valid = the ESC answers (bidirectional DShot: within 100 ms,
+    // serial ESC telemetry: within 200 ms). A motor without valid telemetry gets frequency 0: its
+    // notches fade out; while armed that is reported (WARN_RPM_LOST) for the motors that had it.
+    static RpmGate gate[4];
+    static uint8_t hadRpm = 0;
+    uint8_t valid = 0;
+    bool source = false;
     if (hal::motorsBidirActive()) {
       // bidirectional DShot: eRPM straight from the ESCs, every motor every loop
+      source = true;
       float erpm[4];
       hal::motorsErpm(erpm);
       float pairs = (c.motor_poles >= 2 ? c.motor_poles : 14) * 0.5f;
       for (int i = 0; i < 4; i++) {
         float rpm = erpm[omap[i]] >= 0 ? erpm[omap[i]] / pairs : -1.0f;
         bus::bidirRpm[i] = rpm;
-        motorHz[i] = rpm > 0 ? rpm / 60.0f : 0.0f;
+        if (rpm >= 0) valid |= (uint8_t)(1 << i);
+        motorHz[i] = gate[i].update(rpm > 0 ? rpm / 60.0f : 0.0f);
       }
     } else {
       EscTelemetry esc;
-      if (bus::esc.read(esc))
-        for (int i = 0; i < 4; i++)
-          motorHz[i] = (now / 1000 - esc.lastUpdateMs[omap[i]]) < 200 ? esc.rpm[omap[i]] / 60.0f : 0.0f;
+      if (bus::esc.read(esc)) {
+        source = c.esc_telemetry != 0;
+        for (int i = 0; i < 4; i++) {
+          bool ok = (now / 1000 - esc.lastUpdateMs[omap[i]]) < 200 && esc.lastUpdateMs[omap[i]];
+          if (ok) valid |= (uint8_t)(1 << i);
+          motorHz[i] = gate[i].update(ok ? esc.rpm[omap[i]] / 60.0f : 0.0f);
+        }
+      }
     }
+    bool armedNow = fastArmed;
+    if (!armedNow || !source) hadRpm = armedNow ? hadRpm : valid;  // what worked at arming is expected in flight
+    else hadRpm |= valid;
+    bus::rpmLostMask = (armedNow && source) ? (uint8_t)(hadRpm & ~valid) : 0;
   }
 
   FastLoopOutput out;
   loop.run(g, a, imuOk, sp, &mag, c.mag_declination_deg * DEG2RAD, motorHz, dt, out);
+  fastArmed = out.armed;
 
   // turtle mode: reverse / restore motor direction with DShot commands
   if (out.mode != lastMode) {
@@ -313,6 +338,15 @@ void controlTask(void*) {
   if (dt <= 0 || dt > 0.05f) dt = 0.004f;
   lastUs = now;
   commander.run((uint32_t)(now / 1000), dt);
+  // hardware watchdog (STM32): armed once the flight loop has run for a while (a board whose loop never
+  // starts stays reachable for the configurator), then fed only while the loop keeps counting
+  static uint32_t seenLoops = 0;
+  uint32_t loops = bus::fastLoops;
+  if (loops != seenLoops) {
+    if (!hal::watchdogRunning() && loops > 2000) hal::watchdogStart();
+    hal::watchdogKick();
+    seenLoops = loops;
+  }
 }
 
 // =========================================================== sensors task
@@ -570,9 +604,28 @@ void ioTask(void*) {
   int ch;
   if (rxPort != Port::COUNT) {
     bool got = false;
-    for (int budget = 128; budget-- > 0 && (ch = hal::portRead(rxPort)) >= 0;) got |= rx.feed((uint8_t)ch, now);
+    for (int budget = 128; budget-- > 0 && (ch = hal::portRead(rxPort)) >= 0;) {
+      got |= rx.feed((uint8_t)ch, now);
+      const uint8_t* chunk;
+      size_t cn;
+      uint8_t origin;
+      comms::MspFrame mf;
+      if (rx.takeMsp(chunk, cn, origin) && crsfMsp.feed(chunk, cn, origin, mf)) mspCrsf.handle(mf, now);
+    }
     if (got) bus::rc.publish(rx.rc());
-    if (rx.protocol() == RxProtocol::CRSF && now - lastTelemMs >= 40) {
+    {
+      const drv::RxParser::Counters& c = rx.counters();
+      bus::rxLink.bytes = c.bytes;
+      bus::rxLink.frames = c.frames;
+      bus::rxLink.crcErrors = c.crcErrors;
+    }
+    static uint32_t lastMspTxMs = 0;
+    if (crsfMsp.pending() && now - lastMspTxMs >= 8) {  // a Lua script waits for an answer: before telemetry
+      lastMspTxMs = now;
+      uint8_t frame[64];
+      size_t n = crsfMsp.nextFrame(frame);
+      if (n) hal::portWrite(rxPort, frame, n);
+    } else if (rx.protocol() == RxProtocol::CRSF && now - lastTelemMs >= 40) {
       lastTelemMs = now;
       AttitudeState a = bus::attitude.get();
       BatteryState b = bus::battery.get();
@@ -641,15 +694,37 @@ void telemetryTask(void*) {
     bus::cliActiveUntilMs = now + 3000;
     budget = 0;
   }
-  while (budget-- > 0 && (ch = hal::portRead(Port::CONSOLE)) >= 0) {
-    uint8_t b = (uint8_t)ch;
-    int ci = (int)Port::CONSOLE;
-    bool aq = aqlink.feed(b, now);
-    if (!aq) {
-      mav[ci].feed(b, now);
-      msp[ci].feed(b, now);
+  // The configurator UART (WiFi bridge / Bluetooth) carries the same stream as USB. One of the two is
+  // served at a time: the other side takes over once the current one has been quiet for 1.5 s (and no
+  // configurator transfer is running); bytes from the side not served are dropped.
+  static Port conPort = Port::CONSOLE;
+  static uint32_t conRxMs = 0;
+  static bool conSeen = false;  // anything received yet on the console in use
+  for (int side = 0; side < 2; side++) {
+    Port src = side == 0 ? Port::CONSOLE : cfgPort;
+    if (src == Port::COUNT || (side == 0 && budget <= 0)) continue;
+    int sb = side == 0 ? budget : 2048;
+    while (sb-- > 0 && (ch = hal::portRead(src)) >= 0) {
+      if (src != conPort) {
+        if ((conSeen && now - conRxMs < 1500) || aqlink.active(now)) continue;  // the other side is in use
+        conPort = src;  // switch every console protocol over
+        aqlink.begin(src);
+        cli.begin(src, &sysInfo);
+        mav[(int)Port::CONSOLE].begin(src, true);
+        msp[(int)Port::CONSOLE].begin(src);
+        msp[(int)Port::CONSOLE].setFourWay(src == Port::CONSOLE ? &fourWay : nullptr);  // ESC passthrough: USB only
+      }
+      conRxMs = now;
+      conSeen = true;
+      uint8_t b = (uint8_t)ch;
+      int ci = (int)Port::CONSOLE;
+      bool aq = aqlink.feed(b, now);
+      if (!aq) {
+        mav[ci].feed(b, now);
+        msp[ci].feed(b, now);
+      }
+      cli.feed(b, now, aq || aqlink.active(now) || mav[ci].seenRecently(now) || msp[ci].seenRecently(now));
     }
-    cli.feed(b, now, aq || aqlink.active(now) || mav[ci].seenRecently(now) || msp[ci].seenRecently(now));
   }
   aqlink.update(now);
   mav[(int)Port::CONSOLE].update(now, false);
@@ -686,6 +761,7 @@ uint32_t defaultBaud(PortFn f) {
   switch (f) {
     case PortFn::MAVLINK: return 57600;
     case PortFn::BLACKBOX: return 921600;
+    case PortFn::CONFIGURATOR: return 460800;
     default: return 115200;
   }
 }
@@ -727,6 +803,7 @@ void start(const Drivers& d, bool configureGps) {
   gpsPort = findPort(PortFn::GPS);
   escPort = findPort(PortFn::ESC_TELEM);
   rangePort = findPort(PortFn::RANGEFINDER);
+  cfgPort = findPort(PortFn::CONFIGURATOR);
   for (int i = 0; i < NPORTS; i++) {
     Port p = (Port)i;
     if (!configurablePort(i) || !hal::portExists(p) || portFn[i] == PortFn::NONE || portFn[i] == PortFn::GPS || portFn[i] == PortFn::VTX_SA ||
@@ -734,6 +811,10 @@ void start(const Drivers& d, bool configureGps) {
       continue;
     if (portFn[i] == PortFn::RX) {
       rx.begin((RxProtocol)c.rx_protocol);
+      mspCrsf.begin(p);
+      mspCrsf.setReplyHook([](void* ctx, const comms::MspFrame& req, const uint8_t* pl, uint16_t len, bool err) {
+        static_cast<comms::CrsfMsp*>(ctx)->respond(req, pl, len, err);
+      }, &crsfMsp);
       hal::portOpen(p, rx.baud(), rx.needs8E2() ? hal::UartFormat::F8E2 : hal::UartFormat::F8N1, rx.inverted());
       continue;
     }

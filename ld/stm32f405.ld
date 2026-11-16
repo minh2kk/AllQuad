@@ -1,10 +1,11 @@
 /* AllQuad - linker script for the STM32F405RG (STM32Cube build, no Arduino).
-   Sector 11 (last 128 kB) holds the settings. CCM RAM is not used (no DMA access). */
+   Sectors 10 and 11 (last 256 kB) hold the two copies of the settings: the firmware stays below 768 kB.
+   CCM RAM is not used (no DMA access). */
 ENTRY(Reset_Handler)
 
 MEMORY
 {
-  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 896K
+  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 768K
   RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 128K
 }
 
@@ -95,6 +96,15 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;
     __bss_end__ = _ebss;
+  } >RAM
+
+  /* not zeroed by the startup code: the crash record survives a reset (system_stm32.cpp) */
+  .noinit (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.noinit)
+    *(.noinit*)
+    . = ALIGN(32);
   } >RAM
 
   ._stack_check :

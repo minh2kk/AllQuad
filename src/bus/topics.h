@@ -183,6 +183,7 @@ enum Warning : uint16_t {
   WARN_RESCUE = 1 << 12,        // GPS rescue / RTH without progress: landing
   WARN_GCS_LOST = 1 << 13,      // GCS heartbeat lost (GUIDED / MISSION)
   WARN_IMU2 = 1 << 14,          // flying on the second IMU
+  WARN_RPM_LOST = 1 << 15,      // a motor's RPM telemetry stopped in flight (its RPM notches are off)
 };
 
 // navigation EKF health (published by the control task)

@@ -11,6 +11,7 @@
 #include "board_stm32.h"
 #include "stm32_hal.h"
 #include "../../app/app.h"
+#include "../hal.h"
 
 // ============================================================ clocks
 namespace {
@@ -332,7 +333,185 @@ static void checkBootloaderRequest() {
 }
 
 // ============================================================ entry
+#if defined(STM32H7xx)
+#define IWDG_INST IWDG1
+#else
+#define IWDG_INST IWDG
+#endif
+// ============================================================ crash record + watchdog
+// .noinit RAM is neither zeroed nor loaded by the startup code: what a crash writes there is still
+// readable after the reset that follows (not after a power cycle). The record carries a magic and a
+// checksum; on the H7 it is written back from the data cache before the reset.
+extern "C" uint32_t _sdata, _estack;
+namespace {
+constexpr uint32_t CRASH_MAGIC = 0xC7A5B0D1u, CRUMB_MAGIC = 0xB4EADC4Bu;
+struct alignas(32) CrashRec {
+  uint32_t magic;
+  hal::CrashInfo info;
+  uint32_t check;
+};
+struct alignas(32) Crumb {  // one cache line
+  uint32_t magic, uptimeMs;
+  char task[24];
+};
+__attribute__((section(".noinit"))) CrashRec crashRec;
+__attribute__((section(".noinit"))) Crumb crumb;
+hal::CrashInfo bootCrash;
+bool bootCrashValid = false;
+int bootReason = 0;
+bool wdtOn = false;
+
+uint32_t crashSum(const hal::CrashInfo& i) {
+  const uint8_t* b = (const uint8_t*)&i;
+  uint32_t s = 0x5A17C0DEu;
+  for (size_t k = 0; k < sizeof(i); k++) s = ((s << 5) | (s >> 27)) ^ b[k];
+  return s;
+}
+bool crashValid() { return crashRec.magic == CRASH_MAGIC && crashRec.check == crashSum(crashRec.info); }
+void cacheWriteBack(const void* p, size_t n) {
+#if defined(STM32H7xx)
+  if (SCB->CCR & SCB_CCR_DC_Msk) SCB_CleanDCache_by_Addr((uint32_t*)p, (int32_t)((n + 31) & ~31u));
+#else
+  (void)p; (void)n;
+#endif
+}
+bool inRam(const void* p, size_t n) {
+  uintptr_t a = (uintptr_t)p;
+  return a >= (uintptr_t)&_sdata && a + n <= (uintptr_t)&_estack && a + n > a;
+}
+// printable ASCII only (the name may come from a corrupted task control block; it ends up in JSON)
+void copyName(char* dst, size_t cap, const char* src) {
+  size_t n = 0;
+  bool ram = src && inRam(src, 1);
+  while (src && n < cap - 1 && (!ram || (uintptr_t)(src + n) < (uintptr_t)&_estack) && src[n]) {
+    char c = src[n];
+    dst[n++] = (c >= 0x20 && c < 0x7F && c != '"' && c != '\\') ? c : '?';
+  }
+  dst[n] = 0;
+}
+const char* currentTaskName() {
+  if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED) return "boot";
+  TaskHandle_t t = xTaskGetCurrentTaskHandle();
+  if (!t || !inRam(t, 64)) return nullptr;
+  return pcTaskGetName(t);
+}
+}  // namespace
+
+// called with interrupts off from the fault handlers / RTOS hooks: no allocation, no locks
+static void crashRecord(uint8_t kind, const uint32_t* frame, const char* where) {
+  uint16_t count = crashValid() ? crashRec.info.count : 0;
+  hal::CrashInfo& i = crashRec.info;
+  memset(&i, 0, sizeof(i));
+  i.kind = kind;
+  i.count = count < 0xFFFF ? count + 1 : count;
+  i.bootsAgo = 0;
+  i.uptimeMs = HAL_GetTick();
+  if (frame && inRam(frame, 32)) {  // r0-r3, r12, lr, pc, xpsr
+    i.lr = frame[5];
+    i.pc = frame[6];
+  }
+  if (kind >= hal::CRASH_HARDFAULT && kind <= hal::CRASH_USAGEFAULT) {
+    i.cfsr = SCB->CFSR;
+    i.hfsr = SCB->HFSR;
+    if (i.cfsr & SCB_CFSR_MMARVALID_Msk) i.addr = SCB->MMFAR;
+    else if (i.cfsr & SCB_CFSR_BFARVALID_Msk) i.addr = SCB->BFAR;
+  }
+  copyName(i.where, sizeof(i.where), where ? where : currentTaskName());
+  crashRec.check = crashSum(i);
+  crashRec.magic = CRASH_MAGIC;
+  cacheWriteBack(&crashRec, sizeof(crashRec));
+}
+static void crumbUpdate() {
+  crumb.uptimeMs = HAL_GetTick();
+  copyName(crumb.task, sizeof(crumb.task), currentTaskName());
+  crumb.magic = CRUMB_MAGIC;
+  cacheWriteBack(&crumb, sizeof(crumb));
+}
+
+// reset flags (read once, then cleared) and the record the previous run left
+static void crashBoot() {
+#if defined(STM32H7xx)
+  uint32_t f = RCC->RSR;
+  bool bor = f & RCC_RSR_BORRSTF, por = f & RCC_RSR_PORRSTF, wdg = f & (RCC_RSR_IWDG1RSTF | RCC_RSR_WWDG1RSTF),
+       sft = f & RCC_RSR_SFTRSTF, pin = f & RCC_RSR_PINRSTF;
+  RCC->RSR |= RCC_RSR_RMVF;
+#else
+  uint32_t f = RCC->CSR;
+  bool bor = f & RCC_CSR_BORRSTF, por = f & RCC_CSR_PORRSTF, wdg = f & (RCC_CSR_IWDGRSTF | RCC_CSR_WWDGRSTF),
+       sft = f & RCC_CSR_SFTRSTF, pin = f & RCC_CSR_PINRSTF;
+  RCC->CSR |= RCC_CSR_RMVF;
+#endif
+  // a power-on also sets BOR on most parts: power-on wins, brownout means the supply dipped while running
+  bootReason = por ? 1 : bor ? 9 : wdg ? 7 : sft ? 3 : pin ? 2 : 0;
+  if (por || bor) {  // RAM content is undefined after the supply went away
+    crashRec.magic = 0;
+    crumb.magic = 0;
+  }
+  if (wdg) {  // nothing ran at the reset itself: the breadcrumb says what had the CPU
+    uint16_t count = crashValid() ? crashRec.info.count : 0;
+    hal::CrashInfo& i = crashRec.info;
+    memset(&i, 0, sizeof(i));
+    i.kind = hal::CRASH_WATCHDOG;
+    i.count = count < 0xFFFF ? count + 1 : count;
+    if (crumb.magic == CRUMB_MAGIC) {
+      i.uptimeMs = crumb.uptimeMs;
+      memcpy(i.where, crumb.task, sizeof(i.where));
+      i.where[sizeof(i.where) - 1] = 0;
+    }
+    crashRec.check = crashSum(i);
+    crashRec.magic = CRASH_MAGIC;
+  }
+  crumb.magic = 0;
+  if (crashValid()) {
+    bootCrash = crashRec.info;
+    bootCrashValid = true;
+    if (bootCrash.bootsAgo == 0 && sft && bootCrash.kind != hal::CRASH_WATCHDOG) bootReason = 4;  // panic reset
+    if (crashRec.info.bootsAgo < 0xFFFF) crashRec.info.bootsAgo++;  // older at the next boot
+    crashRec.check = crashSum(crashRec.info);
+  }
+  // (data cache not enabled yet: these writes go straight to RAM)
+}
+
+namespace hal {
+namespace stm32 {
+int bootResetReason() { return bootReason; }
+void watchdogFlashErase() { if (wdtOn) IWDG_INST->KR = 0xAAAAu; }
+}  // namespace stm32
+bool lastCrash(CrashInfo& out) {
+  if (!bootCrashValid) return false;
+  out = bootCrash;
+  return true;
+}
+void crashClear() {
+  bootCrashValid = false;
+  crashRec.magic = 0;
+  cacheWriteBack(&crashRec, sizeof(crashRec));
+}
+// IWDG from the ~32 kHz LSI: /64, reload 3400 = 6.8 s nominal; >= 4.6 s even with the fastest LSI the
+// F4 datasheet allows (47 kHz), so a 128 kB sector erase (up to 4 s, kicked right before) never trips it.
+void watchdogStart() {
+#if !defined(AQ_QEMU)
+  if (wdtOn) return;
+#if defined(STM32H7xx)
+  DBGMCU->APB4FZ1 |= DBGMCU_APB4FZ1_DBG_IWDG1;  // stops while a debugger halts the core
+#else
+  DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_IWDG_STOP;
+#endif
+  IWDG_INST->KR = 0xCCCCu;  // start (LSI switches on by itself)
+  IWDG_INST->KR = 0x5555u;  // unlock PR / RLR
+  IWDG_INST->PR = 4;        // /64
+  IWDG_INST->RLR = 3400;
+  for (uint32_t g = 0; (IWDG_INST->SR & (IWDG_SR_PVU | IWDG_SR_RVU)) && g < 2000000u; g++) {}
+  IWDG_INST->KR = 0xAAAAu;
+  wdtOn = true;
+#endif
+}
+void watchdogKick() { if (wdtOn) IWDG_INST->KR = 0xAAAAu; }
+bool watchdogRunning() { return wdtOn; }
+}  // namespace hal
+
 int main(void) {
+  crashBoot();  // reset flags + the record a crash left in RAM, before anything else runs
 #if defined(AQ_QEMU)
   // no DWT, no RCC in QEMU: the time base runs from the start
   clockInit();
@@ -399,20 +578,48 @@ void _exit(int) { NVIC_SystemReset(); for (;;) {} }
 void* _sbrk(ptrdiff_t) { errno = ENOMEM; return (void*)-1; }  // everything goes through heap_4
 
 // ============================================================ faults & RTOS hooks
-// A crash restarts the controller (USB and the configurator come back; the reset reason is kept by
-// the RCC flags). Motors stop with the reset: the DShot / PWM outputs return to idle.
-__attribute__((noreturn)) static void panic() {
+// A crash writes a record into RAM that survives the reset (crashRecord) and restarts the controller
+// (USB and the configurator come back). Motors stop with the reset: the outputs return to idle.
+// The fault handlers find the stacked frame (MSP or PSP) for the faulting PC / LR.
+__attribute__((noreturn)) static void panic(uint8_t kind, const uint32_t* frame, const char* where) {
   __disable_irq();
+  crashRecord(kind, frame, where);
   NVIC_SystemReset();
   for (;;) {}
 }
-void aqAssertFailed(const char*, int) { panic(); }
-void vApplicationStackOverflowHook(TaskHandle_t, char*) { panic(); }
-void vApplicationMallocFailedHook(void) { panic(); }
-void HardFault_Handler(void) { panic(); }
-void MemManage_Handler(void) { panic(); }
-void BusFault_Handler(void) { panic(); }
-void UsageFault_Handler(void) { panic(); }
+void aqAssertFailed(const char* file, int line) {
+  char w[24];
+  const char* b = file ? file : "?";
+  for (const char* p = b; *p; p++) if (*p == '/' || *p == '\\') b = p + 1;
+  size_t n = 0;
+  while (b[n] && n < 15) { w[n] = b[n]; n++; }
+  w[n++] = ':';
+  char d[8];
+  int k = 0;
+  unsigned v = line > 0 ? (unsigned)line : 0;
+  do { d[k++] = (char)('0' + v % 10); v /= 10; } while (v && k < 7);
+  while (k && n < sizeof(w) - 1) w[n++] = d[--k];
+  w[n] = 0;
+  panic(hal::CRASH_ASSERT, nullptr, w);
+}
+void vApplicationStackOverflowHook(TaskHandle_t, char* name) { panic(hal::CRASH_STACK, nullptr, name); }
+void vApplicationMallocFailedHook(void) { panic(hal::CRASH_NOMEM, nullptr, nullptr); }
+__attribute__((used)) void faultEntry(const uint32_t* frame, uint32_t kind) { panic((uint8_t)kind, frame, nullptr); }
+#define AQ_FAULT_HANDLER(name, kind)                                              \
+  __attribute__((naked)) void name(void) {                                        \
+    __asm volatile("tst lr, #4\n ite eq\n mrseq r0, msp\n mrsne r0, psp\n"        \
+                   "movs r1, %0\n b faultEntry\n" ::"i"(kind));                  \
+  }
+AQ_FAULT_HANDLER(HardFault_Handler, hal::CRASH_HARDFAULT)
+AQ_FAULT_HANDLER(MemManage_Handler, hal::CRASH_MEMMANAGE)
+AQ_FAULT_HANDLER(BusFault_Handler, hal::CRASH_BUSFAULT)
+AQ_FAULT_HANDLER(UsageFault_Handler, hal::CRASH_USAGEFAULT)
+// every 64 ms: which task runs and since when (tells what hogged the CPU after a watchdog reset)
+void vApplicationTickHook(void) {
+  static uint8_t n = 0;
+  if (++n & 63) return;
+  crumbUpdate();
+}
 void NMI_Handler(void) {}
 void DebugMon_Handler(void) {}
 }  // extern "C"
