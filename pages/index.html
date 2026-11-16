@@ -499,6 +499,64 @@ table.ports th { text-transform: uppercase; letter-spacing: .04em; font-size: .7
 .ov-mot .bars { height: 150px; }
 .card-h { flex-wrap: wrap; }
 }
+.ov2 { display: grid; gap: 14px; grid-template-columns: repeat(12, minmax(0, 1fr)); margin-top: 4px; }
+.ov2 > * { grid-column: span 12; margin: 0; min-width: 0; }
+.ov-side { order: -1; }
+.ov2 .card-h { padding-bottom: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--grid); }
+.ov-side .dash { margin: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ov-side .tile { min-height: 0; padding: 12px 14px 10px 16px; }
+.ov-side .tile .v { font-size: 1.22rem; margin-top: 6px; }
+.ov-side .tile .s { font-size: .76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-side .tile .ring { width: 26px; height: 26px; top: 10px; right: 10px; }
+@media (min-width: 760px) {
+.ov-side .dash { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ov-rc { grid-column: span 7; } .ov-mot { grid-column: span 5; }
+}
+@media (min-width: 1180px) {
+.ov-att { grid-column: span 8; } .ov-side { grid-column: span 4; order: 0; }
+.ov-side .dash { grid-template-columns: repeat(2, minmax(0, 1fr)); height: 100%; align-content: stretch; }
+.ov-rc { grid-column: span 5; } .ov-mot { grid-column: span 3; } .ov-sys { grid-column: span 4; }
+}
+.ov-att .att-row { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .ov-att .att-row { grid-template-columns: 190px minmax(0, 1fr); } }
+.att-num { gap: 16px; }
+.att-num span { display: grid; justify-items: center; gap: 1px; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
+.att-num b { font-size: 1rem; }
+.ov-att .att-chart .chart { height: 210px; }
+.sticks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.stick { display: grid; justify-items: center; gap: 6px; }
+.stick .pad { position: relative; width: 100%; max-width: 132px; aspect-ratio: 1; border-radius: 16px; border: 1px solid var(--grid);
+background: linear-gradient(var(--rule), var(--rule)) center / 1px 100% no-repeat, linear-gradient(var(--rule), var(--rule)) center / 100% 1px no-repeat,
+radial-gradient(circle at center, color-mix(in srgb, var(--acc) 10%, var(--soft)) 0 40%, var(--soft) 72%); }
+.stick .pad i { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; left: 50%; top: 50%;
+background: var(--acc); box-shadow: 0 0 0 4px color-mix(in srgb, var(--acc) 25%, transparent), 0 2px 6px rgba(0, 0, 0, .25); transition: left .1s linear, top .1s linear; }
+.stick.lost .pad i { background: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 25%, transparent); }
+.stick > span { font-size: .78rem; color: var(--ink-2); }
+.aux { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.sw { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px; padding: 7px 9px; border-radius: 10px; background: var(--soft); border: 1px solid var(--grid); }
+.sw span { font-size: .74rem; font-weight: 700; color: var(--ink-2); letter-spacing: .03em; }
+.sw b { display: flex; gap: 4px; justify-content: flex-end; }
+.sw b i { width: 9px; height: 9px; border-radius: 50%; background: var(--rule); }
+.sw b i.on { background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 22%, transparent); }
+.sw em { grid-column: 1 / -1; font-style: normal; font-size: .72rem; color: var(--ink-2); }
+.ov-mot .bars { height: 170px; gap: 10px; }
+@media (min-width: 1180px) { .ov-mot .bars { height: 250px; } }
+.sens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.sen { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 2px 9px; align-items: center; padding: 9px 11px; border-radius: 10px; background: var(--soft); border: 1px solid var(--grid); }
+.sen i { width: 9px; height: 9px; border-radius: 50%; background: var(--rule); grid-row: span 2; }
+.sen.ok i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+.sen.warn i { background: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 25%, transparent); }
+.sen.bad i { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent); }
+.sen span { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+.sen b { font: 600 .9rem var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sen.off b { color: var(--ink-2); font-weight: 500; }
+@media (max-width: 640px) {
+.ov2 { gap: 10px; }
+.stick .pad { max-width: 120px; }
+.aux { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ov-mot .bars { height: 130px; }
+}
+@media (prefers-reduced-motion: reduce) { .stick .pad i { transition: none; } }
 .strip { grid-template-columns: 64px minmax(0, 1fr) auto auto; }
 .strip-tools { display: flex; gap: 6px; align-items: center; }
 .st-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border-radius: 9px; cursor: pointer;
@@ -631,9 +689,9 @@ body.navmini .applybar { left: calc(36px + 50%); }
 </div>
 <div class="chips" id="blockerChips"></div>
 </div>
-<div class="ov-grid">
+<div class="ov2">
 <div class="panel ov-att">
-<div class="card-h"><span class="dot"></span><h3>Tư thế & tốc độ góc</h3>
+<div class="card-h"><span class="dot"></span><h3>Tư thế</h3>
 <div class="seg seg-sm" role="group" aria-label="Trục" id="liveAxis">
 <button aria-pressed="true" data-a="0">Roll</button><button aria-pressed="false" data-a="1">Pitch</button><button aria-pressed="false" data-a="2">Yaw</button>
 </div>
@@ -641,32 +699,31 @@ body.navmini .applybar { left: calc(36px + 50%); }
 <div class="att-row">
 <div class="att-gauge">
 <canvas id="ovHorizon" width="320" height="320" aria-label="Chân trời nhân tạo"></canvas>
-<div class="att-num num"><span>Roll <b id="ovRoll">—</b></span><span>Pitch <b id="ovPitch">—</b></span><span>Hướng <b id="ovHdg">—</b></span></div>
+<div class="att-num num"><span>Roll<b id="ovRoll">—</b></span><span>Pitch<b id="ovPitch">—</b></span><span>Hướng<b id="ovHdg">—</b></span></div>
 </div>
 <div class="att-chart">
 <canvas class="chart" id="liveChart"></canvas>
-<div class="legend"><span><i style="background:var(--ink)"></i>Gyro (°/s)</span><span><i style="background:var(--amber)"></i>Setpoint</span></div>
+<div class="legend"><span><i style="background:var(--ink)"></i>Gyro (°/s)</span><span><i style="background:var(--amber)"></i>Lệnh từ cần (setpoint)</span></div>
 </div>
 </div>
+</div>
+<div class="ov-side" id="ovTiles"></div>
+<div class="panel ov-rc">
+<div class="card-h"><span class="dot"></span><h3>Tay điều khiển</h3><span class="card-x num" id="oLq"></span></div>
+<div class="sticks">
+<div class="stick"><div class="pad"><i id="stL"></i></div><span class="num" id="stLt">Yaw — · Ga —</span></div>
+<div class="stick"><div class="pad"><i id="stR"></i></div><span class="num" id="stRt">Roll — · Pitch —</span></div>
+</div>
+<div class="aux" id="rcAux"></div>
 </div>
 <div class="panel ov-mot">
 <div class="card-h"><span class="dot"></span><h3>Motor</h3><span class="card-x num">Ga <b id="oThr">—</b></span></div>
 <div class="bars" id="motorBars"></div>
 </div>
-<div class="panel ov-rc">
-<div class="card-h"><span class="dot"></span><h3>Tay điều khiển</h3><span class="card-x num" id="oLq"></span></div>
-<div id="rcBars"></div>
-</div>
 <div class="panel ov-sys">
-<div class="card-h"><span class="dot"></span><h3>Tình trạng hệ thống</h3></div>
-<div class="health" id="oSensors"></div>
-<dl class="kv ov-kv">
-<dt>Độ cao</dt><dd id="oAlt">—</dd>
-<dt>Vị trí</dt><dd id="oPos">—</dd>
-<dd id="oGps" hidden></dd>
-<dt>Notch động</dt><dd id="oNotch">—</dd>
-</dl>
-<p class="ov-msg" id="oMsg"></p>
+<div class="card-h"><span class="dot"></span><h3>Cảm biến</h3><span class="card-x num" id="oNotch"></span></div>
+<div class="sens" id="oSensors"></div>
+<p class="ov-msg" id="oMsg" hidden></p>
 </div>
 </div>
 </section>
@@ -2751,26 +2808,30 @@ $("ovPitch").textContent = st.att[1].toFixed(1) + "°";
 $("ovHdg").textContent = st.att[2] != null ? ((st.att[2] + 360) % 360).toFixed(0) + "°" : "—";
 setHtml($("motorBars"), st.motors.map((m, i) => `<div><span style="height:${Math.round(m * 100)}%"></span><label class="num">M${i + 1}<br>${Math.round(m * 100)}%</label></div>`).join(""));
 $("oThr").textContent = (st.thr * 100).toFixed(0) + "%";
-$("oAlt").textContent = `${st.est.alt.toFixed(2)} m, ${st.est.vz >= 0 ? "+" : ""}${st.est.vz.toFixed(2)} m/s${st.est.agl >= 0 ? `, mặt đất ${st.est.agl.toFixed(2)} m` : ""}`;
-$("oPos").textContent = st.est.pos ? `N ${st.est.n.toFixed(1)} m, E ${st.est.e.toFixed(1)} m${st.est.home ? `, cách nhà ${st.est.dist.toFixed(0)} m` : ""}` : "chưa có";
-$("oGps").textContent = st.sensors && st.sensors.gps ? `${st.gps.fix ? "3D fix" : "chưa fix"}, ${st.gps.sats} vệ tinh, sai số ${st.gps.hacc} m` : "không có";
-$("oNotch").textContent = st.notch.map((x) => (x ? x + " Hz" : "—")).join(" / ");
+$("oNotch").textContent = st.sensors ? `${[st.sensors.imu, st.sensors.baro, st.sensors.mag].filter(Boolean).length} / 3 cảm biến` : "";
 $("oLq").textContent = st.rxok === false ? "MẤT SÓNG" : st.lq ? `LQ ${st.lq}%` : "";
 $("oLq").className = "card-x num" + (st.rxok === false ? " bad" : "");
-const names = ["Roll", "Pitch", "Ga", "Yaw", "AUX1", "AUX2", "AUX3", "AUX4", "AUX5", "AUX6"];
-setHtml($("rcBars"), names.map((n, i) => {
-const us = st.rc[i] || 1500, pct = Math.max(0, Math.min(100, (us - 1000) / 10));
-return `<div class="rc${i === 3 ? " sep" : ""}"><span>${n}</span><div class="track"><i style="width:${pct}%"></i><span style="left:${pct}%"></span></div><span class="num">${us}</span></div>`;
+const rc = (i) => st.rc[i] || 1500, pos = (us) => Math.max(0, Math.min(100, (us - 1000) / 10));
+const stick = (el, x, y) => { el.style.left = pos(x) + "%"; el.style.top = 100 - pos(y) + "%"; };
+stick($("stL"), rc(3), rc(2));
+stick($("stR"), rc(0), rc(1));
+document.querySelectorAll(".ov-rc .stick").forEach((e) => e.classList.toggle("lost", st.rxok === false));
+$("stLt").textContent = `Yaw ${rc(3)} · Ga ${rc(2)}`;
+$("stRt").textContent = `Roll ${rc(0)} · Pitch ${rc(1)}`;
+setHtml($("rcAux"), [4, 5, 6, 7, 8, 9].map((i) => {
+const us = rc(i), p = us < 1300 ? 0 : us > 1700 ? 2 : 1;
+return `<div class="sw" title="${us} µs"><span>AUX${i - 3}</span><b>${[0, 1, 2].map((k) => `<i${k === p ? ' class="on"' : ""}></i>`).join("")}</b><em class="num">${us}</em></div>`;
 }).join(""));
 if (st.sensors) {
-const sn = st.sensors, b = st.bat || {};
+const sn = st.sensors;
+const sen = (cls, k, v) => `<div class="sen ${cls}"><i></i><span>${k}</span><b>${esc(String(v))}</b></div>`;
 setHtml($("oSensors"), [
-hrow(sn.imu ? "ok" : "bad", "IMU", sn.imu || "không thấy"),
-hrow(sn.baro ? "ok" : "off", "Baro", sn.baro || "không có"),
-hrow(sn.mag ? "ok" : "off", "Compass", sn.mag || "không có"),
-hrow(!sn.gps ? "off" : st.gps.fix ? "ok" : "warn", "GPS", !sn.gps ? "không có" : st.gps.fix ? `${st.gps.sats} vệ tinh` : "chưa fix"),
-hrow(st.rxok === false ? "bad" : "ok", "Tay điều khiển", st.rxok === false ? "mất sóng" : st.lq ? `LQ ${st.lq}%` : "ok"),
-hrow(!b.v ? "off" : b.pct != null && b.pct < 20 ? "bad" : b.pct != null && b.pct < 40 ? "warn" : "ok", "Pin", b.v ? `${b.v.toFixed(2)} V · ${b.a.toFixed(1)} A · ${b.mah} mAh` : "không đo"),
+sen(sn.imu ? "ok" : "bad", "IMU", sn.imu || "không thấy"),
+sen(sn.baro ? "ok" : "off", "Baro", sn.baro || "không có"),
+sen(sn.mag ? "ok" : "off", "Compass", sn.mag || "không có"),
+sen(!sn.gps ? "off" : st.gps.fix ? "ok" : "warn", "GPS", !sn.gps ? "không có" : st.gps.fix ? "3D fix" : "chưa fix"),
+sen(st.est && st.est.pos ? "ok" : "off", "Vị trí", st.est && st.est.pos ? `N ${st.est.n.toFixed(0)} · E ${st.est.e.toFixed(0)} m` : "chưa có"),
+sen(st.notch && st.notch.some((x) => x) ? "ok" : "off", "Notch động", st.notch && st.notch.some((x) => x) ? st.notch.filter((x) => x).map((x) => x + " Hz").join(" · ") : "tắt"),
 ].join(""));
 }
 $("oMsg").textContent = st.msg ? "Thông báo cuối: " + st.msg : "";
@@ -5772,7 +5833,7 @@ if (st.lg === undefined) return;
 for (let i = 0; i < 8; i++) { const c = $("lgRes" + i); if (c) c.hidden = !((st.lg >> i) & 1); }
 }
 const PC = { amps: null, armT: 0 };
-const TILES_DEF = [["bat", "Pin"], ["link", "Tín hiệu"], ["gps", "GPS"], ["fly", "Bay"], ["pos", "Độ cao"], ["left", "Còn bay"], ["loop", "Tải CPU"]];
+const TILES_DEF = [["bat", "Pin"], ["link", "Tín hiệu"], ["gps", "GPS"], ["pos", "Độ cao"], ["left", "Còn bay"], ["loop", "Tải CPU"]];
 function tileSet(id, cls, v, sub, pct) {
 const t = $("tl-" + id);
 if (!t) return;
@@ -5791,8 +5852,9 @@ if (!sec) return;
 p = document.createElement("div");
 p.className = "dash"; p.id = "pcPanel";
 p.innerHTML = TILES_DEF.map(([id, k]) => `<div class="tile idle" id="tl-${id}"><div class="k">${k}</div><div class="v">—</div><div class="s"></div><div class="ring" hidden></div></div>`).join("");
-const anchor = $("blockers");
-sec.insertBefore(p, anchor ? anchor.nextSibling : sec.firstChild);
+const host = $("ovTiles");
+if (host) { p.className = "dash ov-tiles"; host.appendChild(p); }
+else { const anchor = $("blockers"); sec.insertBefore(p, anchor ? anchor.nextSibling : sec.firstChild); }
 $("tl-loop").querySelector(".s").id = "pcLoadT";
 $("tl-left").querySelector(".v").id = "pcLeft";
 $("tl-left").querySelector(".s").id = "pcLeftT";
@@ -5822,7 +5884,7 @@ tileSet("loop", load > 70 ? "bad" : load > 50 ? "warn" : "ok", `${load.toFixed(0
 }
 const cap = has("bat_capacity") ? val("bat_capacity") : 0;
 if (typeof b.a === "number") PC.amps = PC.amps == null ? b.a : PC.amps + (b.a - PC.amps) * 0.02;
-if (!cap || typeof b.mah !== "number") { tileSet("left", "idle", "—", cap ? "" : "đặt bat_capacity (mAh) để tính"); return; }
+if (!cap || typeof b.mah !== "number") { tileSet("left", "idle", "—", cap ? "" : "chưa đặt bat_capacity"); return; }
 const usable = cap * (100 - (has("bat_reserve_pct") ? val("bat_reserve_pct") : 0)) / 100, left = usable - b.mah;
 if (PC.amps > 0.5 && left > 0) {
 const s = Math.round(left / (PC.amps * 1000 / 3600));

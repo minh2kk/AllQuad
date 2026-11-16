@@ -1154,7 +1154,8 @@ function lgLive(st) {
 // ---------------------------------------------------------------- overview: dashboard tiles
 // Built from the status the page already receives: no extra request to the FC.
 const PC = { amps: null, armT: 0 };
-const TILES_DEF = [["bat", "Pin"], ["link", "Tín hiệu"], ["gps", "GPS"], ["fly", "Bay"], ["pos", "Độ cao"], ["left", "Còn bay"], ["loop", "Tải CPU"]];
+// flight mode / armed state is in the top bar: no tile for it
+const TILES_DEF = [["bat", "Pin"], ["link", "Tín hiệu"], ["gps", "GPS"], ["pos", "Độ cao"], ["left", "Còn bay"], ["loop", "Tải CPU"]];
 function tileSet(id, cls, v, sub, pct) {
   const t = $("tl-" + id);
   if (!t) return;
@@ -1173,8 +1174,9 @@ function perfCard(st) {
     p = document.createElement("div");
     p.className = "dash"; p.id = "pcPanel";
     p.innerHTML = TILES_DEF.map(([id, k]) => `<div class="tile idle" id="tl-${id}"><div class="k">${k}</div><div class="v">—</div><div class="s"></div><div class="ring" hidden></div></div>`).join("");
-    const anchor = $("blockers");
-    sec.insertBefore(p, anchor ? anchor.nextSibling : sec.firstChild);
+    const host = $("ovTiles");
+    if (host) { p.className = "dash ov-tiles"; host.appendChild(p); }
+    else { const anchor = $("blockers"); sec.insertBefore(p, anchor ? anchor.nextSibling : sec.firstChild); }
     // keep the ids other code and tests use
     $("tl-loop").querySelector(".s").id = "pcLoadT";
     $("tl-left").querySelector(".v").id = "pcLeft";
@@ -1212,7 +1214,7 @@ function perfCard(st) {
   // time left: (capacity - reserve - used) / ~10 s average current
   const cap = has("bat_capacity") ? val("bat_capacity") : 0;
   if (typeof b.a === "number") PC.amps = PC.amps == null ? b.a : PC.amps + (b.a - PC.amps) * 0.02;
-  if (!cap || typeof b.mah !== "number") { tileSet("left", "idle", "—", cap ? "" : "đặt bat_capacity (mAh) để tính"); return; }
+  if (!cap || typeof b.mah !== "number") { tileSet("left", "idle", "—", cap ? "" : "chưa đặt bat_capacity"); return; }
   const usable = cap * (100 - (has("bat_reserve_pct") ? val("bat_reserve_pct") : 0)) / 100, left = usable - b.mah;
   if (PC.amps > 0.5 && left > 0) {
     const s = Math.round(left / (PC.amps * 1000 / 3600));

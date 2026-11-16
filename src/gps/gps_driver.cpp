@@ -40,8 +40,9 @@ void GpsDriver::configure() {
 
 void GpsDriver::begin(hal::Port port) {
   port_ = port;
-  // Receivers boot at 9600 (M8) or 38400 (M10): send the baud-rate change at both
-  const uint32_t bauds[] = {9600, 38400, 57600, 115200};
+  // Receivers boot at 9600 (M8) or 38400 (M10); modules set up by another firmware are often at 115200 or
+  // 230400 (Betaflight / INAV): send the baud-rate change at each
+  const uint32_t bauds[] = {9600, 38400, 57600, 115200, 230400};
   for (uint32_t b : bauds) {
     hal::portOpen(port_, b);
     hal::delayMs(50);
