@@ -140,6 +140,24 @@ static void testGps() {
   got = false;
   for (const char* q = line; *q; q++) got |= g2.feed((uint8_t)*q);
   CHECK(got && g2.data().sats == 8, "NMEA GGA decoded");
+  {  // a 9600 baud NMEA-only receiver: found by trying the baud rates, then kept
+    os::hostReset();
+    hal::host::reset();
+    drv::GpsDriver g3;
+    g3.attach(hal::Port::SERIAL2);
+    g3.poll();
+    os::hostRunUntil(3000000);
+    g3.poll();  // 2.5 s without a frame at 115200
+    uint32_t tried = hal::host::openBaud[(int)hal::Port::SERIAL2];
+    for (int s = 0; s < 6; s++) {
+      for (const char* q = line; *q; q++) hal::host::in(hal::Port::SERIAL2).push_back((uint8_t)*q);
+      os::hostRunUntil(3000000 + (uint64_t)(s + 1) * 1000000);
+      g3.poll();
+    }
+    CHECK(tried == 9600 && g3.baud() == 9600 && g3.frames() == 6 && hal::host::openBaud[(int)hal::Port::SERIAL2] == 9600,
+          "GPS: no frame at 115200 -> 9600 tried, NMEA found there and kept");
+    os::hostReset();
+  }
 }
 
 // ---------------------------------------------------------------- serial sensors

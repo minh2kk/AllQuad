@@ -53,5 +53,6 @@ extern SdCard sd;
 extern CrashInfo crash;     // the record lastCrash() reports (kind 0 = none)
 extern bool wdtRunning;
 extern uint32_t wdtKicks;
+extern uint32_t openBaud[(int)Port::COUNT];  // last portOpen() baud rate per port
 }  // namespace host
 }  // namespace hal

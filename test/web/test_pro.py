@@ -156,6 +156,7 @@ async def part_mock(b):
     await pg.wait_for_timeout(2500)
     txt = await pg.inner_text("#psTable")
     check("UART1" in txt and "UART2" in txt and "Receiver" in txt and "khung/s" in txt, "ports: per-UART traffic and receiver frames")
+    check("UBX 115200 baud" in txt, "ports: GPS protocol and baud found")
     check(await pg.evaluate("PS.rxHz > 100 && PS.rate[0] && PS.rate[0][0] > 1000"), "ports: rates from the counters (rx %s)" % await pg.evaluate("PS.rxHz"))
     await pg.screenshot(path=os.path.join(SHOTS, "pro-ports.png"), full_page=True)
     await pg.click("#psReset")

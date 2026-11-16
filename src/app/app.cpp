@@ -641,7 +641,14 @@ void ioTask(void*) {
       if (n) hal::portWrite(rxPort, frame, n);
     }
   }
-  if (gpsPort != Port::COUNT && gps.poll()) {
+  bool gpsNew = gpsPort != Port::COUNT && gps.poll();
+  if (gpsPort != Port::COUNT) {
+    bus::gpsLink.port = (uint8_t)gpsPort;
+    bus::gpsLink.baud = gps.baud();
+    bus::gpsLink.frames = gps.frames();
+    bus::gpsLink.proto = !strcmp(gps.protocol(), "UBX") ? 1 : !strcmp(gps.protocol(), "NMEA") ? 2 : 0;
+  }
+  if (gpsNew) {
     GpsData g = gps.data();
     g.timeMs = now;
     bus::gps.publish(g);

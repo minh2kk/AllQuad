@@ -35,6 +35,7 @@ int bootloaderRequests = 0;
 CrashInfo crash{};
 bool wdtRunning = false;
 uint32_t wdtKicks = 0;
+uint32_t openBaud[(int)Port::COUNT] = {};
 uint32_t consoleBaudNow = 115200;
 bool bidir = false;
 float erpm[4] = {-1, -1, -1, -1};
@@ -115,7 +116,7 @@ bool spiWrite(SpiDev d, uint8_t reg, uint8_t v) {
 bool spiWriteRaw(SpiDev, const uint8_t*, size_t) { return false; }
 
 bool portExists(Port) { return true; }
-void portOpen(Port, uint32_t, UartFormat, bool) {}
+void portOpen(Port p, uint32_t baud, UartFormat, bool) { if ((int)p < (int)Port::COUNT) host::openBaud[(int)p] = baud; }
 int portRead(Port p) {
   auto& q = host::inQ[(int)p];
   if (q.empty()) return -1;

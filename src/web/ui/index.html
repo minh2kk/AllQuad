@@ -2344,7 +2344,12 @@ function renderStatus(st) {
   }
   if (!$("tab-overview").hidden) {
     const a = S.liveAxis;
-    plot($("liveChart"), [{ y: S.live[a + 3], color: "--amber", width: 2 }, { y: S.live[a], color: "--ink", width: 2 }], { xmin: 0, xmax: 119 });
+    // at least ±10 °/s on the axis: the noise of a gyro at rest (~0.1 °/s, sent rounded to 0.1) must not
+    // fill the chart and look like a shake
+    const vals = S.live[a].concat(S.live[a + 3]).filter(isFinite);
+    let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    if (hi - lo < 20) { const mid = (hi + lo) / 2; lo = mid - 10; hi = mid + 10; }
+    plot($("liveChart"), [{ y: S.live[a + 3], color: "--amber", width: 2 }, { y: S.live[a], color: "--ink", width: 2 }], { xmin: 0, xmax: 119, ymin: lo, ymax: hi });
   }
   if (st.perf && shown("system")) {
     const [imu, filt, ahrs, pid, mot, total, worst, period, load] = st.perf;

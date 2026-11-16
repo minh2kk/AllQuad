@@ -57,6 +57,7 @@ volatile uint32_t magCalUntilMs = 0;
 volatile bool magCalDone = false;
 volatile LoopPerf loopPerf;
 volatile uint32_t fastLoops = 0;
+volatile GpsLink gpsLink = {7, 0, 0, 0};
 volatile RxLinkStats rxLink;
 volatile bool otaActive = false;
 volatile bool gyroCalRequest = false;

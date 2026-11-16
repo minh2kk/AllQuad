@@ -273,10 +273,21 @@ void Cli::cmdSelftest() {
     if (!open) line(0, "uart", "no UART opened");
   }
   // GPS
-  if (bus::gps.seq()) {
+  if (bus::gpsLink.port < (uint8_t)hal::Port::COUNT && !bus::gpsLink.frames) {
+    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5"};
+    hal::PortStats ps{};
+    bool open = hal::portStats((hal::Port)bus::gpsLink.port, ps);
+    if (!open || !ps.rxBytes)
+      line(2, "gps", "%s: no byte received - GPS TX must go to the FC RX pin of that port, GPS powered (5 V), GND common",
+           pn[bus::gpsLink.port]);
+    else
+      line(2, "gps", "%s: %lu bytes but no valid GPS frame yet (trying %lu baud; framing errors %lu)", pn[bus::gpsLink.port],
+           (unsigned long)ps.rxBytes, (unsigned long)bus::gpsLink.baud, (unsigned long)ps.framing);
+  } else if (bus::gps.seq()) {
     GpsData g = bus::gps.get();
-    if (!g.fix3d) line(1, "gps", "%u satellites, no 3D fix yet (needs open sky)", g.sats);
-    else line(0, "gps", "3D fix, %u satellites, hAcc %.1f m", g.sats, (double)g.hAcc);
+    const char* pr = bus::gpsLink.proto == 1 ? "UBX" : bus::gpsLink.proto == 2 ? "NMEA" : "?";
+    if (!g.fix3d) line(1, "gps", "%s %lu baud, %u satellites, no 3D fix yet (needs open sky)", pr, (unsigned long)bus::gpsLink.baud, g.sats);
+    else line(0, "gps", "%s %lu baud, 3D fix, %u satellites, hAcc %.1f m", pr, (unsigned long)bus::gpsLink.baud, g.sats, (double)g.hAcc);
   }
   // battery
   if (b.voltage < 2.0f) line(1, "battery", "%.2f V - no battery (USB only) or voltage sensing not wired / scaled", (double)b.voltage);

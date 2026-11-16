@@ -329,6 +329,13 @@ void statusJson(Sink s, void* ctx, bool full) {
   }  // mid
   j.key("warn"); j.num(st.warnings, 0);
   j.key("rpml"); j.num(bus::rpmLostMask, 0);
+  if (bus::gpsLink.port < (uint8_t)hal::Port::COUNT) {  // GPS link: [port, baud, valid frames, protocol 1 UBX / 2 NMEA]
+    uint32_t gl[4] = {bus::gpsLink.port, bus::gpsLink.baud, bus::gpsLink.frames, bus::gpsLink.proto};
+    j.key("gpsl");
+    j.begin('[');
+    for (int k = 0; k < 4; k++) { j.comma(); j.num(gl[k], 0); }
+    j.end(']');
+  }
   j.key("vibe"); j.num(a.vibration, 1);
   {
     EkfReport k = bus::ekf.get();

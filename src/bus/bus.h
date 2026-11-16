@@ -67,7 +67,10 @@ extern volatile LoopPerf loopPerf;
 struct RxLinkStats { uint32_t bytes, frames, crcErrors; };
 extern volatile RxLinkStats rxLink;
 extern volatile bool otaActive;  // firmware update being written: arming blocked (flash writes stall the CPU)
-extern volatile uint32_t fastLoops;          // flight-loop iterations since boot (watchdog progress check)
+extern volatile uint32_t fastLoops;
+// GPS link diagnostics: port (hal::Port, COUNT = none), baud rate in use, valid frames, protocol 0 / 1 UBX / 2 NMEA
+struct GpsLink { uint8_t port, proto; uint32_t baud, frames; };
+extern volatile GpsLink gpsLink;          // flight-loop iterations since boot (watchdog progress check)
 extern volatile int8_t escTelemMotor;        // motor whose ESC telemetry was last requested
 // Motor test from the configurator (disarmed, props off): 0..1 per motor, stops by itself when no
 // new value arrives for MOTOR_TEST_TIMEOUT_MS. Arming is blocked while it runs.

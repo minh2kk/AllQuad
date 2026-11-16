@@ -429,7 +429,7 @@ function portStatsRender(st) {
   if (shown("ports") && portStatsHost()) psDraw();
 }
 function psCount(st) {
-  const now = Date.now(), cur = { t: now, p: {}, rxc: Array.isArray(st.rxc) ? st.rxc : null };
+  const now = Date.now(), cur = { t: now, p: {}, rxc: Array.isArray(st.rxc) ? st.rxc : null, gpsl: Array.isArray(st.gpsl) ? st.gpsl : null };
   for (const r of st.ports) if (Array.isArray(r) && r.length >= 7) cur.p[r[0]] = r;
   const prev = PS.last;
   if (prev && now - prev.t >= 300) {
@@ -454,10 +454,16 @@ function psDraw() {
     const e = typeof PORTS !== "undefined" && PORTS.find((x) => x[2] === idx);
     const f = e && has(e[0] + "_fn") ? S.params[e[0] + "_fn"].v : 0;
     const t = typeof PORT_FN !== "undefined" && PORT_FN.find((x) => x[0] === f);
-    return t ? t[1] : "";
+    const g = cur.gpsl && cur.gpsl[0] === idx ? cur.gpsl : null;  // GPS: protocol + baud found
+    return (t ? t[1] : "") + (g ? (g[2] ? ` · ${g[3] === 1 ? "UBX" : g[3] === 2 ? "NMEA" : ""} ${g[1]} baud` : ` · đang dò baud (${g[1]})`) : "");
   };
   const fmtB = (v) => (v >= 10240 ? (v / 1024).toFixed(0) + " KB/s" : v >= 1024 ? (v / 1024).toFixed(1) + " KB/s" : v.toFixed(0) + " B/s");
   let warn = [];
+  if (cur.gpsl && !cur.gpsl[2]) {
+    const r = cur.p[cur.gpsl[0]];
+    warn.push(!r || !r[1] ? `GPS (${name(cur.gpsl[0])}): chưa nhận được byte nào - nối TX của GPS vào chân RX của cổng này (đấu chéo), GPS có nguồn 5 V, chung GND`
+      : `GPS (${name(cur.gpsl[0])}): có dữ liệu nhưng chưa có khung GPS hợp lệ (đang thử ${cur.gpsl[1]} baud) - sai baud hoặc nhiễu`);
+  }
   const rows = Object.keys(cur.p).map(Number).sort((a, b) => a - b).map((k) => {
     const a = cur.p[k], b = (PS.base.p[k]) || a, r = PS.rate[k] || [0, 0];
     const d = [3, 4, 5, 6].map((i) => Math.max(0, a[i] - b[i]));

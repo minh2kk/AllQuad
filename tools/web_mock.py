@@ -79,6 +79,7 @@ def live_status():
     k = int(t * 150)
     s["ports"] = [[0, k * 26, int(t * 40) * 12, 0, 3 if t > 5 else 0, 0, 0], [1, int(t * 1100), int(t * 4), 0, 0, 0, 0]]
     s["rxc"] = [k * 26, k, 2 if t > 5 else 0]
+    s["gpsl"] = [1, 115200, int(t * 10), 1]  # GPS on UART2, UBX 115200, 10 frames/s
     # last reset: a hard fault in the telemetry task (STM32 crash record), watchdog running
     s["rr"] = 4 if CRASH else 3
     s["wdt"] = True
@@ -158,7 +159,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", accept.decode())
         self.end_headers()
         WS_CLIENTS[0] += 1
-        SLOW = ("tasks", "perf", "late", "ports", "rxc", "rr", "wdt", "crash", "sensors", "log", "ssid", "fw", "defpw")
+        SLOW = ("tasks", "perf", "late", "ports", "rxc", "gpsl", "rr", "wdt", "crash", "sensors", "log", "ssid", "fw", "defpw")
         frame = 0
         try:
             while True:

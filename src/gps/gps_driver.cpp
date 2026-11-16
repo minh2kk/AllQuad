@@ -49,6 +49,10 @@ void GpsDriver::begin(hal::Port port) {
     hal::delayMs(100);
   }
   hal::portOpen(port_, 115200);
+  baud_ = 115200;
+  baudIdx_ = 0;
+  switchMs_ = hal::millis();
+  timing_ = true;
   hal::delayMs(100);
 
   // 10 Hz navigation rate (M8: CFG-RATE)
@@ -75,7 +79,22 @@ void GpsDriver::begin(hal::Port port) {
 bool GpsDriver::poll() {
   bool got = false;
   int c, budget = 256;
+  uint32_t before = frames_;
   while (budget-- > 0 && (c = hal::portRead(port_)) >= 0) got |= feed((uint8_t)c);
+  uint32_t now = hal::millis();
+  if (frames_ != before) lastFrameMs_ = now;
+  if (!timing_) { timing_ = true; switchMs_ = now; }  // attach(): count from the first poll
+  // nothing valid for 2.5 s at this baud rate: try the next one
+  uint32_t since = lastFrameMs_ > switchMs_ ? lastFrameMs_ : switchMs_;
+  if (now - since > 2500) {
+    static const uint32_t bauds[] = {115200, 9600, 38400, 57600, 230400};
+    baudIdx_ = (uint8_t)((baudIdx_ + 1) % (sizeof(bauds) / sizeof(bauds[0])));
+    baud_ = bauds[baudIdx_];
+    hal::portOpen(port_, baud_);
+    ubxState_ = 0;
+    inNmea_ = false;
+    switchMs_ = now;
+  }
   return got;
 }
 
@@ -108,6 +127,7 @@ bool GpsDriver::ubxByte(uint8_t b) {
   for (uint16_t i = 0; i < ubxLen_ + 4; i++) { a += ubx_[i]; c += a; }
   if (a != ubx_[ubxLen_ + 4] || c != ubx_[ubxLen_ + 5]) return false;
   detected_ = ubxSeen_ = true;
+  frames_++;
   if (ubx_[0] != 0x01 || ubx_[1] != 0x07 || ubxLen_ < 92) return false;  // NAV-PVT only
   const uint8_t* p = ubx_ + 4;
   uint8_t fixType = p[20];
@@ -168,6 +188,7 @@ bool GpsDriver::parseNmea() {
   if (strlen(f[0]) < 5) return false;
   const char* type = f[0] + 2;  // skip talker (GP, GN, ...)
   detected_ = nmeaSeen_ = true;
+  frames_++;
   if (!strcmp(type, "GGA") && n >= 10) {
     int q = atoi(f[6]);
     data_.lat = nmeaCoord(f[2], f[3]);
@@ -177,7 +198,7 @@ bool GpsDriver::parseNmea() {
     float hdop = (float)atof(f[8]);
     data_.hAcc = hdop * 2.5f;  // rough estimate
     data_.altMsl = (float)atof(f[9]);
-    return data_.fix3d;
+    return true;  // published with or without a fix (satellite count shows progress)
   }
   if (!strcmp(type, "RMC") && n >= 9) {
     float knots = (float)atof(f[7]);
