@@ -1150,7 +1150,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
       </div>
       <div class="rc" id="otaProg" hidden style="margin-top:10px;grid-template-columns:76px 1fr 52px"><span>Đang gửi</span><div class="track"><span id="otaBar" style="left:0;width:0;margin-left:0;border-radius:4px"></span></div><span class="num" id="otaPct">0%</span></div>
     </div>
-    <div class="panel">
+    <div class="panel" id="secPanel">
       <div class="card-h"><span class="dot"></span><h3>WiFi & bảo mật</h3></div>
       <form class="secform" id="secForm">
         <label for="secSsid">Tên WiFi</label>
@@ -2505,6 +2505,8 @@ function renderStatus(st) {
   if (shown("modes")) updateModes();
   updateNav(st);
   $("defPw").hidden = !st.defpw;
+  // full frames carry fw; only boards with their own WiFi (ESP32) send ssid / defpw
+  if (st.fw) $("secPanel").hidden = !("ssid" in st);
   if (st.fw) {
     $("fwVer").textContent = `${st.fw.version} (ô nhớ ${st.fw.slot})${st.fw.pending ? ", đang tự kiểm tra sau cập nhật" : ""}`;
     $("otaPick").hidden = !st.fw.ota || LINK.open;

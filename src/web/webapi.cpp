@@ -174,7 +174,10 @@ static void slowStatus(JsonOut& j) {
   j.key("rate"); j.num(bus::config.bb_rate_hz, 0);
   j.key("busy"); j.raw(hal::logBusy() ? "true" : "false");
   j.end('}');
+#if defined(ARDUINO) && defined(ESP32)
+  // WiFi access point of the FC itself (ESP32 only): STM32 boards have no WiFi, nothing to secure
   j.key("ssid"); j.str(creds::ssid());
+#endif
   // last reset (hal::resetReason numbering), crash record and watchdog (System tab, pre-flight)
   j.key("rr"); j.num(hal::resetReason(), 0);
   j.key("wdt"); j.raw(hal::watchdogRunning() ? "true" : "false");
@@ -208,7 +211,9 @@ static void slowStatus(JsonOut& j) {
     j.key("pending"); j.raw(fw.pendingVerify ? "true" : "false");
     j.end('}');
   }
+#if defined(ARDUINO) && defined(ESP32)
   j.key("defpw"); j.raw(creds::usingDefaultPassword() ? "true" : "false");
+#endif
 }
 
 // RPM / ESC temperature per mixer motor (-1 = nothing from that ESC); true when bidirectional DShot runs

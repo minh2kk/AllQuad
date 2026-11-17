@@ -43,6 +43,11 @@ async def main():
             await pg.wait_for_function("Object.keys(S.params).length > 200", timeout=10000)
             await pg.wait_for_timeout(800)
 
+            # no WiFi on this board (SITL, like STM32): no factory-password warning, no WiFi form
+            await pg.wait_for_function("S.status && S.status.fw", timeout=5000)
+            check(not await pg.is_visible("#defPw") and await pg.evaluate("$('secPanel').hidden && !('defpw' in S.status)"),
+                  "board without WiFi: no default-password warning, WiFi & security panel hidden")
+
             # ---- CLI
             await tab(pg, "cli")
             await pg.fill("#cliIn", "get roll_p")
