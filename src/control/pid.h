@@ -15,7 +15,16 @@ class RatePid {
   static constexpr float F_SCALE = 0.013754f / 100.0f;
 
   void configure(const AxisPid& g, float dtermLpfHz, float itermLimit, float outLimit,
-                 float relaxCutoff, float loopHz, float dMinPct = 0, float dMinGain = 0, float dMinAdv = 0) {
+                 float relaxCutoff, float loopHz, float dMinPct = 0, float dMinGain = 0, float dMinAdv = 0,
+                 float ffJitter = 0, float ffBoost = 0, float ffMaxPct = 0, float maxRate = 0) {
+    // feed-forward shaping (Betaflight 4.3+): jitter reduction (slow / shaky stick moves get less FF),
+    // boost (stick acceleration: earlier start of a flip), and less FF close to the maximum rate
+    // (no overshoot past the max rate at the end of a snap)
+    ffJitterDps_ = ffJitter * 1.3f;  // ~ff_jitter stick units of 500 at a 650 deg/s rate
+    ffBoostK_ = ffBoost * 1e-4f;
+    ffMaxRate_ = maxRate;
+    ffMaxFrom_ = (ffMaxPct > 0 && ffMaxPct < 100 && maxRate > 0) ? maxRate * ffMaxPct * 0.01f : 0.0f;
+    ffBoostLpf_.setCutoff(15.0f, 1.0f / loopHz);
     kp_ = g.p * P_SCALE; ki_ = g.i * I_SCALE; kd_ = g.d * D_SCALE; kf_ = g.f * F_SCALE;
     // Betaflight d_min: D sits at d_min_pct % of D in calm flight and rises to the full D when the gyro
     // gets busy (prop wash, bounce-back) or the sticks move quickly
@@ -60,14 +69,34 @@ class RatePid {
       kd = kd_ * (dMinFrac_ + (1.0f - dMinFrac_) * boost);
     }
     d = -kd * dg * tpa;
-    f = kf_ * ffLpf_.apply(dSp);
+    float ffv = ffLpf_.apply(dSp);
+    float ffAcc = (ffv - prevFf_) * invDt;
+    prevFf_ = ffv;
+    float fsum = ffv + (ffBoostK_ > 0 ? ffBoostLpf_.apply(ffAcc) * ffBoostK_ : 0.0f);
+    float scale = ffAtt_;
+    if (ffMaxFrom_ > 0 && fabsf(setpoint) > ffMaxFrom_ && setpoint * fsum > 0.0f)
+      scale *= constrainf((ffMaxRate_ - fabsf(setpoint)) / (ffMaxRate_ - ffMaxFrom_), 0.0f, 1.0f);
+    f = kf_ * fsum * scale;
 
     return constrainf(p + i + d + f, -outLimit_, outLimit_);
   }
 
+  // a new stick sample (raw rate setpoint, before smoothing): FF jitter reduction follows how far the
+  // stick moved in the last two samples (as Betaflight). A sample without movement keeps the factor:
+  // the smoothed FF of the last real move is still fading out and must not be cut half way.
+  void rcFrame(float rawSp) {
+    float delta = fabsf(rawSp - prevRaw_);
+    prevRaw_ = rawSp;
+    float d2 = 0.5f * (delta + prevDelta_);
+    prevDelta_ = delta;
+    if (delta < 0.01f) return;
+    ffAtt_ = ffJitterDps_ > 0 ? constrainf(d2 / ffJitterDps_, 0.0f, 1.0f) : 1.0f;
+  }
   void resetI() { i = 0.0f; }
   void setSaturated(bool s) { saturated_ = s; }
-  void reset() { i = 0.0f; first_ = true; dLpf_.reset(); dLpf2_.reset(); ffLpf_.reset(); spLpf_.reset(); }
+  void reset() {
+    i = 0.0f; first_ = true; prevFf_ = 0; dLpf_.reset(); dLpf2_.reset(); ffLpf_.reset(); spLpf_.reset(); ffBoostLpf_.reset();
+  }
 
   float p = 0, i = 0, d = 0, f = 0;  // last terms (debug / telemetry)
 
@@ -76,10 +105,11 @@ class RatePid {
   float invRelax_ = 0.0f;
   float prevGyro_ = 0, prevSp_ = 0;
   float dMinFrac_ = 1.0f, dMinGyro_ = 0, dMinSp_ = 0;
+  float ffJitterDps_ = 0, ffBoostK_ = 0, ffMaxRate_ = 0, ffMaxFrom_ = 0, ffAtt_ = 1.0f, prevRaw_ = 0, prevDelta_ = 0, prevFf_ = 0;
   bool first_ = true, saturated_ = false;
   Pt1 boostLpf_;
   Biquad dLpf_;
-  Pt1 dLpf2_, ffLpf_, spLpf_;
+  Pt1 dLpf2_, ffLpf_, spLpf_, ffBoostLpf_;
 };
 
 // Generic PID for outer loops (altitude, position)

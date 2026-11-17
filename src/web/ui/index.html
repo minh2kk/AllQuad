@@ -155,6 +155,9 @@ td.bad { color: var(--danger); font-weight: 600; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 3px 9px; border-radius: 3px; background: color-mix(in srgb, var(--danger) 14%, var(--sheet)); color: var(--danger); font-size: .85rem; }
 .chip.good { background: color-mix(in srgb, var(--ok) 14%, var(--sheet)); color: var(--ok); }
+.pwa-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 60; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  max-width: calc(100vw - 32px); padding: 10px 14px; border-radius: 12px; background: var(--sheet); border: 1px solid var(--rule); box-shadow: 0 10px 30px rgba(18, 36, 58, .25); font-size: .9rem; }
+.chip.warn { background: color-mix(in srgb, var(--amber) 16%, var(--sheet)); color: color-mix(in srgb, var(--amber) 70%, var(--ink)); }
 
 /* ---------- PID matrix ---------- */
 .matrix { display: grid; grid-template-columns: 72px repeat(4, 1fr); gap: 8px; align-items: center; }
@@ -488,11 +491,24 @@ section > h2::before { content: ""; width: 4px; height: 1.05em; border-radius: 2
 @media (min-width: 640px) { .att-row { grid-template-columns: 200px minmax(0, 1fr); } }
 .att-gauge { display: grid; justify-items: center; gap: 8px; }
 .att-gauge canvas { width: 180px; height: 180px; border-radius: 50%; box-shadow: 0 0 0 4px var(--sheet), 0 0 0 5px var(--rule), 0 6px 18px rgba(18, 36, 58, .18); }
+.wz3d { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 10px 0; }
+@media (min-width: 720px) { .wz3d { grid-template-columns: 340px minmax(0, 1fr); align-items: center; } }
+#wz3d { width: 100%; height: 220px; display: block; background: var(--soft); border-radius: 12px; }
+.att-gauge #ov3d { width: 200px; height: 180px; display: block; cursor: pointer; border-radius: 14px; box-shadow: none; background: var(--soft); }
+.att-view button { padding: 3px 10px; font-size: .78rem; }
 .att-num { display: flex; gap: 12px; font-size: .78rem; color: var(--ink-2); }
 .att-num b { color: var(--ink); font-size: .92rem; }
 .att-chart .chart { height: 200px; }
 .ov-mot .bars { height: 196px; gap: 10px; }
 .ov-mot .bars label { line-height: 1.25; top: 8px; }
+.mot-idle { display: grid; gap: 12px; }
+.mot-proto { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: .85rem; color: var(--ink-2); }
+.mot-proto b { color: var(--ink); font-weight: 600; }
+.mot-quad { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mot-quad div { border: 1px solid var(--grid); border-radius: 10px; padding: 8px 10px; background: var(--soft); display: grid; gap: 2px; }
+.mot-quad div small { color: var(--ink-2); font-size: .72rem; }
+.mot-quad div b { font-family: var(--num); font-size: 1.05rem; }
+.mot-quad div.off b { color: var(--ink-2); }
 /* sticks: filled from the low end, separator before the AUX channels */
 .rc .track { overflow: visible; }
 .rc .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: color-mix(in srgb, var(--acc) 22%, transparent); }
@@ -766,6 +782,8 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
         <div class="att-row">
           <div class="att-gauge">
             <canvas id="ovHorizon" width="320" height="320" aria-label="Chân trời nhân tạo"></canvas>
+            <canvas id="ov3d" hidden aria-label="Mô hình drone theo tư thế" title="Bấm để nhìn lại từ phía sau"></canvas>
+            <div class="seg att-view" role="group" aria-label="Kiểu hiển thị tư thế" id="ovView"><button data-v="h" aria-pressed="true">Chân trời</button><button data-v="3d" aria-pressed="false">3D</button></div>
             <div class="att-num num"><span>Roll<b id="ovRoll">—</b></span><span>Pitch<b id="ovPitch">—</b></span><span>Hướng<b id="ovHdg">—</b></span></div>
           </div>
           <div class="att-chart">
@@ -784,8 +802,13 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
         <div class="aux" id="rcAux"></div>
       </div>
       <div class="panel ov-mot">
-        <div class="card-h"><span class="dot"></span><h3>Motor</h3><span class="card-x num">Ga <b id="oThr">—</b></span></div>
+        <div class="card-h"><span class="dot"></span><h3>Motor</h3><span class="card-x num" id="oThrBox">Ga <b id="oThr">—</b></span></div>
         <div class="bars" id="motorBars"></div>
+        <div class="mot-idle" id="motIdle" hidden>
+          <div class="mot-proto"><span>Giao thức</span><b id="moProto">—</b><span>RPM telemetry</span><b id="moTel">—</b></div>
+          <div class="mot-quad" id="moQuad"></div>
+          <div class="row"><button class="btn" id="moGoTest">Thử motor…</button><span class="muted" style="font-size:.8rem">Thanh ga hiện khi arm hoặc đang thử motor.</span></div>
+        </div>
       </div>
       <div class="panel ov-sys">
         <div class="card-h"><span class="dot"></span><h3>Cảm biến</h3><span class="card-x num" id="oNotch"></span></div>
@@ -909,6 +932,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
         <label class="btn" for="bbFile" style="display:inline-flex;align-items:center">Mở file log</label>
         <input type="file" id="bbFile" accept=".bin,.bbl,application/octet-stream" hidden>
         <select id="bbFlight" class="btn" hidden aria-label="Chọn chuyến bay"></select>
+        <span class="row" id="bbExport" hidden><button class="btn" id="bbExpBbl" title="Mở được bằng Betaflight Blackbox Explorer và PIDtoolbox">Xuất .bbl</button><button class="btn" id="bbExpCsv" title="Cột theo blackbox_decode của Betaflight: PIDtoolbox, Python…">Xuất CSV (Betaflight)</button></span>
       </div>
       <p class="muted" id="bbInfo">Ghi log: bật trong tab Hệ thống (500 Hz), bay ở ACRO với các cú lắc cần nhanh từng trục, hạ cánh, rồi tải log về đây.</p>
     </div>
@@ -1189,6 +1213,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
     <button class="btn" id="sitlBtn" hidden>Mô phỏng trên máy (SITL, không cần board)</button>
     <button class="btn" id="demoBtn" hidden>Thử với drone ảo (demo, chạy trong trình duyệt)</button>
     <button class="btn flOpen">Nạp firmware…</button>
+    <button class="btn" id="pwaInstall" hidden>Cài làm ứng dụng (dùng được khi không có mạng)</button>
     <label class="opt" for="comBaud"><span style="padding-top:10px">Tốc độ</span>
       <select id="comBaud">
         <option value="921600">921600 (ESP32, mặc định)</option>
@@ -1197,6 +1222,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
     </label>
     <p class="note" id="comState" hidden></p>
     <p class="note bad" id="comErr" hidden></p>
+    <p class="muted" id="pwaInfo" hidden style="font-size:.8rem;margin:0"></p>
     <ul class="steps">
       <li>Không thấy cổng: cài driver CP210x hoặc CH340 cho ESP32 DevKit. ESP32-S3 và STM32 hiện là "USB Serial Device".</li>
       <li>Đóng terminal, CLI hay Betaflight/INAV Configurator đang giữ cổng.</li>
@@ -1629,6 +1655,8 @@ const HINT = {
   rc_smooth_hz: "Làm mượt tay điều khiển (Hz), 0 = tự động theo tốc độ cập nhật", crash_detect: "Phát hiện rơi / va chạm và tắt motor",
   yaw_spin_thr: "Phục hồi khi xoay yaw quá nhanh (°/s), 0 = tắt", d_min_pct: "D khi bay êm (% của D), 0 = D cố định",
   d_min_gain: "Mức tăng D khi gyro rung (prop wash)", d_min_adv: "Mức tăng D khi gạt cần nhanh",
+  ff_jitter: "FF: lọc rung cần (gạt chậm / tay run thì giảm FF; 0 = tắt)", ff_boost: "FF: tăng tốc khi giật cần (0 = tắt)",
+  ff_max_pct: "FF: giảm dần trên % tốc độ tối đa (chống vọt lố cuối cú lật; 0 = tắt)",
   dyn_lpf_min: "Lọc gyro động: tần số cắt ở ga 0 (Hz), 0 = tắt", dyn_lpf_max: "Lọc gyro động: tần số cắt ở ga tối đa (Hz)",
   dyn_idle_rpm: "Dynamic idle: RPM tối thiểu ÷ 100 (cần RPM từ ESC), 0 = tắt", thr_boost: "Throttle boost: tăng phản ứng ga (0-10)",
   thrust_expo: "Tuyến tính hoá lực đẩy (0 = tắt, thường 0,6)", vbat_sag_comp: "Bù sụt áp pin (%): phản ứng như pin đầy",
@@ -1820,6 +1848,7 @@ function buildPid() {
   ex.innerHTML = "";
   pcard(ex, "Ga & I-term", ["anti_gravity", "iterm_relax", "iterm_limit", "tpa_rate", "tpa_breakpoint", "thr_boost", "pidsum_limit", "pidsum_lim_yaw"], "Giữ drone ổn định khi đổi ga nhanh.");
   pcard(ex, "D động (D-min)", ["d_min_pct", "d_min_gain", "d_min_adv"], "D thấp khi bay êm cho motor mát, tăng khi rung hoặc gạt cần mạnh.");
+  pcard(ex, "Feedforward nâng cao", ["ff_jitter", "ff_boost", "ff_max_pct"], "Mượt hơn khi gạt cần chậm (quay phim), phản ứng sớm hơn khi giật cần, không vọt quá tốc độ tối đa. Mặc định giống Betaflight.");
   pcard(ex, "Cảm giác cần & lực đẩy", ["rc_smooth_hz", "thrust_expo", "vbat_sag_comp", "airmode"]);
   pcard(ex, "Tự cân bằng (ANGLE / HORIZON)", ["angle_p", "angle_limit", "horizon_trans"]);
   pcard(ex, "Profile", ["pid_profile", "prof_ch"], "3 bộ PID / rates, đổi bằng công tắc. Chọn Profile 2 / 3 ở trên bảng PID để sửa.");
@@ -2349,14 +2378,61 @@ function renderReady(st) {
 }
 document.addEventListener("click", (e) => { const t = e.target.closest && e.target.closest(".blk[data-go]"); if (t) gotoTab(t.dataset.go); });
 function hrow(state, name, value) { return `<div class="hrow ${state}"><i></i><span>${name}</span><b>${value}</b></div>`; }
+// overview motor card: throttle bars while armed (or a motor test runs); otherwise protocol, ESC telemetry
+// per position and a shortcut to the motor test
+const OV_POS = [[4, "Trước trái"], [2, "Trước phải"], [3, "Sau trái"], [1, "Sau phải"]];
+function renderOvMotors(st) {
+  const test = st.mtest && st.mtest.some((v) => v > 0);
+  const live = st.armed || test, mv = test && !st.armed ? st.mtest : st.motors;
+  $("motorBars").hidden = !live;
+  $("motIdle").hidden = live;
+  $("oThrBox").hidden = !live;
+  const er = st.erpm, et = st.etmp;
+  if (live) {
+    setHtml($("motorBars"), mv.map((m, i) => `<div><span style="height:${Math.round(m * 100)}%"></span><label class="num">M${i + 1}<br>${Math.round(m * 100)}%${er && er[i] >= 0 ? `<br><small>${Math.round(er[i])}</small>` : ""}</label></div>`).join(""));
+    $("oThr").textContent = test && !st.armed ? "thử" : (st.thr * 100).toFixed(0) + "%";
+    return;
+  }
+  const P = S.params || {}, pv = (n) => (P[n] ? P[n].v : null);
+  const pr = pv("motor_protocol");
+  $("moProto").textContent = pr == null ? "—" : (ENUMS.motor_protocol[pr] || pr) + (pr >= 2 && pv("dshot_bidir") ? " hai chiều" : "");
+  $("moTel").textContent = er ? "có (" + er.filter((x) => x >= 0).length + "/4 ESC)" : pr >= 2 && pv("dshot_bidir") ? "chờ ESC trả lời" : pv("esc_telemetry") ? "dây telemetry, chưa có dữ liệu" : "tắt";
+  setHtml($("moQuad"), OV_POS.map(([m, t]) => {
+    const r = er ? er[m - 1] : -1, tc = et ? et[m - 1] : -1;
+    return `<div class="${r >= 0 ? "" : "off"}"><small>M${m} · ${t}</small><b>${r >= 0 ? Math.round(r) + " rpm" : "—"}</b><small>${tc >= 0 ? tc + " °C" : "&nbsp;"}</small></div>`;
+  }).join(""));
+}
+document.addEventListener("click", (e) => { if (e.target.id === "moGoTest") gotoTab("motors"); });
+// overview attitude: artificial horizon or the 3D model (remembered per browser)
+const OVV = { mode: "h", yaw0: null };
+try { if (localStorage.getItem("aq.ovview") === "3d") OVV.mode = "3d"; } catch (e) {}
+function ovViewSet(m) {
+  OVV.mode = m;
+  OVV.yaw0 = null;
+  try { localStorage.setItem("aq.ovview", m); } catch (e) {}
+  $("ovHorizon").hidden = m === "3d";
+  $("ov3d").hidden = m !== "3d";
+  document.querySelectorAll("#ovView button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === m)));
+  if (S.status) renderOverview(S.status);
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("#ovView button");
+  if (b) ovViewSet(b.dataset.v);
+  if (e.target.id === "ov3d") { OVV.yaw0 = null; if (S.status) renderOverview(S.status); }
+});
+if (OVV.mode === "3d") {
+  $("ovHorizon").hidden = true;
+  $("ov3d").hidden = false;
+  document.querySelectorAll("#ovView button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === "3d")));
+}
 function renderOverview(st) {
   const ov = $("ovHorizon");
-  if (ov) drawHorizonOn(ov, st.att[0], st.att[1], true);
+  if (OVV.mode === "3d") draw3dOn($("ov3d"), qEuler(st.att[0], st.att[1], st.att[2] || 0), OVV, { grid: false, zoom: 1.45 });
+  else if (ov) drawHorizonOn(ov, st.att[0], st.att[1], true);
   $("ovRoll").textContent = st.att[0].toFixed(1) + "°";
   $("ovPitch").textContent = st.att[1].toFixed(1) + "°";
   $("ovHdg").textContent = st.att[2] != null ? ((st.att[2] + 360) % 360).toFixed(0) + "°" : "—";
-  setHtml($("motorBars"), st.motors.map((m, i) => `<div><span style="height:${Math.round(m * 100)}%"></span><label class="num">M${i + 1}<br>${Math.round(m * 100)}%</label></div>`).join(""));
-  $("oThr").textContent = (st.thr * 100).toFixed(0) + "%";
+  renderOvMotors(st);
   $("oNotch").textContent = st.sensors ? `${[st.sensors.imu, st.sensors.baro, st.sensors.mag].filter(Boolean).length} / 3 cảm biến` : "";
   $("oLq").textContent = st.rxok === false ? "MẤT SÓNG" : st.lq ? `LQ ${st.lq}%` : "";
   $("oLq").className = "card-x num" + (st.rxok === false ? " bad" : "");
@@ -2622,9 +2698,22 @@ function loadLog(buf) {
   sel.value = String(S.flights.length - 1);
   analyzeFlight(S.flights.length - 1);
 }
+// export the shown flight for other tools (Blackbox Explorer, PIDtoolbox, spreadsheets)
+function bbExportName(ext) {
+  const i = S.flights ? S.flights.indexOf(S.flight) + 1 : 1;
+  const d = new Date(), z = (x) => String(x).padStart(2, "0");
+  return `allquad_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}_chuyen${i}.${ext}`;
+}
+$("bbExpBbl").onclick = () => {
+  if (!S.flight) return;
+  const h = S.lastHello || {};
+  saveText(bbExportName("bbl"), AQ.toBbl(S.flight, { version: h.fw || h.version || "", board: h.board || "", date: new Date().toISOString().slice(0, 10) }), "application/octet-stream");
+};
+$("bbExpCsv").onclick = () => { if (S.flight) saveText(bbExportName("csv"), AQ.toCsv(S.flight), "text/csv"); };
 function analyzeFlight(i) {
   const fl = S.flights[i];
   S.flight = fl;
+  $("bbExport").hidden = false;
   const t0 = performance.now();
   S.analysis = AQ.analyze(fl);
   const pv = {};

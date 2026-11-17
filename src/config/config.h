@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 26;
+constexpr uint16_t CONFIG_VERSION = 27;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -313,6 +313,10 @@ struct Config {
   uint16_t osd_pos3[OSD3_COUNT];  // battery bar, average cell voltage, RSSI (dBm)
   uint8_t osd_blink;              // 1: critical warnings (failsafe, battery critical...) and a low battery blink
   uint8_t sd_dma;                 // STM32H7 SDMMC: 1 = blocks moved by the controller's DMA, 0 = by the CPU (polled)
+  // ---- v27: feed-forward shaping ----
+  uint8_t ff_jitter;              // stick moves smaller than this per RC frame get less FF (0 = off)
+  uint8_t ff_boost;               // stick acceleration added to FF (0 = off)
+  uint8_t ff_max_pct;             // FF fades out above this % of the max rate (0 / 100 = off)
 
   uint32_t crc;
 };

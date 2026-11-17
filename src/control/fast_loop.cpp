@@ -32,7 +32,8 @@ void FastLoop::applyGains(const Config& c) {
   for (int i = 0; i < 3; i++) {
     float lim = i == 2 ? c.pidsum_limit_yaw : c.pidsum_limit;
     pid_[i].configure(profilePid(c, profile_, i), c.dterm_lpf_hz, c.iterm_limit, lim, c.iterm_relax_cutoff, loopHz_,
-                      c.d_min_pct, c.d_min_gain, c.d_min_adv);
+                      c.d_min_pct, c.d_min_gain, c.d_min_adv, c.ff_jitter, c.ff_boost, c.ff_max_pct,
+                      profileRate(c, profile_, i).max);
   }
 }
 
@@ -138,6 +139,7 @@ FAST_CODE void FastLoop::run(const Vec3& gyroRad, const Vec3& acc, bool imuOk, c
   spAge_ += dt;
   if (sp.seq != spSeq_) {
     spSeq_ = sp.seq;
+    for (int i = 0; i < 3; i++) pid_[i].rcFrame(sp.rateDps[i]);
     if (spAge_ < 0.1f) spInterval_ += 0.05f * (spAge_ - spInterval_);
     spAge_ = 0;
   }

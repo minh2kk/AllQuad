@@ -49,6 +49,11 @@ def live_status():
     s["rate"] = [round(v * 0.92 + 4 * math.sin(t * 17), 1) for v in sp]
     s["thr"] = 0.42
     s["motors"] = [round(0.42 + 0.05 * math.sin(t * 3 + k), 3) for k in range(4)]
+    if any(m > 0 for m in MOTOR):
+        s["mtest"] = list(MOTOR)
+    if BIDIR[0]:
+        s["erpm"] = [round(m * 30000) if m > 0 else 0 for m in MOTOR]
+        s["etmp"] = [31, 30, 32, 31]
     s["notch"] = [182, 0, 0]
     s["bat"] = {"v": 16.4 - t * 0.001, "a": 11.2, "mah": int(t * 3), "cells": 4, "pct": 86, "warn": False}
     s["rc"] = [1500 + int(300 * math.sin(t * 2.1)), 1500, 1350, 1500, 1000, 1500, 2000, 1000] + [1500] * 8
@@ -104,6 +109,7 @@ def item(cmd, n=0.0, e=0.0, alt=0.0, p1=0.0, p3=0.0):
 
 
 MOTOR = [0.0, 0.0, 0.0, 0.0]
+BIDIR = [0]
 CRASH = {"kind": "hard fault", "where": "telemetry", "t": 148210, "ago": 0, "n": 1, "pc": "0x0800F4E6", "lr": "0x0800E5AF", "cfsr": "0x00010000"}
 MISSION = {"home": True, "lat": 21.0285, "lon": 105.8542, "fence": 150,
            "items": [item(22, alt=10), item(195, 0, 40), item(16, 30, 0, 10), item(197), item(18, 30, 30, 10, 1, 10),
@@ -275,7 +281,8 @@ class H(BaseHTTPRequestHandler):
                                    "baro": {"ok": True, "alt": 1.2 + 0.1 * math.sin(t), "pa": 101100, "temp": 27.5},
                                    "range": -1, "flow": [0, 0], "flowq": -1,
                                    "q": [math.cos(0.1 * math.sin(t)), 0.1 * math.sin(t), 0.05, 0.0],
-                                   "rpm": [-1, -1, -1, -1], "esct": [-1, -1, -1, -1]})
+                                   "rpm": [round(m * 30000) if m > 0 else 0 for m in MOTOR] if BIDIR[0] else [-1, -1, -1, -1],
+                                   "esct": [31, 30, 32, 31] if BIDIR[0] else [-1, -1, -1, -1], "bidir": bool(BIDIR[0])})
         if u.path == "/api/cli":
             n = int(self.headers.get("Content-Length") or 0)
             line = self.rfile.read(n).decode().strip()
@@ -303,6 +310,9 @@ class H(BaseHTTPRequestHandler):
                 return self.send(423, {"ok": False, "msg": "disarm first"})
             MOTOR[:] = [float(q.get("m%d" % i, 0)) for i in range(1, 5)]
             return self.send(200, {"ok": True, "msg": "ok"})
+        if u.path == "/mock/bidir":  # tests: ESCs report RPM (= 30000 x test throttle)
+            BIDIR[0] = int(q.get("on", 1))
+            return self.send(200, {"ok": True})
         if u.path == "/mock/motor":
             return self.send(200, {"m": MOTOR})
         if u.path == "/mock/ws_clients":

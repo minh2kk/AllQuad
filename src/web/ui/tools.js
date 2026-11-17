@@ -125,12 +125,26 @@ const MODEL = (() => {
 function draw3d(q) {
   const cv = $("model3d");
   if (!cv || !shown("sensors")) return;
+  const r = draw3dOn(cv, q, SENS);
+  // heading: the corrected one (compass / GPS / EKF) as on the navigation tab, not the raw AHRS yaw
+  const hdg = S.status && S.status.att ? S.status.att[2] : r.yaw;
+  $("modelAtt").textContent = `roll ${r.roll.toFixed(1)}°  pitch ${r.pitch.toFixed(1)}°  hướng ${((hdg % 360) + 360) % 360 | 0}°`;
+}
+// quaternion (body FRD -> NED) from roll / pitch / yaw in degrees (the status stream sends angles)
+function qEuler(rd, pd, yd) {
+  const k = Math.PI / 360, cr = Math.cos(rd * k), sr = Math.sin(rd * k), cp = Math.cos(pd * k), sp = Math.sin(pd * k), cy = Math.cos(yd * k), sy = Math.sin(yd * k);
+  return [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy];
+}
+// draws the quad model on any canvas; view.yaw0 = heading the camera looks along (null: take the current one)
+// opt.grid = false leaves out the ground grid (small canvases); returns the angles in degrees
+function draw3dOn(cv, q, view, opt) {
+  opt = opt || {};
   const { g, w, h } = setupCanvas(cv);
   let R = qMat(q);
   const yaw = Math.atan2(R[1][0], R[0][0]);
-  if (SENS.yaw0 === null) SENS.yaw0 = yaw;
-  const c = Math.cos(-SENS.yaw0), s = Math.sin(-SENS.yaw0);
-  const el = 0.45, ce = Math.cos(el), se = Math.sin(el), dist = 3.6, f = Math.min(w, h) * 1.7;
+  if (view.yaw0 === null || view.yaw0 === undefined) view.yaw0 = yaw;
+  const c = Math.cos(-view.yaw0), s = Math.sin(-view.yaw0);
+  const el = 0.45, ce = Math.cos(el), se = Math.sin(el), dist = 3.6, f = Math.min(w, h) * (opt.zoom || 1.7);
   const tf = (pb) => {
     const p = mv(R, pb);                                  // NED
     const n = c * p[0] - s * p[1], e = s * p[0] + c * p[1], d = p[2];  // viewer heading removed
@@ -153,7 +167,7 @@ function draw3d(q) {
   g.clearRect(0, 0, w, h);
   // ground grid for reference
   g.strokeStyle = css("--grid"); g.lineWidth = 1;
-  for (let i = -3; i <= 3; i++) {
+  for (let i = -3; i <= 3 && opt.grid !== false; i++) {
     const A = (n, e) => { const depth = n * ce + 0.9 * se + dist, up = n * se - 0.9 * ce; return [w / 2 + f * e / depth, h / 2 - f * up / depth + 10]; };
     let p1 = A(-3, i * 0.6), p2 = A(3, i * 0.6);
     g.beginPath(); g.moveTo(...p1); g.lineTo(...p2); g.stroke();
@@ -169,9 +183,7 @@ function draw3d(q) {
     g.fill();
   }
   const roll = Math.atan2(R[2][1], R[2][2]) * 180 / Math.PI, pitch = -Math.asin(Math.max(-1, Math.min(1, R[2][0]))) * 180 / Math.PI;
-  // heading: the corrected one (compass / GPS / EKF) as on the navigation tab, not the raw AHRS yaw
-  const hdg = S.status && S.status.att ? S.status.att[2] : yaw * 180 / Math.PI;
-  $("modelAtt").textContent = `roll ${roll.toFixed(1)}°  pitch ${pitch.toFixed(1)}°  hướng ${((hdg % 360) + 360) % 360 | 0}°`;
+  return { roll, pitch, yaw: yaw * 180 / Math.PI };
 }
 
 // ---------------------------------------------------------------- motor test
@@ -1497,3 +1509,93 @@ $("sdMount").onclick = async () => {
   setTimeout(sdRefresh, 1500);
 };
 
+
+// ---------------------------------------------------------------- installable app (GitHub Pages copy)
+// tools/make_pages.py adds the manifest and <meta name="aq-build"> to the published page only. There the
+// page registers sw.js (offline copy, network first) and, whenever there is internet, compares its build
+// with version.json on the site: a newer build is loaded at once when no FC is connected, otherwise
+// right after disconnecting (or now, from the bar).
+const PWA = {
+  build: (document.querySelector('meta[name="aq-build"]') || {}).content || "",
+  version: (document.querySelector('meta[name="aq-version"]') || {}).content || "",
+  next: null, prompt: null, timer: null,
+};
+function pwaIdle() { const c = $("connect"); return !!c && !c.hidden; }  // connect dialog shown = no FC
+function pwaInfo() {
+  const el = $("pwaInfo");
+  if (!el) return;
+  el.hidden = false;
+  const inst = matchMedia("(display-mode: standalone)").matches;
+  el.textContent = `Ứng dụng web v${PWA.version} · bản ${PWA.build.slice(0, 7)}${inst ? " · đã cài" : ""} · ` +
+    (navigator.onLine ? "tự cập nhật từ GitHub khi có mạng" : "đang offline, dùng bản đã lưu");
+}
+async function pwaCheck() {
+  if (!PWA.build || !navigator.onLine) return pwaInfo();
+  let v;
+  try {
+    // the query defeats the CDN cache (GitHub Pages caches files ~10 min)
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    v = await r.json();
+  } catch (e) { return; }
+  pwaInfo();
+  if (!v.build || v.build === PWA.build) return;
+  // came back from a reload that still served the old page (CDN not refreshed yet): try again later
+  let tried = null;
+  try { tried = sessionStorage.getItem("aq.pwaTried"); } catch (e) {}
+  if (tried === v.build) return pwaBar(v, true);
+  PWA.next = v;
+  if (pwaIdle()) pwaApply(); else pwaBar(v, false);
+}
+function pwaApply() {
+  const v = PWA.next;
+  if (!v) return;
+  try { sessionStorage.setItem("aq.pwaTried", v.build); } catch (e) {}
+  toast(`Đang cập nhật lên v${v.version}…`);
+  // a new URL: neither the browser nor the CDN can answer with the old copy
+  setTimeout(() => location.replace(location.pathname + "?v=" + v.build), 600);
+}
+function pwaBar(v, waiting) {
+  let bar = $("pwaBar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "pwaBar";
+    bar.className = "pwa-bar";
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = waiting
+    ? `<span>Bản v${esc(v.version)} đã đăng trên GitHub, máy chủ đang làm mới (vài phút).</span><button class="btn" id="pwaLater">Ẩn</button>`
+    : `<span>Có bản mới v${esc(v.version)} (${esc(v.date || "")}). Tự cập nhật khi ngắt kết nối FC.</span><button class="btn primary" id="pwaNow">Cập nhật ngay</button><button class="btn" id="pwaLater">Để sau</button>`;
+  bar.hidden = false;
+  if ($("pwaNow")) $("pwaNow").onclick = () => { if (pwaIdle() || confirm("Cập nhật sẽ tải lại trang và ngắt kết nối với FC. Tiếp tục?")) pwaApply(); };
+  $("pwaLater").onclick = () => { bar.hidden = true; };
+}
+function pwaInit() {
+  if (!PWA.build) return;  // page served by the FC or opened as a file: no app features
+  pwaInfo();
+  const okHost = location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  if ("serviceWorker" in navigator && okHost) navigator.serviceWorker.register("sw.js").catch(() => {});
+  try {
+    const t = sessionStorage.getItem("aq.pwaTried");
+    if (t && t === PWA.build) { sessionStorage.removeItem("aq.pwaTried"); setTimeout(() => toast(`Đã cập nhật lên v${PWA.version}.`), 800); }
+  } catch (e) {}
+  // offer "install" where the browser supports it
+  addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    PWA.prompt = e;
+    const b = $("pwaInstall");
+    if (b) b.hidden = false;
+  });
+  const b = $("pwaInstall");
+  if (b) b.onclick = async () => { if (!PWA.prompt) return; PWA.prompt.prompt(); try { await PWA.prompt.userChoice; } catch (e) {} PWA.prompt = null; b.hidden = true; };
+  addEventListener("online", () => { pwaInfo(); pwaCheck(); });
+  addEventListener("offline", pwaInfo);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pwaCheck(); });
+  setTimeout(pwaCheck, 2000);
+  PWA.timer = setInterval(() => {
+    if (PWA.next && pwaIdle()) return pwaApply();  // the FC was disconnected: take the waiting update
+    if (Date.now() - (PWA.last || 0) > 15 * 60000) { PWA.last = Date.now(); pwaCheck(); }
+  }, 5000);
+  PWA.last = Date.now();
+}
+pwaInit();

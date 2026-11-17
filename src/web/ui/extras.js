@@ -161,6 +161,7 @@ function wzRender() {
         <p class="muted">Ghi hai tư thế: đặt drone phẳng, rồi dựng drone chúc mũi thẳng lên trời (đuôi chạm bàn). Trang tự tìm hướng lắp khớp với cả hai.</p>
         <div class="row"><button class="btn" id="wzCapL">${WZ.caps.level ? "✓ " : ""}Ghi: đặt phẳng</button><button class="btn" id="wzCapN">${WZ.caps.nose ? "✓ " : ""}Ghi: mũi chúc lên</button></div>
         <p class="num muted" id="wzAcc"></p>
+        <div class="wz3d"><canvas id="wz3d" aria-label="Mô hình drone theo tư thế đo được"></canvas><p class="muted">Nghiêng drone thật: mô hình phải nghiêng theo cùng phía (hai tay đòn màu cam = phía trước). Nếu ngược, hướng lắp đang sai. <button class="btn ghost" id="wz3dZero">Nhìn từ phía sau</button></p></div>
         ${r ? (r.quality < 0.8 ? bad(`Hai lần ghi không rõ ràng (độ khớp ${(r.quality * 100).toFixed(0)}%). Giữ drone yên và đúng tư thế rồi ghi lại.`)
           : r.align === val("imu_align") ? ok(`Hướng lắp hiện tại đúng: ${ALIGN_NAME(r.align)}.`)
           : `<p class="note">Hướng lắp tìm được: <b>${ALIGN_NAME(r.align)}</b> (đang đặt ${ALIGN_NAME(val("imu_align"))}).</p><button class="btn primary" id="wzUseAlign">Dùng hướng này</button>`) : ""}`;
@@ -231,6 +232,7 @@ async function wzCapture(key) {
 function wzBind() {
   const on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
   on("wzCapL", () => wzCapture("level").catch(() => toast("Không đọc được cảm biến.")));
+  on("wz3dZero", () => { WZ3D.yaw0 = null; });
   on("wzCapN", () => wzCapture("nose").catch(() => toast("Không đọc được cảm biến.")));
   on("wzUseAlign", () => {
     const r = solveAlign(WZ.caps.level, WZ.caps.nose, val("imu_align"));
@@ -306,7 +308,9 @@ function wzSensStart() {
   tick();
 }
 // steps that follow the status stream (compass heading, GPS, receiver)
+const WZ3D = { yaw0: null };
 function wzLive(st) {
+  if (WZ.step === 1 && $("wz3d") && st.att) draw3dOn($("wz3d"), qEuler(st.att[0], st.att[1], st.att[2] || 0), WZ3D, { zoom: 1.5 });
   if (WZ.step === 3 && $("wzHead")) {
     const hs = st.est ? ["chưa có hướng", "compass", "GPS", "EKF"][st.est.hsrc] : "";
     $("wzHead").textContent = `Hướng mũi: ${((st.att[2] % 360) + 360) % 360 | 0}° (${compassName(st.att[2])})${hs ? " · nguồn: " + hs : ""}`;
@@ -550,7 +554,7 @@ function bbInit() {
   const p = document.createElement("div");
   p.className = "panel";
   p.innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">So sánh & xuất</h3>
-    <span class="row"><button class="btn" id="bbPin">Ghim làm mốc</button><button class="btn" id="bbUnpin" hidden>Bỏ mốc</button><button class="btn" id="bbCsv">Xuất CSV</button></span></div>
+    <span class="row"><button class="btn" id="bbPin">Ghim làm mốc</button><button class="btn" id="bbUnpin" hidden>Bỏ mốc</button><button class="btn" id="bbCsv">Xuất CSV đơn giản</button></span></div>
     <div id="bbCmp" style="margin-top:10px"></div>`;
   const stepPanel = $("stepLegend").closest(".panel");
   stepPanel.parentElement.insertBefore(p, stepPanel.nextSibling);
@@ -786,7 +790,13 @@ function moBuild() {
           <p class="note" id="moAsk"></p>
           <div class="mogrid">${MO_POS.map(([m, t]) => `<button class="btn" data-pos="${m}">${t}</button>`).join("")}</div>
           <div class="row" style="margin-top:8px"><button class="btn" id="moAgain">Quay lại đầu ra này</button><button class="btn danger" id="moCancel">Huỷ</button></div>
+          <p class="muted" id="moRpm"></p>
         </div>
+        <h4 style="margin:14px 0 6px">Kiểm tra trên bàn bằng RPM</h4>
+        <p class="muted" style="margin-top:0">Quay lần lượt M1→M4 ở ga thấp (1,5 giây mỗi motor) và đọc RPM từ ESC (DShot hai chiều hoặc dây telemetry). Đạt khi chỉ đúng motor được lệnh có RPM: phát hiện ESC không trả lời, motor không quay, hoặc đầu ra / dây telemetry bị lẫn. Vị trí trên khung thì vẫn cần mắt bạn (phần trên).</p>
+        <button class="btn" id="btStart">Chạy kiểm tra RPM</button>
+        <table class="ports" id="btTable" hidden></table>
+        <p class="note" id="btNote" hidden></p>
       </div>
     </div>`;
   host.querySelectorAll("select[data-p]").forEach((el) => el.onchange = () => setEdit(el.dataset.p, el.value));
@@ -794,6 +804,7 @@ function moBuild() {
   $("moStart").onclick = moStart;
   $("moAgain").onclick = () => moSpin();
   $("moCancel").onclick = () => { moStop(); $("moStepBox").hidden = true; };
+  $("btStart").onclick = () => (BT.run ? btCancel() : btRun());
   host.querySelectorAll("[data-pos]").forEach((b) => b.onclick = () => moPick(+b.dataset.pos));
   moSync();
 }
@@ -831,6 +842,10 @@ function moSpin() {
     if (MO.step < 0 || Date.now() > MO.until) return moStop(true);
     try { await api(`/api/motor?m1=${v[0]}&m2=${v[1]}&m3=${v[2]}&m4=${v[3]}`, { method: "POST", timeout: 900 }); }
     catch (e) { if (e.code === 423) { toast("Không thử motor khi đang arm."); return moStop(); } }
+    try {
+      const r = (await wzSensors()).rpm || [];
+      if (r.some((x) => x >= 0) && $("moRpm")) $("moRpm").textContent = `RPM báo về: ${r.map((x, i) => `M${i + 1} ${x >= 0 ? Math.round(x) : "—"}`).join(" · ")}`;
+    } catch (e) {}
     MO.timer = setTimeout(send, 300);
   };
   send();
@@ -850,6 +865,96 @@ function moStop(keepStep) {
   MO.timer = null;
   if (!keepStep) MO.step = -1;
   api("/api/motor?m1=0&m2=0&m3=0&m4=0", { method: "POST", timeout: 900 }).catch(() => {});
+}
+// bench test: spin each mixer motor alone, read the RPM telemetry of all four
+const BT = { run: false, res: null };
+const BT_THR = 0.06, BT_MS = 1500, BT_SPIN = 300, BT_IDLE = 150;  // throttle, time per motor, rpm "spinning" / "still"
+let btSleep = (ms) => new Promise((r) => setTimeout(r, ms));  // replaceable (tests)
+async function btRun() {
+  const a = $("mtArm");
+  if (!a || !a.checked) return toast("Tích \"Tôi đã tháo cánh quạt\" ở phần thử motor trước.");
+  if (MO.step >= 0) return toast("Đang tìm thứ tự motor: xong hoặc huỷ trước.");
+  let s0;
+  try { s0 = await wzSensors(); } catch (e) { return toast("Không đọc được cảm biến: " + e.message); }
+  if (!(s0.rpm || []).some((x) => x >= 0)) {
+    btShow(null, "Không có RPM từ ESC: bật dshot_bidir (DShot hai chiều) hoặc nối dây telemetry ESC, rồi thử lại. Khi đó dùng phần tìm thứ tự bằng mắt ở trên.");
+    return;
+  }
+  BT.run = true;
+  $("btStart").textContent = "Dừng";
+  const res = [];
+  try {
+    for (let m = 0; m < 4 && BT.run; m++) {
+      const v = [0, 0, 0, 0];
+      v[m] = BT_THR;
+      const max = [0, 0, 0, 0], seen = [false, false, false, false];
+      const until = Date.now() + BT_MS;
+      let n = 0;
+      while (BT.run && Date.now() < until) {
+        await api(`/api/motor?m1=${v[0]}&m2=${v[1]}&m3=${v[2]}&m4=${v[3]}`, { method: "POST", timeout: 900 });
+        // the first 500 ms is spin-up; read after that
+        if (n++ >= 2) {
+          try {
+            (await wzSensors()).rpm.forEach((r, i) => { if (r >= 0) { seen[i] = true; if (r > max[i]) max[i] = r; } });
+          } catch (e) {}
+        }
+        await btSleep(250);
+      }
+      res.push({ m, max, seen });
+      btShow(res);
+      await api("/api/motor?m1=0&m2=0&m3=0&m4=0", { method: "POST", timeout: 900 }).catch(() => {});
+      await btSleep(600);  // let it stop before the next one
+    }
+  } catch (e) {
+    toast(e.code === 423 ? "Không thử motor khi đang arm." : "Lỗi: " + e.message);
+  } finally {
+    BT.run = false;
+    $("btStart").textContent = "Chạy kiểm tra RPM";
+    api("/api/motor?m1=0&m2=0&m3=0&m4=0", { method: "POST", timeout: 900 }).catch(() => {});
+  }
+  if (res.length === 4) btShow(res, btVerdict(res));
+}
+function btCancel() { BT.run = false; }
+// result per tested motor: "ok" | "noTelem" | "still" | "cross" (another motor also turned / reported it)
+function btGrade(r) {
+  if (!r.seen[r.m]) return "noTelem";
+  if (r.max[r.m] < BT_SPIN) return "still";
+  if (r.max.some((x, i) => i !== r.m && x > BT_IDLE)) return "cross";
+  return "ok";
+}
+const BT_TXT = {
+  ok: ["good", "Đạt"],
+  noTelem: ["bad", "ESC không báo RPM"],
+  still: ["bad", "Không quay (RPM ~0)"],
+  cross: ["warn", "Motor khác cũng có RPM"],
+};
+function btVerdict(res) {
+  const g = res.map(btGrade);
+  if (g.every((x) => x === "ok")) return "Cả 4 motor đạt: mỗi đầu ra chỉ quay đúng motor của nó và ESC báo RPM. Giờ kiểm tra vị trí + chiều quay bằng mắt (phần trên).";
+  const out = [];
+  g.forEach((x, m) => {
+    if (x === "noTelem") out.push(`M${m + 1}: ESC không trả telemetry (kiểm tra dshot_bidir, firmware ESC hỗ trợ bidir, hoặc dây tín hiệu).`);
+    if (x === "still") out.push(`M${m + 1}: có lệnh nhưng RPM ~0 — motor kẹt, ESC chưa khởi động (thử motor_idle cao hơn), hoặc dây pha lỏng.`);
+    if (x === "cross") {
+      const o = res[m].max.map((v, i) => (i !== m && v > BT_IDLE ? `M${i + 1}` : "")).filter(Boolean).join(", ");
+      out.push(`M${m + 1}: lúc chỉ quay M${m + 1}, ${o} cũng báo RPM — đầu ra hoặc dây telemetry bị lẫn, hoặc rung truyền qua khung.`);
+    }
+  });
+  return out.join(" ");
+}
+function btShow(res, note) {
+  const t = $("btTable"), n = $("btNote");
+  if (!t) return;
+  t.hidden = !res;
+  if (res) {
+    setHtml(t, "<tr><th>Lệnh quay</th><th>RPM M1</th><th>M2</th><th>M3</th><th>M4</th><th>Kết quả</th></tr>" +
+      res.map((r) => {
+        const [cls, txt] = BT_TXT[btGrade(r)];
+        return `<tr><td>M${r.m + 1}</td>${r.max.map((x, i) => `<td class="num"${i === r.m ? ' style="font-weight:600"' : ""}>${r.seen[i] ? Math.round(x) : "—"}</td>`).join("")}<td><span class="chip ${cls}">${txt}</span></td></tr>`;
+      }).join(""));
+  }
+  n.hidden = !note;
+  if (note) n.textContent = note;
 }
 function moInit() {
   const sec = $("tab-motors");

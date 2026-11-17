@@ -133,5 +133,38 @@ else {
     check(after < before - 0.05, `autotune from P x${p}: roll ${rp.toFixed(0)}/${rd.toFixed(0)}, analyser overshoot ${(before * 100).toFixed(0)}% -> ${(after * 100).toFixed(0)}%`);
   }
 }
+// ---- 3. exports: .bbl read back with a minimal Betaflight-format decoder (I frames, variable-byte)
+{
+  const n = 300, t0 = 1000.5;
+  const mk = (k) => Array.from({ length: k }, () => new Float32Array(n));
+  const fl = { n, t: new Float64Array(n), gyro: mk(3), gyroRaw: mk(3), sp: mk(3), P: mk(3), I: mk(3), D: mk(3), F: mk(3), motor: mk(4),
+    thr: new Float32Array(n), rc: mk(4), att: mk(3), alt: new Float32Array(n), vbat: new Float32Array(n), cur: new Float32Array(n),
+    mode: new Uint8Array(n), armed: new Uint8Array(n), rateHz: 500, header: { gyro_lpf: "pt1 90" } };
+  for (let r = 0; r < n; r++) {
+    fl.t[r] = t0 + r * 0.002;
+    for (let a = 0; a < 3; a++) { fl.gyro[a][r] = 300 * Math.sin(r * 0.05 + a); fl.sp[a][r] = -200 + r; fl.P[a][r] = (r % 50) - 25; }
+    for (let m = 0; m < 4; m++) fl.motor[m][r] = r < 10 ? 0 : 0.2 + m * 0.1;
+    fl.rc[0][r] = 1500 + r; fl.rc[1][r] = 1400; fl.rc[2][r] = 1200; fl.rc[3][r] = 1600; fl.vbat[r] = 16.2; fl.cur[r] = -1.5;
+  }
+  const b = AQ.toBbl(fl, { version: "t", board: "B" });
+  const txt = Buffer.from(b).toString("latin1");
+  const hdr = {};
+  let i = 0;
+  while (b[i] === 72) { const e = txt.indexOf("\n", i); const ln = txt.slice(i + 2, e); const c = ln.indexOf(":"); hdr[ln.slice(0, c)] = ln.slice(c + 1); i = e + 1; }
+  const names = hdr["Field I name"].split(","), enc = hdr["Field I encoding"].split(",").map(Number);
+  const uvb = () => { let v = 0, s = 0, x; do { x = b[i++]; v += (x & 0x7F) * 2 ** s; s += 7; } while (x & 0x80); return v; };
+  const rows = [];
+  while (b[i] === 73) { i++; rows.push(names.map((_, k) => { const u = uvb(); return enc[k] === 0 ? (u % 2 ? -(u + 1) / 2 : u / 2) : u; })); }
+  const col = (nm) => rows.map((r) => r[names.indexOf(nm)]);
+  const g = col("gyroADC[1]"), mo = col("motor[2]"), tm = col("time"), rcR = col("rcCommand[0]"), rcT = col("rcCommand[3]"), am = col("amperageLatest");
+  check(rows.length === n && /Betaflight 4\.4\.0/.test(hdr["Firmware revision"]) && hdr["I interval"] === "1" && hdr.aq_gyro_lpf === "pt1 90",
+    `.bbl export: ${rows.length} frames, header ${hdr["Firmware revision"]}`);
+  check(g.every((v, r) => v === Math.round(fl.gyro[1][r])) && tm[1] === 2000 && mo[0] === 0 && mo[50] === Math.round(48 + 0.4 * 1999)
+    && rcR[5] === 5 && rcT[5] === 1200 && am[0] === -150 && b.slice(i).toString() === [69, 255, ...Buffer.from("End of log"), 0].toString(),
+    ".bbl export: gyro, time, motor (DShot range), rcCommand (AETR -> roll/pitch/yaw/throttle), current, end-of-log event");
+  const csv = AQ.toCsv(fl).trim().split("\n");
+  check(csv.length === n + 1 && csv[0].split(",").length === names.length + 6 && csv[1].split(",")[names.indexOf("vbatLatest")] === "16.20",
+    `CSV export: ${csv.length - 1} rows, ${csv[0].split(",").length} columns, voltage in volts`);
+}
 console.log(`\n${total - fail}/${total} analyzer tests passed`);
 process.exit(fail ? 1 : 0);

@@ -1562,6 +1562,58 @@ static void testConfigMigrationV25() {
         "Parameters: v26 entries");
 }
 
+static void testConfigMigrationV26() {
+  Config old;
+  configDefaults(old);
+  old.pid[1].d = 33;
+  old.sd_dma = 1;
+  size_t oldSize = ((offsetof(Config, sd_dma) + 1 + 3) & ~(size_t)3) + 4;  // v26: ... sd_dma, crc
+  memset((uint8_t*)&old + offsetof(Config, sd_dma) + 1, 0x5A, oldSize - 4 - offsetof(Config, sd_dma) - 1);
+  old.version = 26;
+  old.size = (uint16_t)oldSize;
+  uint32_t crc = crc32(&old, oldSize - 4);
+  memcpy((uint8_t*)&old + oldSize - 4, &crc, 4);
+  memset((uint8_t*)&old + oldSize, 0xEE, sizeof(Config) - oldSize);
+  Config c = old;
+  bool ok = configMigrate(c);
+  CHECK(ok && configValid(c) && c.pid[1].d == 33 && c.sd_dma == 1 && c.ff_jitter == 7 && c.ff_boost == 15 && c.ff_max_pct == 90,
+        "Config v26 -> v27: settings kept, feed-forward shaping defaults");
+}
+static void testFeedForward() {
+  // stick snap: boost starts FF earlier; slow drift (below the jitter threshold) gets little FF;
+  // near the max rate FF fades out
+  AxisPid g{45, 80, 30, 120};
+  auto run = [&](float jit, float boost, float maxPct, float (*sp)(int), int n, float* fAt, int at) {
+    RatePid p;
+    p.configure(g, 100, 300, 500, 15, 1000, 0, 0, 0, jit, boost, maxPct, 670);
+    float last = 0;
+    for (int k = 0; k < n; k++) {
+      if (k % 4 == 0) p.rcFrame(sp(k));
+      p.update(sp(k), 0, 0.001f, 1.0f, false);
+      if (k == at) *fAt = p.f;
+      last = p.f;
+    }
+    return last;
+  };
+  auto snap = [](int k) { return fminf(k * 10.0f, 600.0f); };  // 10 deg/s per ms up to 600
+  auto slow = [](int k) { return k * 0.25f; };                  // 1 deg/s per 4 ms frame
+  float f0 = 0, fb = 0, fs = 0, fsj = 0, fm = 0, fmx = 0;
+  run(0, 0, 0, snap, 20, &f0, 15);
+  run(0, 30, 0, snap, 20, &fb, 15);
+  run(0, 0, 0, slow, 400, &fs, 399);
+  run(7, 0, 0, slow, 400, &fsj, 399);
+  auto nearMax = [](int k) { return 600.0f + fminf(k * 2.0f, 60.0f); };  // 600 -> 660 deg/s
+  run(0, 0, 0, nearMax, 25, &fm, 20);
+  run(0, 0, 90, nearMax, 25, &fmx, 20);
+  CHECK(fb > f0 * 1.05f && fsj < fs * 0.5f && fmx < fm * 0.5f && f0 > 0,
+        "Feed-forward: boost raises it on a snap, jitter cut on slow moves, fades near the max rate");
+  // a snap, then the stick stops: the fading FF of the snap is not cut by the jitter reduction
+  float fh = 0, fhj = 0;
+  run(0, 0, 0, snap, 70, &fh, 64);
+  run(7, 0, 0, snap, 70, &fhj, 64);
+  CHECK(fh > 0 && fabsf(fhj - fh) < 0.05f * fh, "Feed-forward: jitter reduction keeps the FF of a real stick move after it stops");
+}
+
 static void testFlightFeel() {
   // thrust linearisation: the output gives exactly the requested thrust through (1-e)t + e t^2
   bool lin = true;
@@ -2171,6 +2223,8 @@ int main(int argc, char** argv) {
   testConfigMigrationV20();
   testConfigMigrationV21();
   testConfigMigrationV25();
+  testConfigMigrationV26();
+  testFeedForward();
   testFlightFeel();
   testEllipsoidFit();
   testPolygonFenceAndPath();

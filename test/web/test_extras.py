@@ -145,6 +145,11 @@ async def main():
         check("90°" in t and await pg.locator("#wzUseAlign").count() == 1, "wizard: orientation solved from two poses (90°)")
         await pg.click("#wzUseAlign")
         check(await pg.evaluate("S.edits.imu_align") == 1, "wizard: imu_align = 1 put into the pending edits")
+        await pg.wait_for_timeout(400)
+        px = await pg.evaluate("""(() => { const c = $('wz3d'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; })()""")
+        check(px > 2000, "wizard: 3D model drawn live on the mounting step (%d px)" % px)
+        await pg.locator(".wz3d").screenshot(path=os.path.join(SHOTS, "extras-setup-3d.png"))
         await pg.click("#wzSteps button[data-i='6']")
         await pg.wait_for_timeout(600)
         check(await pg.locator("#wzRx li").count() >= 6, "wizard: receiver checklist follows the live channels")
@@ -180,6 +185,19 @@ async def main():
             lines = open(await d.path(), encoding="utf-8").read().splitlines()
             n = await pg.evaluate("S.flight.n")
             check(lines[0].startswith("t_s,throttle,roll_setpoint") and len(lines) == n + 1, "blackbox: CSV export %d rows x %d columns" % (len(lines) - 1, len(lines[0].split(","))))
+            # exports for Blackbox Explorer / PIDtoolbox
+            async with pg.expect_download() as dl:
+                await pg.click("#bbExpBbl")
+            d = await dl.value
+            raw = open(await d.path(), "rb").read()
+            check(d.suggested_filename.endswith(".bbl") and raw.startswith(b"H Product:Blackbox flight data recorder") and b"Field I name:loopIteration,time," in raw
+                  and raw.count(b"\nI") >= 1 and raw.endswith(b"End of log\x00"), "blackbox: .bbl export (%d bytes, %s)" % (len(raw), d.suggested_filename))
+            async with pg.expect_download() as dl:
+                await pg.click("#bbExpCsv")
+            d = await dl.value
+            lines = open(await d.path(), encoding="utf-8").read().splitlines()
+            check(lines[0].startswith('"loopIteration","time (us)","axisP[0]"') and "gyroADC[0]" in lines[0] and len(lines) == n + 1,
+                  "blackbox: Betaflight-style CSV export (%d rows)" % (len(lines) - 1))
             await pg.screenshot(path=os.path.join(SHOTS, "extras-blackbox.png"), full_page=True)
         else:
             print("(build/web/normal.bin missing: blackbox compare skipped)")
@@ -343,6 +361,19 @@ async def main():
         check("motor4_out = 1" in back and "motor1_out = 3" in back, "motors: new order applied in the firmware")
         check(await pg.evaluate("S.params.yaw_reversed.v") == 1, "motors: props-out applied")
         await pg.screenshot(path=os.path.join(SHOTS, "extras-motor-order.png"), full_page=True)
+        # bench test with RPM telemetry: stub the sensor reading (the demo has no bidirectional DShot);
+        # motor 3 "does not spin"
+        await pg.evaluate("""window._wzs = wzSensors; wzSensors = async () => ({ rpm: (S.status.mtest || [0, 0, 0, 0]).map((v, i) => i === 2 ? 0 : Math.round(v * 30000)) })""")
+        await pg.click("#btStart")
+        await pg.wait_for_function("document.getElementById('btTable').rows.length === 5 && !BT.run", timeout=20000)
+        grades = await pg.evaluate("[...document.querySelectorAll('#btTable tr td:last-child')].map(td => td.innerText)")
+        note = await pg.inner_text("#btNote")
+        check(grades[0] == "Đạt" and grades[1] == "Đạt" and grades[3] == "Đạt" and "Không quay" in grades[2] and "M3" in note,
+              "motors: RPM bench test - M1/M2/M4 pass, M3 reported as not spinning %s" % grades)
+        g = await pg.evaluate("[btGrade({m: 0, max: [2000, 0, 0, 0], seen: [true, true, true, true]}), btGrade({m: 1, max: [0, 1800, 900, 0], seen: [true, true, true, true]}), btGrade({m: 2, max: [0, 0, 0, 0], seen: [true, true, false, true]})]")
+        check(g == ["ok", "cross", "noTelem"], "motors: bench test grading ok / cross / no telemetry %s" % g)
+        await pg.screenshot(path=os.path.join(SHOTS, "extras-bench-test.png"), full_page=True)
+        await pg.evaluate("wzSensors = window._wzs")
         # PWM ESCs: the throttle calibration steps instead
         await pg.evaluate("S.params.motor_protocol.v = 0; escBuild()")
         check(await pg.locator("#escSteps li").count() == 5 and await pg.is_disabled("#escCalStart"), "motors: PWM -> 5-step throttle calibration, locked until props off + battery out")
@@ -357,6 +388,26 @@ async def main():
         # set and read in one step: the live status stream would redraw the chips in between
         chips = await pg.evaluate("(() => { const s = Object.assign({}, S.status, {warn: 512 | 1024, vibe: 41}); extrasStatus(s); return $('xWarn').innerText; })()")
         check("Rung mạnh" in chips and "EKF" in chips, "overview: vibration and EKF warning chips")
+        # attitude as a 3D model instead of the horizon (remembered)
+        await pg.click("#ovView button[data-v='3d']")
+        await pg.wait_for_timeout(500)
+        v3 = await pg.evaluate("""(() => { const c = $('ov3d'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return [n, $('ovHorizon').hidden, localStorage.getItem('aq.ovview')]; })()""")
+        check(v3[0] > 1500 and v3[1] and v3[2] == "3d", "overview: 3D attitude model instead of the horizon %s" % v3)
+        q = await pg.evaluate("qEuler(30, -20, 90).map(v => +v.toFixed(4))")
+        R = await pg.evaluate("(() => { const R = qMat(qEuler(30, -20, 90)); return [Math.atan2(R[2][1], R[2][2]) * 180 / Math.PI, -Math.asin(R[2][0]) * 180 / Math.PI, Math.atan2(R[1][0], R[0][0]) * 180 / Math.PI].map(v => Math.round(v)); })()")
+        check(R == [30, -20, 90], "overview: euler -> quaternion round trip %s %s" % (R, q))
+        await pg.locator(".ov-att").screenshot(path=os.path.join(SHOTS, "extras-ov-3d.png"))
+        await pg.click("#ovView button[data-v='h']")
+        # motor card: disarmed -> protocol + ESC telemetry per position + test shortcut; armed -> bars
+        mc = await pg.evaluate("""(() => { const b = Object.assign({}, S.status, {armed: false, mtest: undefined, erpm: [1200, -1, 900, 1500], etmp: [33, -1, 30, 35]});
+            renderOvMotors(b); const idle = [!$('motIdle').hidden, $('motorBars').hidden, $('moProto').textContent, $('moQuad').innerText];
+            renderOvMotors(Object.assign({}, b, {armed: true})); const armed = [$('motIdle').hidden, !$('motorBars').hidden, $('motorBars').children.length];
+            return [idle, armed]; })()""")
+        check(mc[0][0] and mc[0][1] and "DShot" in mc[0][2] and "1200 rpm" in mc[0][3] and "33 °C" in mc[0][3] and mc[1] == [True, True, 4],
+              "overview: motor card shows protocol / RPM / temperature when disarmed, bars when armed %s" % mc)
+        await pg.evaluate("renderOvMotors(Object.assign({}, S.status, {armed: false, erpm: [2100, 2050, 2200, 2080], etmp: [31, 30, 32, 31]}))")
+        await pg.locator(".ov-mot").screenshot(path=os.path.join(SHOTS, "extras-ov-motor.png"))
         await pg.evaluate("document.getElementById('comClose').click()")
         await pg.wait_for_timeout(300)
         check(await pg.evaluate("LINK.worker === null || LINK.worker === undefined") and await pg.is_visible("#connect"), "demo: disconnect stops the worker")

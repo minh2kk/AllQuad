@@ -4,6 +4,10 @@
     pages/firmware/*.bin              firmware of every board that was built (.pio/build/<env>/)
     pages/firmware/manifest.json      list + size + SHA-256: the page's flasher offers these files
                                       ("Bản phát hành trên trang này") and checks them after download
+    pages/manifest.webmanifest, sw.js, icon-*.png
+                                      installable app (PWA): works offline, network first when online
+    pages/version.json                version + build id of this page: the installed app polls it and
+                                      updates itself as soon as a newer build is published
 Run after building:  tools/embed_web.py ; pio run -e <env> ... ; python3 tools/make_pages.py [out_dir]
 Boards that were not built are left out (and listed)."""
 import hashlib, json, os, re, shutil, sys, time
@@ -43,7 +47,32 @@ def main():
         sys.exit("build/web/AllQuad-Configurator.html missing: run python3 tools/embed_web.py")
     fw_dir = os.path.join(OUT, "firmware")
     os.makedirs(fw_dir, exist_ok=True)
-    shutil.copyfile(PAGE, os.path.join(OUT, "index.html"))
+    page = open(PAGE, encoding="utf-8").read()
+    build = hashlib.sha256(page.encode("utf-8")).hexdigest()[:12]
+    ver = version()
+    # only the Pages copy becomes an app: the page served by the FC itself has no service worker
+    head = ('<link rel="icon" href="icon-192.png"><link rel="manifest" href="manifest.webmanifest">'
+            '<link rel="apple-touch-icon" href="icon-192.png"><meta name="theme-color" content="#17375C">'
+            '<meta name="aq-build" content="%s"><meta name="aq-version" content="%s">' % (build, ver))
+    if '<link rel="icon" href="data:,">' not in page:
+        sys.exit("index.html: icon link not found (PWA tags not added)")
+    page = page.replace('<link rel="icon" href="data:,">', head, 1)
+    with open(os.path.join(OUT, "index.html"), "w", encoding="utf-8") as f:
+        f.write(page)
+    pwa = os.path.join(ROOT, "tools", "pwa")
+    for n in ("sw.js", "icon-192.png", "icon-512.png"):
+        shutil.copyfile(os.path.join(pwa, n), os.path.join(OUT, n))
+    with open(os.path.join(OUT, "manifest.webmanifest"), "w", encoding="utf-8") as f:
+        json.dump({
+            "name": "AllQuad Configurator", "short_name": "AllQuad", "lang": "vi",
+            "description": "Cấu hình, nạp firmware và phân tích blackbox cho flight controller AllQuad",
+            "start_url": "./", "scope": "./", "display": "standalone",
+            "background_color": "#F2F5F8", "theme_color": "#17375C",
+            "icons": [{"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+                      {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}],
+        }, f, ensure_ascii=False, indent=1)
+    with open(os.path.join(OUT, "version.json"), "w", encoding="utf-8") as f:
+        json.dump({"version": ver, "build": build, "date": time.strftime("%Y-%m-%d %H:%M")}, f)
     files, missing = [], []
     for env, kind, name, target, label, match, note in BOARDS:
         src = os.path.join(ROOT, ".pio", "build", env, "firmware.factory.bin" if kind == "full" else "firmware.bin")
@@ -61,12 +90,12 @@ def main():
         if note:
             e["note"] = note
         files.append(e)
-    manifest = {"version": version(), "date": time.strftime("%Y-%m-%d"), "files": files}
+    manifest = {"version": ver, "date": time.strftime("%Y-%m-%d"), "files": files}
     with open(os.path.join(fw_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
     # GitHub Pages: serve the files as they are (no Jekyll processing)
     open(os.path.join(OUT, ".nojekyll"), "w").close()
-    print("pages in %s: index.html + %d firmware files (v%s)" % (OUT, len(files), manifest["version"]))
+    print("pages in %s: index.html (app build %s) + %d firmware files (v%s)" % (OUT, build, len(files), ver))
     if missing:
         print("not built, left out: " + ", ".join(missing))
 

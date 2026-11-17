@@ -211,6 +211,21 @@ static void slowStatus(JsonOut& j) {
   j.key("defpw"); j.raw(creds::usingDefaultPassword() ? "true" : "false");
 }
 
+// RPM / ESC temperature per mixer motor (-1 = nothing from that ESC); true when bidirectional DShot runs
+static bool escRpmTemp(const EscTelemetry& e, float rpm[4], float temp[4]) {
+  uint32_t now = os::timeMs();
+  bool bidir = hal::motorsBidirActive();
+  const Config& c = bus::config;
+  for (int i = 0; i < 4; i++) {
+    // telemetry arrays are per output; the UI lists mixer motors (motor_out remaps them)
+    int o = c.motor_out[i] >= 1 && c.motor_out[i] <= 4 ? c.motor_out[i] - 1 : i;
+    bool fresh = bus::esc.seq() && ageMs(now, e.lastUpdateMs[o]) < 500;
+    rpm[i] = bidir ? bus::bidirRpm[i] : (fresh ? e.rpm[o] : -1);
+    temp[i] = fresh ? e.tempC[o] : -1;
+  }
+  return bidir;
+}
+
 void statusJson(Sink s, void* ctx, bool full) {
   VehicleStatus st = bus::status.get();
   AttitudeState a = bus::attitude.get();
@@ -270,6 +285,14 @@ void statusJson(Sink s, void* ctx, bool full) {
   if (bus::motorTestActive(os::timeMs())) {  // motor test from the configurator is running
     float t[4] = {bus::motorTest[0], bus::motorTest[1], bus::motorTest[2], bus::motorTest[3]};
     vec(j, "mtest", t, 4, 2);
+  }
+  {  // ESC telemetry for the overview motor card (only when an ESC reports)
+    float er[4], et[4];
+    escRpmTemp(bus::esc.get(), er, et);
+    if (er[0] >= 0 || er[1] >= 0 || er[2] >= 0 || er[3] >= 0) {
+      vec(j, "erpm", er, 4, 0);
+      vec(j, "etmp", et, 4, 0);
+    }
   }
   vec(j, "notch", pd.dynNotchHz, 3, 0);
   float acc[3] = {a.accBody.x, a.accBody.y, a.accBody.z};
@@ -551,16 +574,11 @@ void sensorsJson(Sink s, void* ctx) {
   j.key("flowq"); j.num(bus::flow.seq() ? f.quality : -1, 0);
   float q[4] = {a.q.w, a.q.x, a.q.y, a.q.z};
   vec(j, "q", q, 4, 4);
-  uint32_t now = os::timeMs();
   float rpm[4], temp[4], volt[4], amp[4];
-  bool bidir = hal::motorsBidirActive();
+  bool bidir = escRpmTemp(e, rpm, temp);
   const Config& c = bus::config;
   for (int i = 0; i < 4; i++) {
-    // telemetry arrays are per output; the UI lists mixer motors (motor_out remaps them)
     int o = c.motor_out[i] >= 1 && c.motor_out[i] <= 4 ? c.motor_out[i] - 1 : i;
-    bool fresh = bus::esc.seq() && ageMs(now, e.lastUpdateMs[o]) < 500;
-    rpm[i] = bidir ? bus::bidirRpm[i] : (fresh ? e.rpm[o] : -1);
-    temp[i] = fresh ? e.tempC[o] : -1;
     dshot::Edt d;
     bool edt = bidir && hal::motorsEdt(o, d);
     volt[i] = edt ? d.volts : -1;

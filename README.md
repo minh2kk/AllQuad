@@ -169,9 +169,9 @@ Cùng một giao diện, ba cách kết nối:
 
 | Tab | Chức năng chính | Trường / tham số quan trọng |
 |---|---|---|
-| **Tổng quan** | Khung sẵn sàng arm (xanh = sẵn sàng, đỏ = liệt kê từng lý do kèm cách sửa, bấm để tới đúng tab), ô trạng thái (pin, tín hiệu, GPS, chế độ, độ cao, thời gian bay còn lại, tải CPU), chân trời nhân tạo lớn có thang nghiêng, gyro so với setpoint, motor, kênh RC, danh sách tình trạng cảm biến có đèn trạng thái, cảnh báo rung / EKF | `bat_capacity` (để tính thời gian còn lại) |
+| **Tổng quan** | Khung sẵn sàng arm (xanh = sẵn sàng, đỏ = liệt kê từng lý do kèm cách sửa, bấm để tới đúng tab), ô trạng thái (pin, tín hiệu, GPS, chế độ, độ cao, thời gian bay còn lại, tải CPU), chân trời nhân tạo hoặc mô hình 3D (nút *Chân trời / 3D*, bấm mô hình để nhìn lại từ phía sau), gyro so với setpoint, motor (chưa arm: giao thức, RPM / nhiệt ESC, nút thử motor; arm: thanh ga), kênh RC, danh sách tình trạng cảm biến có đèn trạng thái, cảnh báo rung / EKF | `bat_capacity` (để tính thời gian còn lại) |
 | **Trước bay** | Danh sách kiểm tra trước khi bay: tự kiểm tra (kết nối, IMU, accel / compass đã hiệu chuẩn, baro, tay điều khiển + số lần mất sóng, công tắc ARM, failsafe, pin / V-cell, GPS khi dùng chế độ cần GPS, điều kiện arm, cấu hình đã lưu, chỗ trống blackbox, rung) và 7 mục kiểm tra bằng mắt (tự bỏ tích sau 12 giờ); điểm tổng và nút *Sửa* tới đúng tab | — |
-| **Thiết lập** | Trình thiết lập 9 bước, kiểm tra bằng số liệu thật | `imu_align`, `board_roll/pitch/yaw` |
+| **Thiết lập** | Trình thiết lập 9 bước, kiểm tra bằng số liệu thật; bước hướng lắp FC có mô hình 3D chạy theo tư thế đo được | `imu_align`, `board_roll/pitch/yaw` |
 | **PID & lọc** | **Trợ lý chỉnh PID** (chọn khung → bài bay thử → phân tích blackbox → đưa kế hoạch vào hàng chờ, lặp lại; bảng vọt lố / nhiễu từng vòng), bảng P/I/D/F 3 profile, thanh trượt chỉnh nhanh (độ mạnh chung, giảm chấn, feedforward, I); cảm giác bay & bảo vệ; rates kèm đồ thị; bộ lọc kèm đồ thị đáp ứng tần số & độ trễ | `roll_p…yaw_f`, `p2_*`, `p3_*`, `*_rc_rate`, `*_max_rate`, `*_expo`, `gyro_lpf_hz`, `dterm_lpf_hz`, `dyn_notch_*`, `rpm_harmonics`, `rpm_w1..3` |
 | **Chế độ & an toàn** | **Tín hiệu tay điều khiển**: LQ 2 phút gần nhất, trung bình / thấp nhất, số lần và thời gian mất sóng dài nhất; gán chế độ cho khoảng kênh AUX (kéo, Thấp / Giữa / Cao), xem công tắc trực tiếp; failsafe, pin, geofence | `mrN_mode/ch/lo/hi`, `fs_action`, `bat_fs_action`, `fence_*` |
 | **Điều hướng** | Bản đồ (nhà, drone, vệt bay, waypoint, rally, geofence, gió; bản đồ nền OSM); **soạn nhiệm vụ** (chạm thêm, kéo dời), **quét khu vực**, **geofence đa giác**, **bay tới điểm chạm** (GUIDED), nhập / xuất `.waypoints`; **thống kê nhiệm vụ** (quãng đường, thời gian, xa nhà nhất, cao nhất, mAh ước tính theo dòng đo được, cảnh báo khi > 70 % pin); bảng EKF | `rth_alt`, `wp_speed`, `nav_*`, `fence_poly`, `gcs_fs` |
@@ -211,6 +211,11 @@ Cùng một giao diện, ba cách kết nối:
 **Cầu WiFi cho STM32** (không cần cáp, cả iPhone): một ESP32-C3 SuperMini (~2 USD) nạp `pio run -e bridge_esp32c3 -t upload`. Nối GPIO21 (TX) → RX một UART của FC, GPIO20 (RX) ← TX, GND chung, nguồn 5 V. Trên FC đặt cổng đó chức năng **Configurator** (460800 baud). Điện thoại vào WiFi `AllQuad-Link-xxxx` (mật khẩu `allquad123`, đổi ngay ở tab Hệ thống), trang tự mở (hoặc vào `192.168.4.1`) và tự nối với FC. USB và cầu dùng chung console: bên nào nói trước thì được phục vụ, bên kia đợi 1,5 s im lặng. Nạp firmware FC và ESC passthrough vẫn qua USB. Cầu chưa thử trên phần cứng.
 
 Trang cấu hình cho STM32 là một file (`build/web/AllQuad-Configurator.html`, gồm cả drone ảo). Web Serial / WebUSB chỉ chạy trên trang **https** (hoặc file mở trực tiếp trên máy tính), nên với điện thoại hãy đặt file này lên một chỗ https một lần (GitHub Pages, Netlify…, đổi tên thành `index.html`), rồi mở link đó bằng Chrome và *Thêm vào màn hình chính*. Trang tự nhận ra mình là bản USB (không đi tìm drone qua WiFi).
+
+**Cài làm ứng dụng (PWA, bản GitHub Pages):** `tools/make_pages.py` thêm vào bản Pages manifest, biểu tượng, `sw.js` và `version.json`. Mở `https://<tên>.github.io/AllQuad/` bằng Chrome/Edge → nút *Cài làm ứng dụng* ở màn hình kết nối (điện thoại: *Thêm vào màn hình chính*).
+- **Không có mạng:** app mở bản đã lưu lần trước (kết nối USB, phân tích blackbox, drone ảo đều chạy).
+- **Có mạng:** mỗi lần mở, khi quay lại app, và 15 phút một lần, app hỏi `version.json` trên GitHub Pages. Có bản mới → tải ngay nếu chưa nối FC; đang nối FC thì hiện thanh *Có bản mới* và tự cập nhật khi ngắt kết nối. Push lên `main` (đã chạy `make_pages.py`) là app ở mọi máy tự lên bản đó.
+- Bản trang nằm trong firmware (ESP32 qua WiFi) không cài làm app.
 
 ## Cài đặt lần đầu
 
@@ -294,6 +299,11 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
   | `dyn_idle_rpm` | đơn vị ×100 rpm, cần RPM |
   | `airmode` | |
 
+**Feedforward nâng cao** (cấu hình v27, tab PID):
+- `ff_jitter` (0–20, mặc định 7): gạt cần chậm / tay run thì FF giảm theo độ lớn chuyển động cần, cú gạt thật vẫn đủ FF. 0 = tắt.
+- `ff_boost` (0–50, mặc định 15): cộng thêm theo gia tốc cần, FF vào sớm hơn khi gạt mạnh.
+- `ff_max_pct` (0–100, mặc định 90): từ % này của tốc độ quay tối đa, FF giảm dần về 0 (đỡ vọt khi đánh cần hết cỡ). 0 = tắt.
+
 ### Bộ lọc
 - **Lọc thông thấp gyro:** `gyro_lpf_hz`, `gyro_lpf2_hz`. Tầng động theo ga: `dyn_lpf_min` / `dyn_lpf_max`.
 - **D-term:** `dterm_lpf_hz`.
@@ -353,6 +363,8 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 **Tham số chung:**
 - `bb_rate_hz`: 0 = tắt; 500 là khuyến nghị; tối đa 1000.
 - Chỉ ghi khi armed.
+
+**Xuất log cho công cụ khác** (tab Blackbox, sau khi mở log): *Xuất .bbl* mở được bằng Betaflight Blackbox Explorer và PIDtoolbox (định dạng Betaflight, đơn vị như Betaflight 4.4; đã kiểm bằng bộ đọc của Blackbox Explorer). *Xuất CSV (Betaflight)* có cột giống `blackbox_decode` (`gyroADC[0]`, `setpoint[0]`, `motor[0]`…) cộng tư thế, độ cao, chế độ.
 
 ### Thẻ SD (`sd_mode`, cấu hình v25)
 
@@ -437,7 +449,9 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 - **Thứ tự motor:**
   - `motor1_out` … `motor4_out`: đầu ra nào điều khiển motor nào.
   - `yaw_reversed`: cánh ra ngoài (props out).
-  - Trang có trình tìm thứ tự tự động.
+  - Trang có trình tìm thứ tự tự động (quay từng đầu ra, bạn bấm vị trí; hiện RPM nếu ESC báo).
+- **Kiểm tra trên bàn bằng RPM** (tab Motor & ESC, tháo cánh): quay lần lượt M1–M4 ở ga 6 %, đọc RPM cả 4 ESC. Báo ESC không trả telemetry, motor không quay, hoặc motor khác cũng có RPM (đầu ra / dây telemetry lẫn).
+- **Tab Tổng quan:** khi chưa arm, ô Motor hiện giao thức, RPM / nhiệt từng ESC theo vị trí và nút *Thử motor*; khi arm (hoặc đang thử) hiện thanh ga.
 - **Lệnh ESC (DShot):** bíp từng motor, đảo chiều từng motor. ESC PWM: hiệu chuẩn dải ga 5 bước.
 - **ESC passthrough:** *Nhả cổng USB* → esc-configurator.com (BLHeli_S / Bluejay / AM32 / BLHeli_32).
 - **CLI `esc`:** RPM, nhiệt, áp, dòng, trạng thái từng ESC.

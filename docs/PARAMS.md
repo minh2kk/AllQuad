@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 364 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 367 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -437,3 +437,6 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `sd_d3` (KĐL) | 255 | 0 … 255 | Chân D3 / CS (4-bit và SPI, 255 = mặc định) |
 | `sd_keep` | 1 | 0 … 1 | Thẻ gần đầy: tự xoá log cũ nhất (tắt = ngừng ghi) |
 | `sd_dma` (KĐL) | 0 | 0 … 1 | Thẻ SD dùng DMA (STM32H7: CPU rảnh hơn khi ghi; tắt = cách cũ, chắc chắn nhất) |
+| `ff_jitter` | 7 | 0 … 20 | FF: lọc rung cần (gạt chậm / tay run thì giảm FF; 0 = tắt) |
+| `ff_boost` | 15 | 0 … 50 | FF: tăng tốc khi giật cần (0 = tắt) |
+| `ff_max_pct` | 90 % | 0 … 100 | FF: giảm dần trên % tốc độ tối đa (chống vọt lố cuối cú lật; 0 = tắt) |

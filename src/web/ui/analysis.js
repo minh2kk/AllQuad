@@ -664,7 +664,109 @@
     return out.sort((x, y) => x.name.localeCompare(y.name));
   }
 
-  const api = { decode, fft, spectrum, stepResponse, analyze, suggest, plan, bandPeak, REC, ESC, AXES };
+  // ------------------------------------------------------------------ export
+  // Columns in Betaflight's units (what Blackbox Explorer / PIDtoolbox / blackbox_decode expect):
+  // gyro / setpoint deg/s, PID terms in PID-sum units, rcCommand roll/pitch/yaw -500..500 and throttle
+  // 1000..2000, setpoint[3] throttle 0..1000, motor as DShot value 48..2047 (0 = stopped),
+  // vbatLatest 0.01 V, amperageLatest 0.01 A. Our RC channels are AETR (ch3 throttle, ch4 yaw).
+  const EXP_FIELDS = (() => {
+    const f = [["loopIteration", 0], ["time", 0]];
+    for (const k of ["axisP", "axisI", "axisD", "axisF"]) for (let a = 0; a < 3; a++) f.push([`${k}[${a}]`, 1]);
+    for (let a = 0; a < 4; a++) f.push([`rcCommand[${a}]`, 1]);
+    for (let a = 0; a < 4; a++) f.push([`setpoint[${a}]`, 1]);
+    f.push(["vbatLatest", 0], ["amperageLatest", 1]);
+    for (let a = 0; a < 3; a++) f.push([`gyroADC[${a}]`, 1]);
+    for (let a = 0; a < 3; a++) f.push([`gyroUnfilt[${a}]`, 1]);
+    for (let m = 0; m < 4; m++) f.push([`motor[${m}]`, 0]);
+    return f;
+  })();
+  function expRow(fl, r, t0) {
+    const R = Math.round, v = [r, R((fl.t[r] - t0) * 1e6)];
+    for (const k of [fl.P, fl.I, fl.D, fl.F]) for (let a = 0; a < 3; a++) v.push(R(k[a][r]));
+    const rc = (k) => fl.rc[k][r] || 1500;
+    v.push(R(rc(0) - 1500), R(rc(1) - 1500), R(rc(3) - 1500), R(Math.max(1000, Math.min(2000, rc(2)))));
+    for (let a = 0; a < 3; a++) v.push(R(fl.sp[a][r]));
+    v.push(R(fl.thr[r] * 1000));
+    v.push(Math.max(0, R(fl.vbat[r] * 100)), R(fl.cur[r] * 100));
+    for (let a = 0; a < 3; a++) v.push(R(fl.gyro[a][r]));
+    for (let a = 0; a < 3; a++) v.push(R(fl.gyroRaw[a][r]));
+    for (let m = 0; m < 4; m++) v.push(fl.motor[m][r] > 0 ? R(48 + fl.motor[m][r] * 1999) : 0);
+    return v;
+  }
+  // CSV (blackbox_decode column names) plus our extra columns: attitude, altitude, flight mode, armed
+  function toCsv(fl) {
+    const t0 = fl.n ? fl.t[0] : 0;
+    const head = EXP_FIELDS.map(([n]) => (n === "time" ? "time (us)" : n === "vbatLatest" ? "vbatLatest (V)" : n === "amperageLatest" ? "amperageLatest (A)" : n));
+    head.push("roll (deg)", "pitch (deg)", "heading (deg)", "altitude (m)", "flightModeFlags", "armed");
+    const iv = EXP_FIELDS.findIndex(([n]) => n === "vbatLatest");
+    const out = [head.map((h) => `"${h}"`).join(",")];
+    for (let r = 0; r < fl.n; r++) {
+      const v = expRow(fl, r, t0);
+      v[iv] = (v[iv] / 100).toFixed(2);
+      v[iv + 1] = (v[iv + 1] / 100).toFixed(2);
+      v.push(fl.att[0][r].toFixed(1), fl.att[1][r].toFixed(1), fl.att[2][r].toFixed(1), fl.alt[r].toFixed(2), fl.mode[r], fl.armed[r]);
+      out.push(v.join(","));
+    }
+    return out.join("\n") + "\n";
+  }
+  // Betaflight blackbox binary (.bbl) that Blackbox Explorer and PIDtoolbox open: every frame is an
+  // intra frame ("I interval:1", raw values, variable-byte encoding), ended by a log-end event.
+  function toBbl(fl, info) {
+    info = info || {};
+    const bytes = [];
+    const str = (t) => { for (let i = 0; i < t.length; i++) bytes.push(t.charCodeAt(i) & 0x7F); };
+    const uvb = (x) => { x = x >>> 0; while (x >= 0x80) { bytes.push((x & 0x7F) | 0x80); x >>>= 7; } bytes.push(x); };
+    const svb = (x) => uvb((x << 1) ^ (x >> 31));
+    const n = EXP_FIELDS.length, list = (f) => EXP_FIELDS.map(f).join(",");
+    const looptime = Math.round(1e6 / (fl.rateHz || 500));
+    const H = [
+      "Product:Blackbox flight data recorder by Nicholas Sherlock",
+      "Data version:2",
+      "I interval:1",
+      "P interval:1/1",
+      "P ratio:1",
+      "Field I name:" + list(([nm]) => nm),
+      "Field I signed:" + list(([, sg]) => sg),
+      "Field I predictor:" + Array(n).fill(0).join(","),
+      "Field I encoding:" + list(([, sg]) => (sg ? 0 : 1)),
+      "Field P predictor:" + Array(n).fill(0).join(","),
+      "Field P encoding:" + list(([, sg]) => (sg ? 0 : 1)),
+      "Firmware type:Cleanflight",
+      // the version decides how the viewer reads units: AllQuad logs in Betaflight 4.4 units
+      `Firmware revision:Betaflight 4.4.0 (AllQuad ${info.version || ""}) ${info.board || ""}`.trim(),
+      "Firmware date:" + (info.date || ""),
+      "Board information:AllQuad " + (info.board || ""),
+      "Craft name:" + (info.craft || "AllQuad"),
+      "looptime:" + looptime,
+      "pid_process_denom:1",
+      "gyro_scale:0x3f800000",
+      "acc_1G:2048",
+      "motorOutput:48,2047",
+      "minthrottle:1000",
+      "maxthrottle:2000",
+      "vbat_scale:110",
+      "vbatref:" + Math.round(Math.max(...Array.from(fl.vbat.subarray(0, Math.min(fl.n, 200)), (x) => x || 0), 0) * 100),
+      "currentSensor:0,400",
+      "features:0",
+    ];
+    for (const [k, v] of Object.entries(fl.header || {})) if (/^[\w .-]+$/.test(k) && !/[\n\r]/.test(String(v))) H.push(`aq_${k}:${v}`);
+    for (const h of H) { str("H " + h + "\n"); }
+    const t0 = fl.n ? fl.t[0] : 0;
+    let last = -1;
+    for (let r = 0; r < fl.n; r++) {
+      const v = expRow(fl, r, t0);
+      if (v[1] <= last) continue;  // the viewer needs a rising time; skip duplicate stamps
+      last = v[1];
+      bytes.push(73);  // 'I'
+      for (let i = 0; i < n; i++) (EXP_FIELDS[i][1] ? svb : uvb)(v[i]);
+    }
+    bytes.push(69, 255);  // 'E', log end
+    str("End of log");
+    bytes.push(0);
+    return Uint8Array.from(bytes);
+  }
+
+  const api = { decode, fft, spectrum, stepResponse, analyze, suggest, plan, bandPeak, toCsv, toBbl, REC, ESC, AXES };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AQ = api;
 })(typeof window !== "undefined" ? window : globalThis);

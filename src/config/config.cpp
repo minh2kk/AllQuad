@@ -64,6 +64,11 @@ static void v26Defaults(Config& c) {
   c.osd_blink = 1;
   c.sd_dma = 0;
 }
+static void v27Defaults(Config& c) {
+  c.ff_jitter = 7;   // Betaflight defaults
+  c.ff_boost = 15;
+  c.ff_max_pct = 90;
+}
 static void v23Defaults(Config& c) {
   c.osd_canvas = 0;  // auto
   c.osd_font = 0;    // Betaflight glyphs
@@ -276,6 +281,7 @@ void configDefaults(Config& c) {
   v24Defaults(c);
   v25Defaults(c);
   v26Defaults(c);
+  v27Defaults(c);
   configSeal(c);
 }
 
@@ -303,6 +309,7 @@ bool configMigrate(Config& c) {
   if (c.version < 24) v24Defaults(d);
   if (c.version < 25) v25Defaults(d);
   if (c.version < 26) v26Defaults(d);
+  if (c.version < 27) v27Defaults(d);
   configSeal(d);
   c = d;
   return true;
