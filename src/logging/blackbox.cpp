@@ -141,7 +141,7 @@ void Blackbox::fill(Record& r, uint32_t nowUs) {
   r.currentCa = s16(b.current * 100);
   r.mode = (uint8_t)st.mode;
   r.navPhase = (uint8_t)st.navPhase;
-  r.flags = (st.armed ? 1 : 0) | (st.failsafe ? 2 : 0) | (st.landed ? 4 : 0);
+  r.flags = (st.armed ? 1 : 0) | (st.failsafe ? 2 : 0) | (st.landed ? 4 : 0) | ((st.warnings & WARN_ACC_CLIP) ? 8 : 0);
   uint8_t x = 0;
   const uint8_t* q = (const uint8_t*)&r;
   for (size_t i = 0; i < sizeof(r) - 1; i++) x ^= q[i];

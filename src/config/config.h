@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 28;
+constexpr uint16_t CONFIG_VERSION = 29;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -33,6 +33,7 @@ enum class PortFn : uint8_t {
   VTX_SA = 9,       // analog video transmitter, TBS SmartAudio (half duplex on the TX pin)
   VTX_TRAMP = 10,   // analog video transmitter, ImmersionRC Tramp
   CONFIGURATOR = 11,  // a second configurator link (ESP32-C3 WiFi bridge, Bluetooth serial): same as USB
+  MAVLINK_LOW = 12,   // MAVLink for slow radios (LoRa E32 / SiK at low air rates): ~170 B/s, 9600 baud default
 };
 constexpr int NUM_PORTS = 4;  // UART1, UART2, UART3, UDP (ESP32 WiFi)
 constexpr int NUM_PORTS_EXT = 2;  // UART4, UART5 (v22, boards with more UARTs: H743, F405, F722)
@@ -321,11 +322,20 @@ struct Config {
   // ---- v28: serial ports 6 and 7 ----
   uint8_t port_fn_ext2[NUM_PORTS_EXT2];
   uint32_t port_baud_ext2[NUM_PORTS_EXT2];
+  // ---- v29: output limits, first-flight mode ----
+  uint8_t thr_limit_pct;    // throttle stick scaled to this % in ACRO / ANGLE / HORIZON (Betaflight throttle_limit)
+  uint8_t motor_limit_pct;  // motor output range scaled to this % (Betaflight motor_output_limit: strong motors)
+  uint8_t beginner;         // 1: first-flight limits (see beginnerLimits)
+  uint16_t beg_radius;      // first-flight: RTH (land without GPS) beyond this distance from home (m)
 
   uint32_t crc;
 };
 
 void configDefaults(Config& c);
+// first-flight mode (beginner 1): the stored settings with the limits applied on top: self-level only,
+// 25 deg tilt, 250 / 120 deg/s rates, 75 % throttle, 1.5 m/s climb, 3 m/s, a fence of beg_radius and 40 m
+void beginnerLimits(Config& c);
+constexpr float BEGINNER_THR = 0.75f;
 // active boxes (bit i = ModeBox i) for the given RC channels
 uint32_t modeBoxes(const Config& c, const uint16_t* ch, int nch);
 const char* modeBoxName(int box);

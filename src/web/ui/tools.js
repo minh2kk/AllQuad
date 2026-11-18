@@ -286,7 +286,7 @@ $("escRelease").onclick = async () => {
 // ---------------------------------------------------------------- ports
 const PORT_FN = [[0, "Không dùng"], [1, "Receiver (CRSF / SBUS / iBUS)"], [2, "GPS"], [3, "MAVLink (trạm mặt đất)"], [4, "MSP (cảm biến flow / khoảng cách)"],
   [5, "OSD kính số (MSP DisplayPort)"], [6, "Telemetry ESC"], [7, "Cảm biến khoảng cách TFmini"], [8, "Blackbox (OpenLog)"], [9, "VTX SmartAudio"], [10, "VTX Tramp"],
-  [11, "Configurator (cầu WiFi ESP32-C3 / Bluetooth)"]];
+  [11, "Configurator (cầu WiFi ESP32-C3 / Bluetooth)"], [12, "MAVLink tốc độ thấp (LoRa E32 / radio chậm)"]];
 const BAUDS = [0, 9600, 19200, 38400, 57600, 115200, 230400, 250000, 400000, 460800, 921600, 1000000, 2000000];
 // [param prefix, label, hal::Port index] - a row is shown when the board has that port
 const PORTS = [["serial1", "SERIAL1", 0], ["serial2", "SERIAL2", 1], ["serial3", "SERIAL3", 2], ["serial4", "SERIAL4", 5],
@@ -316,13 +316,14 @@ function buildPorts() {
     const fn = val(p + "_fn"), fixed = [0, 1, 2, 9, 10].includes(fn) || p === "udp";
     const opts = PORT_FN.filter(([v]) => p !== "udp" || [0, 3, 4].includes(v) || v === fn);
     const baud = has(p + "_baud") && !fixed ? selectHtml(p + "_baud", BAUDS.map((b) => [b, b ? String(b) : "mặc định"])) : `<span class="muted">${fn === 1 ? "theo giao thức" : fn === 2 ? "tự cấu hình" : fn >= 9 ? (fn === 9 ? "4800" : "9600") : "—"}</span>`;
-    const extra = fn === 1 && has("rx_protocol") ? selectHtml("rx_protocol", [[0, "CRSF / ELRS"], [1, "SBUS"], [2, "iBUS"]]) : "";
+    const extra = fn === 1 && has("rx_protocol") ? selectHtml("rx_protocol", [[0, "CRSF / ELRS"], [1, "SBUS"], [2, "iBUS"]])
+      : fn === 12 ? '<small class="muted">E32: M0 = M1 = GND, cùng tốc độ UART và kênh ở hai module</small>' : "";
     const pins = S.portPins && S.portPins[idx];  // e.g. "USART1 RX PA10 TX PA9": what to wire
     return `<tr><td><b>${label}</b>${pins ? `<br><small class="muted num">${esc(pins)}</small>` : ""}</td><td>${selectHtml(p + "_fn", opts)}</td><td>${extra}</td><td>${baud}</td></tr>`;
   });
   host.innerHTML = "<tr><th>Cổng</th><th>Chức năng</th><th></th><th>Tốc độ</th></tr>" + rows.join("");
   bindSelects(host);
-  const fns = PORTS.filter(portShown).map(([p]) => val(p + "_fn")).filter((f) => f && f !== 3 && f !== 4);
+  const fns = PORTS.filter(portShown).map(([p]) => val(p + "_fn")).filter((f) => f && f !== 3 && f !== 4 && f !== 12);
   const dup = fns.filter((f, i) => fns.indexOf(f) !== i);
   $("portNote").textContent = (dup.length ? `Cảnh báo: "${PORT_FN[dup[0]][1]}" đang gán cho hai cổng. ` : "") +
     "Đổi chức năng cổng cần Lưu rồi khởi động lại FC. Cổng USB luôn dành cho configurator, CLI, MSP và MAVLink.";

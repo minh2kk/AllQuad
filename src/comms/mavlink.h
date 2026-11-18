@@ -43,6 +43,9 @@ class MavlinkLink {
   void begin(hal::Port p, bool streamOnlyWhenConnected = false);
   // readPort = false when another component reads the port and calls feed()
   void update(uint32_t nowMs, bool readPort = true);
+  // slow radio (LoRa): heartbeat, status, attitude, position, HUD at 1 Hz or less, no RC channels;
+  // parameters trickle out at one per 200 ms
+  void setLowRate(bool on) { low_ = on; }
   void feed(uint8_t b, uint32_t nowMs) {
     MavFrame f;
     if (parser_.feed(b, f)) handle(f, nowMs);
@@ -51,6 +54,7 @@ class MavlinkLink {
   bool seenRecently(uint32_t nowMs) const { return lastRxMs_ && nowMs - lastRxMs_ < 3000; }
 
  private:
+  bool low_ = false;
   void send(uint32_t msgid, const uint8_t* payload, uint8_t len);
   void sendHeartbeat();
   void sendSysStatus();
@@ -76,7 +80,7 @@ class MavlinkLink {
   MavParser parser_;
   uint8_t txSeq_ = 0;
   uint32_t lastRxMs_ = 0;
-  uint32_t tHb_ = 0, tSys_ = 0, tAtt_ = 0, tPos_ = 0, tGps_ = 0, tHud_ = 0, tRc_ = 0, tHome_ = 0, tMc_ = 0;
+  uint32_t tHb_ = 0, tSys_ = 0, tAtt_ = 0, tPos_ = 0, tGps_ = 0, tHud_ = 0, tRc_ = 0, tHome_ = 0, tMc_ = 0, tParam_ = 0;
   int paramStreamIdx_ = -1;
   uint32_t msgSeq_ = 0;
   uint16_t lastReached_ = 0xFFFF;

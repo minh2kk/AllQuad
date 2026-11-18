@@ -186,9 +186,18 @@ FAST_CODE void fastTask(void*) {
       rcSeq = bus::rc.read(rc);
       rcProf = sp.profile;
       rcMs = rc.lastFrameMs;
-      rcRate[0] = stickRate(rcStickUs(rc.ch[RC_ROLL]), profileRate(c, sp.profile, 0));
-      rcRate[1] = stickRate(-rcStickUs(rc.ch[RC_PITCH]), profileRate(c, sp.profile, 1));
-      rcRate[2] = stickRate(rcStickUs(rc.ch[RC_YAW]), profileRate(c, sp.profile, 2));
+      RateProfile rp[3];
+      for (int a = 0; a < 3; a++) {
+        rp[a] = profileRate(c, sp.profile, a);
+        if (c.beginner) {  // first-flight rate limits (beginnerLimits)
+          float mx = a == 2 ? 120.0f : 250.0f;
+          rp[a].max = fminf(rp[a].max, mx);
+          rp[a].center = fminf(rp[a].center, mx);
+        }
+      }
+      rcRate[0] = stickRate(rcStickUs(rc.ch[RC_ROLL]), rp[0]);
+      rcRate[1] = stickRate(-rcStickUs(rc.ch[RC_PITCH]), rp[1]);
+      rcRate[2] = stickRate(rcStickUs(rc.ch[RC_YAW]), rp[2]);
     }
     if ((uint32_t)(now / 1000) - rcMs < 200) {  // stale RC: keep the commander's values (it handles the failsafe)
       if (sp.stickDirect & 1) { sp.rateDps[0] = rcRate[0]; sp.rateDps[1] = rcRate[1]; }
@@ -310,6 +319,7 @@ FAST_CODE void fastTask(void*) {
     st.accBody = loop.accFiltered();
     loop.takeDelta(st.dAng, st.dVel, st.dt);
     st.vibration = loop.accVibration();
+    st.accClips = loop.accClips();
     st.valid = imuOk && loop.gyroCalibrated();
     st.gyroCalibrated = loop.gyroCalibrated();
     st.timeUs = (uint32_t)now;
@@ -737,7 +747,7 @@ void telemetryTask(void*) {
   mav[(int)Port::CONSOLE].update(now, false);
   for (int i = 0; i < NPORTS; i++) {
     if (!configurablePort(i) || !hal::portExists((Port)i)) continue;
-    if (portFn[i] == PortFn::MAVLINK) mav[i].update(now);
+    if (portFn[i] == PortFn::MAVLINK || portFn[i] == PortFn::MAVLINK_LOW) mav[i].update(now);
     else if (portFn[i] == PortFn::MSP || portFn[i] == PortFn::DISPLAYPORT) msp[i].update(now);
   }
   bool armedNow = bus::status.get().armed;
@@ -767,6 +777,7 @@ void webTask(void*) { web::poll(); }
 uint32_t defaultBaud(PortFn f) {
   switch (f) {
     case PortFn::MAVLINK: return 57600;
+    case PortFn::MAVLINK_LOW: return 9600;  // Ebyte E32 / most LoRa UART modules out of the box
     case PortFn::BLACKBOX: return 921600;
     case PortFn::CONFIGURATOR: return 460800;
     default: return 115200;
@@ -827,7 +838,10 @@ void start(const Drivers& d, bool configureGps) {
     }
     uint32_t baud = portBaudOf(c, i);
     hal::portOpen(p, baud ? baud : defaultBaud(portFn[i]));
-    if (portFn[i] == PortFn::MAVLINK) mav[i].begin(p);
+    if (portFn[i] == PortFn::MAVLINK || portFn[i] == PortFn::MAVLINK_LOW) {
+      mav[i].begin(p);
+      mav[i].setLowRate(portFn[i] == PortFn::MAVLINK_LOW);
+    }
     if (portFn[i] == PortFn::MSP || portFn[i] == PortFn::DISPLAYPORT) msp[i].begin(p);
     msp[i].setDisplayPort(portFn[i] == PortFn::DISPLAYPORT);
   }

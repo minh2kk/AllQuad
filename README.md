@@ -245,6 +245,17 @@ Trang cấu hình cho STM32 là một file (`build/web/AllQuad-Configurator.html
 7. Thử motor ở tab Motor: thứ tự và chiều quay. Sai thứ tự: `motorN_out` (không cần đổi dây). Sai chiều: đảo chiều trong ESC (DShot).
 8. Thử failsafe: arm trên bàn không cánh, tắt tay điều khiển, motor phải dừng hoặc vào chế độ đã chọn.
 
+**Bay lần đầu** (cấu hình v29, tab PID → "Giới hạn & bay lần đầu"): `set beginner 1`.
+- Luôn tự cân bằng (ANGLE), kể cả khi công tắc đang ở ACRO / HORIZON.
+- Nghiêng tối đa 25°, quay tối đa 250 °/s (yaw 120 °/s), ga tối đa 75 %, leo tối đa 1,5 m/s, bay vị trí 3 m/s.
+- Rào ảo bật tự động: bán kính `beg_radius` (mặc định 60 m), cao 40 m; ra khỏi rào thì bay về (RTH).
+- Chỉ siết chặt hơn, không nới: thông số đã hiền hơn thì giữ nguyên. Cấu hình lưu không bị đổi, tắt `beginner` là về như cũ.
+- OSD hiện "BEGINNER MODE" khi chưa arm, web hiện thẻ cảnh báo, để không quên đang bật.
+
+**Giới hạn ga / motor:**
+- `thr_limit_pct` (25–100): cần ga 100 % chỉ ra từng ấy % ga ở ACRO / ANGLE / HORIZON. Hợp cho motor quá mạnh, pin 6S trên khung 4S…
+- `motor_limit_pct` (50–100): trần đầu ra mỗi motor, áp cả lúc bộ trộn cần thêm (yaw, giữ thăng bằng). Giảm nhiệt motor / ESC.
+
 ---
 
 ## Chế độ bay & công tắc
@@ -444,6 +455,10 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 - **Geofence:**
   - Hình trụ: `fence_enable`, `fence_radius`, `fence_alt_max`, `fence_action`.
   - Đa giác: `fence_poly 1`, vẽ trên web / QGC, hoặc `fence add`.
+- **Bản đồ offline** (tab Điều hướng → "Bản đồ nền", "Offline…"):
+  - Ô bản đồ OpenStreetMap đã xem được lưu trong trình duyệt (tối đa khoảng 6000 ô, ô cũ nhất xoá trước). Xem trước khu bay khi ở nhà có mạng, ra bãi không có mạng vẫn có bản đồ.
+  - Nhập ZIP ô dạng `z/x/y.png|jpg` (MOBAC, QGIS "Generate XYZ tiles"). Thiếu mức zoom thì dùng ô zoom thấp hơn phóng to.
+  - Bộ nhớ riêng theo từng địa chỉ: trang trên GitHub Pages, file HTML và trang trong drone ESP32 (192.168.4.1) mỗi nơi giữ bản đồ riêng.
 
 ---
 
@@ -496,6 +511,7 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 | Va chạm | `crash_detect` | tắt motor |
 | Xoay yaw mất kiểm soát | `yaw_spin_thr` | phục hồi |
 | Rung | `vibe_warn` | OSD "VIBRATION" |
+| Gia tốc kế bị kịch (> ±15,5 g) | – | OSD "ACC CLIPPING", web, blackbox (cờ bit 8): rung quá mạnh, ước lượng độ cao / vị trí sai. Kiểm tra cách gắn FC, cánh, motor |
 | IMU hỏng | `imu_dual 1` | IMU 2 thay thế |
 
 - **Kiểm tra trước arm:** 18 mục, hiện ở tab Tổng quan và trên OSD ("Chưa thể arm").
@@ -516,6 +532,7 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 | 3 | MAVLink | 9 | VTX SmartAudio |
 | 4 | MSP (cả optical flow / rangefinder MSP) | 10 | VTX Tramp |
 | 5 | MSP DisplayPort (OSD kính số) | 11 | configurator (cầu WiFi ESP32-C3 / Bluetooth) |
+| | | 12 | MAVLink tốc độ thấp (LoRa / radio chậm, cấu hình v29) |
 
 **Cổng serial theo board** (tab Cổng hiện UART và chân dưới tên từng cổng):
 
@@ -540,6 +557,10 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
   - `wifi_armed 0` (mặc định): tắt WiFi khi bay.
 - **CLI `wifi`** (chỉ qua USB): `wifi name <tên>`, `wifi pass <mật khẩu>`, `wifi webpass <mật khẩu|->`, `wifi reset`.
 - **MAVLink:** nhiều drone thì đặt `mav_sysid` khác nhau.
+- **MAVLink tốc độ thấp** (chức năng 12): cho module LoRa trong suốt như E32 / E22 (SX1278 / SX1268) hoặc radio 9600 baud.
+  - Gửi ít hơn khoảng 4 lần: trạng thái 2 s, tư thế / vị trí / HUD 1 s, GPS 3 s, không gửi kênh RC, tham số mỗi 200 ms. Khoảng 90 B/s, vừa với 9600 bit/s.
+  - Nối E32: TX module → RX cổng, RX module → TX cổng, M0 = M1 = GND (chế độ thường), VCC 5 V, GND chung. Hai module cùng kênh, cùng địa chỉ, cùng tốc độ không trung (air rate). Baud mặc định 9600.
+  - Module thứ hai cắm USB-UART vào máy tính, mở QGC / Mission Planner ở cổng COM đó, 9600 baud.
 
 ---
 
@@ -672,14 +693,14 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Hạng mục | Kết quả |
 |---|---|
 | Biên dịch PlatformIO | 12 / 12 môi trường (6 ESP32, 5 STM32 + QEMU, cầu WiFi C3) |
-| Unit test (kèm AddressSanitizer + UBSan) | **206 / 206** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, OSD v26, migrate v25 → v26) |
-| Mô phỏng toàn hệ thống | 40 kịch bản đạt (EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT…) |
+| Unit test (kèm AddressSanitizer + UBSan) | **218 / 218** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v29, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
+| Mô phỏng toàn hệ thống | 42 kịch bản đạt (EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
 | QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset |
 | Script Lua EdgeTX | `aqtlm` + `aqcfg` chạy trong Lua 5.2, `aqcfg` nói chuyện với mã MSP-over-CRSF thật |
 | MAVLink đối chiếu pymavlink | 17 / 17 |
-| Bộ phân tích blackbox | 18 / 18 (gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp) |
+| Bộ phân tích blackbox | 21 / 21 (gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp) |
 | Firmware WebAssembly | 5 / 5 |
-| Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, nạp firmware, thẻ SD |
+| Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, bản đồ offline, PWA, nạp firmware, thẻ SD |
 
 **CI:** `.github/workflows/ci.yml` chạy unit test (cả sanitizer), mô phỏng, bộ phân tích và build 9 board cho mỗi lần push. File firmware giữ 14 ngày. Để dùng: đưa thư mục dự án lên GitHub (`git init`, `git add .`, `git commit`, `git push`).
 

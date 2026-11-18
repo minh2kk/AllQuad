@@ -230,6 +230,7 @@ void Cli::cmdSelftest() {
     else if (!st.armed && r > 5) line(1, "imu", "%s: gyro %.1f deg/s at rest - keep the quad still, recalibrate gyro", info_->imu, (double)r);
     else line(0, "imu", "%s: accel %.2f m/s^2, gyro %.1f deg/s, vibration %.1f", info_->imu, (double)g, (double)r, (double)a.vibration);
     if (!c.acc_calibrated) line(1, "imu", "accelerometer not calibrated (calib_acc, quad level)");
+    if (a.accClips) line(1, "imu", "accelerometer clipped %lu times since boot (beyond +-16 g): hard vibration or a loose FC", (unsigned long)a.accClips);
     if (st.armBlockers & ARM_IMU_FAIL) line(2, "imu", "failed over to the second IMU - check the first one's wiring");
   }
   // I2C sensors
@@ -281,22 +282,22 @@ void Cli::cmdSelftest() {
     // port functions: set on a UART this board does not have, or a single-use function on two ports
     const Config& pc = bus::config;
     static const char* const fnName[] = {"-", "RX", "GPS", "MAVLink", "MSP", "DisplayPort", "ESC telemetry", "rangefinder",
-                                         "blackbox", "SmartAudio", "Tramp", "configurator"};
-    int first[12];
-    for (int f = 0; f < 12; f++) first[f] = -1;
+                                         "blackbox", "SmartAudio", "Tramp", "configurator", "MAVLink (low rate)"};
+    int first[13];
+    for (int f = 0; f < 13; f++) first[f] = -1;
     int portIssues = 0;
     for (int i = 0; i < (int)hal::Port::COUNT; i++) {
       // UDP exists only with WiFi (ESP32); its default MAVLink function is harmless elsewhere
       if (i == (int)hal::Port::CONSOLE || i == (int)hal::Port::UDP) continue;
       uint8_t f = portFnOf(pc, i);
-      if (!f || f >= 12) continue;
+      if (!f || f >= 13) continue;
       if (!hal::portExists((hal::Port)i)) {
         line(1, "ports", "%s is set to %s, but this board has no %s (function ignored)", pn[i], fnName[f], pn[i]);
         portIssues++;
         continue;
       }
       // several MAVLink / MSP ports are fine; everything else talks to one device
-      if (f != (uint8_t)PortFn::MAVLINK && f != (uint8_t)PortFn::MSP && first[f] >= 0) {
+      if (f != (uint8_t)PortFn::MAVLINK && f != (uint8_t)PortFn::MAVLINK_LOW && f != (uint8_t)PortFn::MSP && first[f] >= 0) {
         line(1, "ports", "%s on both %s and %s: only %s is used", fnName[f], pn[first[f]], pn[i], pn[first[f]]);
         portIssues++;
       }

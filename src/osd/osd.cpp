@@ -371,6 +371,7 @@ void Renderer::render(uint32_t now) {
   else if (st.warnings & WARN_RESCUE) w = "RESCUE: NO PROGRESS";
   else if (st.warnings & WARN_GPS_GLITCH) w = "GPS GLITCH";
   else if (st.warnings & WARN_EKF) w = "EKF: SENSOR FAULT";
+  else if (st.warnings & WARN_ACC_CLIP) w = "ACC CLIPPING";
   else if (st.warnings & WARN_VIBRATION) w = "VIBRATION";
   else if (st.warnings & WARN_RPM_LOST) w = "RPM TELEMETRY LOST";
   else if (st.warnings & WARN_LAUNCH) w = "LAUNCH READY";
@@ -387,6 +388,7 @@ void Renderer::render(uint32_t now) {
     for (int i = 0; i < ARM_COUNT_BITS; i++)
       if (st.armBlockers & (1u << i)) { snprintf(t, sizeof(t), "NOT READY:%s", armCheckName(i)); w = t; break; }
   }
+  else if (!st.armed && (st.warnings & WARN_BEGINNER)) w = "BEGINNER MODE";
   if (w && (blink || !st.armed || !c.osd_blink)) put(P[OSD_WARNINGS], w);
   }  // normal screen
 

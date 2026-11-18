@@ -43,6 +43,8 @@ function extrasStatus(st) {
   if (st.warn & 2048) w.push('<span class="chip">Launch control: đẩy ga để phóng</span>');
   if (st.warn & 4096) w.push('<span class="chip bad">GPS Rescue: bay về không tiến triển, đang hạ cánh</span>');
   if (st.warn & 16384) w.push('<span class="chip bad">Đang bay bằng IMU thứ hai: kiểm tra IMU chính</span>');
+  if (st.warn & 65536) w.push('<span class="chip bad">Gia tốc kế bị quá tải (vượt ±16 g): rung rất mạnh hoặc FC gắn lỏng, ước lượng tư thế / độ cao sẽ trôi</span>');
+  if (st.warn & 131072) w.push('<span class="chip">Chế độ bay lần đầu: đang giới hạn góc, tốc độ, ga và khoảng cách</span>');
   if (st.warn & 32768) w.push(`<span class="chip bad">Mất RPM telemetry${st.rpml ? " motor " + [1, 2, 3, 4].filter((m) => st.rpml & (1 << (m - 1))).join(", ") : ""}: RPM filter của motor đó đã tắt</span>`);
   const host = $("xWarn");
   if (host) { setHtml(host, w.join("")); host.hidden = !w.length; }
@@ -424,9 +426,120 @@ function demoInit() {
   b.onclick = demoStart;
 }
 
-// ---------------------------------------------------------------- OpenStreetMap tiles
+// ---------------------------------------------------------------- OpenStreetMap tiles (+ offline store)
 // Web Mercator around the home position; drawn under the grid / mission / trail of the nav map.
-const TILES = { on: lsGet("aq-tiles", false), cache: new Map(), redraw: 0 };
+// Every tile shown is kept in IndexedDB (works on http://192.168.4.1 too, unlike Cache Storage), so the
+// field without Internet still has the map you looked at at home. A ZIP of z/x/y.png tiles (MOBAC,
+// QGIS "XYZ tiles", ...) can be imported; missing zoom levels are drawn from a coarser tile.
+const TILES = { on: lsGet("aq-tiles", false), cache: new Map(), redraw: 0, db: null, max: 6000 };
+const TILE_URL = (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+function tileDb() {
+  if (TILES.db) return TILES.db;
+  TILES.db = new Promise((ok) => {
+    try {
+      const r = indexedDB.open("aq-tiles", 1);
+      r.onupgradeneeded = () => { const st = r.result.createObjectStore("t"); st.createIndex("at", "at"); };
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => ok(null);
+    } catch (e) { ok(null); }
+  });
+  return TILES.db;
+}
+async function tileTx(mode, fn) {
+  const db = await tileDb();
+  if (!db) return null;
+  return new Promise((ok) => {
+    try {
+      const tx = db.transaction("t", mode), st = tx.objectStore("t");
+      let res = null;
+      const r = fn(st);
+      if (r) r.onsuccess = () => { res = r.result; };
+      tx.oncomplete = () => ok(res);
+      tx.onerror = tx.onabort = () => ok(null);
+    } catch (e) { ok(null); }
+  });
+}
+const tileGet = (k) => tileTx("readonly", (st) => st.get(k));
+const tilePut = (k, blob, src) => tileTx("readwrite", (st) => st.put({ b: blob, at: Date.now(), src, n: blob.size }, k));
+async function tileStats() {
+  const db = await tileDb();
+  if (!db) return null;
+  return new Promise((ok) => {
+    const s = { n: 0, bytes: 0, zip: 0 };
+    try {
+      const c = db.transaction("t").objectStore("t").openCursor();
+      c.onsuccess = () => {
+        const cur = c.result;
+        if (!cur) return ok(s);
+        s.n++; s.bytes += cur.value.n || 0; if (cur.value.src === "zip") s.zip++;
+        cur.continue();
+      };
+      c.onerror = () => ok(s);
+    } catch (e) { ok(s); }
+  });
+}
+// drop the oldest viewed tiles above TILES.max (imported ones stay)
+async function tileTrim() {
+  const s = await tileStats();
+  if (!s || s.n - s.zip <= TILES.max) return;
+  let drop = s.n - s.zip - TILES.max;
+  await tileTx("readwrite", (st) => {
+    const c = st.index("at").openCursor();
+    c.onsuccess = () => {
+      const cur = c.result;
+      if (!cur || drop <= 0) return;
+      if (cur.value.src !== "zip") { cur.delete(); drop--; }
+      cur.continue();
+    };
+    return null;
+  });
+}
+async function tileClear() {
+  await tileTx("readwrite", (st) => st.clear());
+  for (const e of TILES.cache.values()) if (e.url) URL.revokeObjectURL(e.url);
+  TILES.cache.clear();
+}
+function tileShow(e, blob) {
+  e.url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => { e.st = 1; cancelAnimationFrame(TILES.redraw); TILES.redraw = requestAnimationFrame(drawNav); };
+  img.onerror = () => { e.st = 2; };
+  img.src = e.url;
+  e.img = img;
+}
+// one tile: memory -> IndexedDB -> network (kept). st 0 loading, 1 ready, 2 not available.
+// net = false: look in the store only (coarser tiles used as a fallback are never downloaded)
+function tileNet(e, z, x, y, k) {
+  e.net = true;
+  if (navigator.onLine === false) { e.st = 2; return; }
+  e.st = 0;
+  fetch(TILE_URL(z, x, y), { mode: "cors" }).then((r) => { if (!r.ok) throw 0; return r.blob(); }).then(async (blob) => {
+    tileShow(e, blob);
+    await tilePut(k, blob, "osm");
+    if (Math.random() < 0.02) tileTrim();
+  }).catch(() => { e.st = 2; });
+}
+function tileEntry(z, x, y, net = true) {
+  const k = `${z}/${x}/${y}`;
+  let e = TILES.cache.get(k);
+  if (e) {
+    if (net && e.st === 2 && !e.net) tileNet(e, z, x, y, k);
+    return e;
+  }
+  e = { st: 0, img: null, url: "", net: false };
+  TILES.cache.set(k, e);
+  if (TILES.cache.size > 600) {
+    const [ok, old] = TILES.cache.entries().next().value;
+    if (old.url) URL.revokeObjectURL(old.url);
+    TILES.cache.delete(ok);
+  }
+  tileGet(k).then((hit) => {
+    if (hit && hit.b) tileShow(e, hit.b);
+    else if (net) tileNet(e, z, x, y, k);
+    else e.st = 2;
+  });
+  return e;
+}
 function tileOrigin() {
   const m = S.mission;
   if (m && m.home && (m.lat || m.lon)) return [m.lat, m.lon];
@@ -451,28 +564,83 @@ function mapTiles(g, w, h, k, cn, ce) {
   if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 64) return;
   g.save();
   g.globalAlpha = document.documentElement.dataset.theme === "dark" ? 0.55 : 0.8;
+  g.imageSmoothingEnabled = true;
+  let missing = 0;
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     if (ty < 0 || ty >= 2 ** z) continue;
     const xx = ((tx % 2 ** z) + 2 ** z) % 2 ** z;
-    const url = `https://tile.openstreetmap.org/${z}/${xx}/${ty}.png`;
-    let img = TILES.cache.get(url);
-    if (!img) {
-      img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => { cancelAnimationFrame(TILES.redraw); TILES.redraw = requestAnimationFrame(drawNav); };
-      img.src = url;
-      TILES.cache.set(url, img);
-      if (TILES.cache.size > 300) TILES.cache.delete(TILES.cache.keys().next().value);
+    const dx = w / 2 + (tx * 256 - cx) * s, dy = h / 2 + (ty * 256 - cy) * s, dw = 256 * s + 0.5;
+    const e = tileEntry(z, xx, ty);
+    if (e.st === 1) { g.drawImage(e.img, dx, dy, dw, dw); continue; }
+    // not here (yet): a coarser tile scaled up, if one is stored
+    let drawn = false;
+    for (let up = 1; up <= z && !drawn; up++) {
+      const f = 2 ** up, pe = tileEntry(z - up, Math.floor(xx / f), Math.floor(ty / f), false);
+      if (pe.st !== 1) continue;
+      const sz = 256 / f;
+      g.drawImage(pe.img, (xx % f) * sz, (ty % f) * sz, sz, sz, dx, dy, dw, dw);
+      drawn = true;
     }
-    if (img.complete && img.naturalWidth)
-      g.drawImage(img, w / 2 + (tx * 256 - cx) * s, h / 2 + (ty * 256 - cy) * s, 256 * s + 0.5, 256 * s + 0.5);
+    if (!drawn && e.st === 2) missing++;
   }
   g.restore();
   g.font = `11px ${css("--num")}`;
-  const t = "© OpenStreetMap contributors";
+  const t = "© OpenStreetMap contributors" + (missing ? ` · ${missing} ô chưa có (offline)` : "");
   const tw = g.measureText(t).width;
   g.fillStyle = css("--sheet"); g.fillRect(w - tw - 10, h - 18, tw + 10, 18);
   g.fillStyle = css("--ink-2"); g.textAlign = "left"; g.fillText(t, w - tw - 5, h - 5);
+}
+
+// ZIP of tiles: read the central directory, inflate with DecompressionStream (no library)
+async function zipTiles(buf, onEntry) {
+  const d = new DataView(buf), u8 = new Uint8Array(buf);
+  let eo = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--)
+    if (d.getUint32(i, true) === 0x06054b50) { eo = i; break; }
+  if (eo < 0) throw new Error("không phải file ZIP");
+  let n = d.getUint16(eo + 10, true), p = d.getUint32(eo + 16, true);
+  const dec = new TextDecoder();
+  let done = 0;
+  while (n-- > 0 && d.getUint32(p, true) === 0x02014b50) {
+    const meth = d.getUint16(p + 10, true), csz = d.getUint32(p + 20, true);
+    const nl = d.getUint16(p + 28, true), xl = d.getUint16(p + 30, true), cl = d.getUint16(p + 32, true);
+    const lo = d.getUint32(p + 42, true), name = dec.decode(u8.subarray(p + 46, p + 46 + nl));
+    p += 46 + nl + xl + cl;
+    const m = /(?:^|\/)(\d{1,2})\/(\d+)\/(\d+)\.(png|jpe?g|webp)$/i.exec(name);
+    if (!m || (meth !== 0 && meth !== 8)) continue;
+    const start = lo + 30 + d.getUint16(lo + 26, true) + d.getUint16(lo + 28, true);
+    let data = u8.slice(start, start + csz);
+    if (meth === 8) data = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+    const type = /png/i.test(m[4]) ? "image/png" : /webp/i.test(m[4]) ? "image/webp" : "image/jpeg";
+    await onEntry(`${+m[1]}/${+m[2]}/${+m[3]}`, new Blob([data], { type }));
+    done++;
+  }
+  return done;
+}
+async function tilesImport(file) {
+  const out = $("tileInfo");
+  if (typeof DecompressionStream !== "function") { toast("Trình duyệt này không giải nén được ZIP (cần Chrome / Edge / Firefox mới).", "bad"); return 0; }
+  if (!(await tileDb())) { toast("Trình duyệt không cho lưu dữ liệu (chế độ ẩn danh?).", "bad"); return 0; }
+  try {
+    if (out) out.textContent = "Đang nhập…";
+    const n = await zipTiles(await file.arrayBuffer(), async (k, blob) => {
+      await tilePut(k, blob, "zip");
+      const e = TILES.cache.get(k);
+      if (e && e.st !== 1) { if (e.url) URL.revokeObjectURL(e.url); TILES.cache.delete(k); }
+    });
+    for (const [k, e] of TILES.cache) if (e.st === 2) TILES.cache.delete(k);
+    toast(n ? `Đã nhập ${n} ô bản đồ.` : "File ZIP không có ô nào dạng z/x/y.png.", n ? "" : "bad");
+    drawNav();
+    tilesInfo();
+    return n;
+  } catch (e) { toast("Không đọc được file ZIP: " + e.message, "bad"); tilesInfo(); return 0; }
+}
+async function tilesInfo() {
+  const out = $("tileInfo");
+  if (!out) return;
+  const s = await tileStats();
+  if (!s) { out.textContent = "Trình duyệt không cho lưu bản đồ (chế độ ẩn danh?)."; return; }
+  out.textContent = s.n ? `Đã lưu ${s.n} ô (${(s.bytes / 1048576).toFixed(1)} MB${s.zip ? `, ${s.zip} ô nhập từ ZIP` : ""}).` : "Chưa lưu ô nào: bật Bản đồ nền khi có Internet và xem qua khu vực sẽ bay.";
 }
 function tilesInit() {
   const row = $("mapReload") && $("mapReload").parentElement;
@@ -482,9 +650,34 @@ function tilesInit() {
   b.id = "mapTiles";
   b.setAttribute("aria-pressed", String(TILES.on));
   b.textContent = "Bản đồ nền";
-  b.title = "Ảnh bản đồ OpenStreetMap dưới bản đồ điều hướng (cần Internet)";
+  b.title = "Ảnh bản đồ OpenStreetMap dưới bản đồ điều hướng. Ô đã xem được lưu lại để dùng khi không có Internet.";
   b.onclick = () => { TILES.on = !TILES.on; lsSet("aq-tiles", TILES.on); b.setAttribute("aria-pressed", String(TILES.on)); drawNav(); };
   row.insertBefore(b, row.firstChild);
+  const o = document.createElement("button");
+  o.className = "btn ghost";
+  o.id = "mapOffline";
+  o.textContent = "Offline…";
+  o.title = "Bản đồ khi không có Internet";
+  row.insertBefore(o, b.nextSibling);
+  const box = document.createElement("div");
+  box.id = "tileBox";
+  box.className = "note";
+  box.style.marginTop = "10px";
+  box.hidden = true;
+  box.innerHTML = `<b>Bản đồ offline</b>
+    <p class="hint">Mỗi ô bản đồ đã hiện được lưu trong trình duyệt này (tối đa ~${TILES.max} ô, ô cũ nhất bị xoá trước). Ra bãi bay không có mạng vẫn thấy khu vực đã xem trước ở nhà.
+    Có thể nhập file ZIP chứa ô dạng <code>z/x/y.png</code> (xuất từ MOBAC, QGIS "Generate XYZ tiles"…). Thiếu mức zoom nào thì dùng ô zoom thấp hơn phóng to.</p>
+    <p id="tileInfo" class="hint"></p>
+    <span class="row"><label class="btn ghost">Nhập ZIP<input type="file" id="tileZip" accept=".zip,application/zip" hidden></label>
+    <button class="btn ghost" id="tileClear">Xoá bản đồ đã lưu</button><button class="btn ghost" id="tileClose">Đóng</button></span>`;
+  row.parentElement.after(box);
+  o.onclick = () => { box.hidden = !box.hidden; if (!box.hidden) tilesInfo(); };
+  box.querySelector("#tileClose").onclick = () => { box.hidden = true; };
+  box.querySelector("#tileZip").onchange = async (ev) => { const f = ev.target.files[0]; ev.target.value = ""; if (f) await tilesImport(f); };
+  box.querySelector("#tileClear").onclick = async () => {
+    if (!confirm("Xoá mọi ô bản đồ đã lưu (cả ô nhập từ ZIP)?")) return;
+    await tileClear(); tilesInfo(); drawNav();
+  };
 }
 
 // ---------------------------------------------------------------- blackbox: compare + CSV

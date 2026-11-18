@@ -593,8 +593,9 @@ void MavlinkLink::update(uint32_t now, bool readPort) {
     else { upLastMs_ = now; sendMissionRequest((uint16_t)upNext_); }
   }
   // parameter streaming (a few per call, bounded by TX space)
-  for (int k = 0; k < 6 && paramStreamIdx_ >= 0; k++) {
-    if (hal::portWriteSpace(port_) < 40) break;
+  for (int k = 0; k < (low_ ? 1 : 6) && paramStreamIdx_ >= 0; k++) {
+    if (hal::portWriteSpace(port_) < 40 || (low_ && now - tParam_ < 200)) break;
+    tParam_ = now;
     sendParam(paramStreamIdx_++);
     if (paramStreamIdx_ >= paramCount()) paramStreamIdx_ = -1;
   }
@@ -606,15 +607,16 @@ void MavlinkLink::update(uint32_t now, bool readPort) {
   }
 
   bool fast = port_ == hal::Port::UDP || port_ == hal::Port::CONSOLE;
+  // stream periods (ms): normal link / slow radio (low rate: about 170 bytes per second)
   if (now - tHb_ >= 1000) { tHb_ = now; sendHeartbeat(); }
-  if (now - tSys_ >= 500) { tSys_ = now; sendSysStatus(); }
-  if (now - tAtt_ >= (fast ? 50u : 100u)) { tAtt_ = now; sendAttitude(now); }
-  if (now - tPos_ >= 200) { tPos_ = now; sendPosition(now); }
-  if (now - tGps_ >= 500) { tGps_ = now; sendGpsRaw(now); }
-  if (now - tHud_ >= 250) { tHud_ = now; sendVfrHud(); }
-  if (now - tRc_ >= 500) { tRc_ = now; sendRcChannels(now); }
-  if (now - tHome_ >= 2000) { tHome_ = now; sendHome(); }
-  if (now - tMc_ >= 1000) {
+  if (now - tSys_ >= (low_ ? 2000u : 500u)) { tSys_ = now; sendSysStatus(); }
+  if (now - tAtt_ >= (low_ ? 1000u : fast ? 50u : 100u)) { tAtt_ = now; sendAttitude(now); }
+  if (now - tPos_ >= (low_ ? 1000u : 200u)) { tPos_ = now; sendPosition(now); }
+  if (now - tGps_ >= (low_ ? 3000u : 500u)) { tGps_ = now; sendGpsRaw(now); }
+  if (now - tHud_ >= (low_ ? 1000u : 250u)) { tHud_ = now; sendVfrHud(); }
+  if (!low_ && now - tRc_ >= 500) { tRc_ = now; sendRcChannels(now); }
+  if (now - tHome_ >= (low_ ? 10000u : 2000u)) { tHome_ = now; sendHome(); }
+  if (now - tMc_ >= (low_ ? 3000u : 1000u)) {
     tMc_ = now;
     VehicleStatus st = bus::status.get();
     W w;

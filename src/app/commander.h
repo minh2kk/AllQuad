@@ -19,6 +19,9 @@ class Commander {
   void run(uint32_t nowMs, float dt);
 
  private:
+  // the settings the flight code uses: bus::config, or a copy with the first-flight limits (beginner 1)
+  const fc::Config& cfg() const { return bus::config.beginner ? eff_ : bus::config; }
+  fc::Config eff_{};
   void reconfigure();
   void fuseSensors(uint32_t nowMs, float dt);
   void handleRequests(uint32_t nowMs);
@@ -53,6 +56,8 @@ class Commander {
   bool launchWaiting_ = false;
   // vibration warning (held for 2 s)
   uint32_t vibeWarnUntilMs_ = 0;
+  uint32_t clipsSeen_ = 0, clipWarnUntilMs_ = 0, clipsFlight_ = 0;  // accelerometer clipping
+  bool clipTold_ = false;
   nav::Navigator nav_;
   fc::AltitudeControl alt_;
   fc::PositionControl pos_;

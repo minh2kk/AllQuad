@@ -72,6 +72,7 @@ struct AttitudeState {
   Vec3 dAng, dVel;
   float dt;
   float vibration;          // accelerometer vibration (m/s^2, high-pass RMS)
+  uint32_t accClips;        // accelerometer samples at the end of the range since boot
   bool valid;
   bool gyroCalibrated;
   uint32_t timeUs;
@@ -167,7 +168,7 @@ enum ArmCheck : uint32_t {
 constexpr int ARM_COUNT_BITS = 18;
 const char* armCheckName(int bit);
 
-enum Warning : uint16_t {
+enum Warning : uint32_t {
   WARN_BAT_LOW = 1 << 0,
   WARN_BAT_CRIT = 1 << 1,
   WARN_RX_LOST = 1 << 2,
@@ -184,6 +185,8 @@ enum Warning : uint16_t {
   WARN_GCS_LOST = 1 << 13,      // GCS heartbeat lost (GUIDED / MISSION)
   WARN_IMU2 = 1 << 14,          // flying on the second IMU
   WARN_RPM_LOST = 1 << 15,      // a motor's RPM telemetry stopped in flight (its RPM notches are off)
+  WARN_ACC_CLIP = 1 << 16,      // accelerometer hit the end of its range (hard vibration / loose FC)
+  WARN_BEGINNER = 1 << 17,      // first-flight limits active (information)
 };
 
 // navigation EKF health (published by the control task)
@@ -213,7 +216,7 @@ struct VehicleStatus {
   FlightMode mode;
   NavPhase navPhase;
   uint32_t armBlockers;
-  uint16_t warnings;
+  uint32_t warnings;
   bool failsafe;
   bool landed;
   uint32_t armedTimeMs;

@@ -6,7 +6,7 @@ Needs build/web/AllQuad-Configurator.html with the demo (tools/build_wasm.sh, to
 build/web/normal.bin (node test/web/test_analysis.js) and Playwright + Chromium.
     python3 test/web/test_extras.py [screenshot_dir]
 """
-import asyncio, base64, os, sys, zlib, struct
+import asyncio, io, zipfile, base64, os, sys, zlib, struct
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -90,6 +90,51 @@ async def main():
         check(len(tiles) >= 1 and drawn[1] > drawn[0] + 20, "map tiles: %d requested (zoom %s), drawn under the map %s" % (len(tiles), sorted(set(z)), drawn))
         check(await pg.evaluate("localStorage.getItem('aq-tiles')") == "true", "map tiles: choice remembered")
         await pg.screenshot(path=os.path.join(SHOTS, "extras-tiles.png"))
+
+        # ---- offline map: viewed tiles kept in IndexedDB, ZIP import, coarser zoom as fallback
+        px = """(() => { const c = document.getElementById('navMap'), g = c.getContext('2d');
+            const d = g.getImageData(c.width / 4, c.height / 4, 1, 1).data; return [d[0], d[1], d[2]]; })()"""
+        await pg.wait_for_timeout(500)
+        st = await pg.evaluate("tileStats()")
+        check(st and st["n"] >= 1, "offline map: viewed tiles stored (%s)" % st)
+        offline = {"on": True}
+
+        async def no_net(route):
+            await route.abort()
+        await ctx.unroute("https://tile.openstreetmap.org/**")
+        await ctx.route("https://tile.openstreetmap.org/**", no_net)
+        n0 = len(tiles)
+        await pg.evaluate("TILES.cache.clear(); drawNav()")
+        await pg.wait_for_timeout(800)
+        await pg.evaluate("drawNav()")
+        drawn = await pg.evaluate(px)
+        check(drawn[1] > drawn[0] + 20, "offline map: no Internet, the stored tiles still draw %s" % drawn)
+        await pg.click("#mapOffline")
+        await pg.wait_for_timeout(300)
+        info = await pg.inner_text("#tileInfo")
+        check(await pg.is_visible("#tileBox") and "Đã lưu" in info, "offline map: panel shows what is stored (%s)" % info)
+        await pg.click("#tileClear")  # confirm() accepted by the dialog handler
+        await pg.wait_for_timeout(400)
+        check((await pg.evaluate("tileStats()"))["n"] == 0, "offline map: clear empties the store")
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("Hanoi/3/6/3.png", png((200, 40, 40)))   # zoom 3 only: covers all of northern Vietnam
+            zf.writestr("readme.txt", "not a tile")
+        zp = os.path.join(SHOTS, "tiles-test.zip")
+        open(zp, "wb").write(zbuf.getvalue())
+        await pg.set_input_files("#tileZip", zp)
+        await pg.wait_for_timeout(1200)
+        await pg.evaluate("drawNav()")
+        await pg.wait_for_timeout(300)
+        await pg.evaluate("drawNav()")
+        drawn = await pg.evaluate(px)
+        st = await pg.evaluate("tileStats()")
+        info = await pg.inner_text("#tileInfo")
+        check(st["zip"] == 1 and st["n"] == 1 and "ZIP" in info, "offline map: ZIP import keeps the z/x/y tile, skips other files (%s)" % info)
+        check(drawn[0] > drawn[1] + 60, "offline map: missing zoom drawn from the imported zoom-3 tile %s" % drawn)
+        check(len(tiles) == n0, "offline map: nothing reached the network while offline")
+        await pg.screenshot(path=os.path.join(SHOTS, "extras-tiles-offline.png"))
+        await pg.click("#tileClose")
 
         # ---- VTX table
         await tab(pg, "ports")

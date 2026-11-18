@@ -6,24 +6,24 @@
    "file": "AllQuad-esp32s3-n16r8-app.bin",
    "name": "ESP32-S3 N16R8 (giữ cấu hình)",
    "target": "esp",
-   "size": 1468528,
-   "sha256": "6ad388623397806febc1b678689f632262beaf3315f6dbda479d29c56468aab2",
+   "size": 1473696,
+   "sha256": "8d735a3532e9923dde70d729834c65a70585989716ccbf2e9feb5da7dd55172c",
    "match": "ESP32-S3-N16R8"
   },
   {
    "file": "AllQuad-esp32s3-n16r8-full.bin",
    "name": "ESP32-S3 N16R8, file gộp (board trống / đổi phân vùng)",
    "target": "esp",
-   "size": 1534064,
-   "sha256": "32ef2a20f0fbb4fca3c11f31707c3028c366a654fc0eed3bd9d48d3d08d33465",
+   "size": 1539232,
+   "sha256": "1bcc56e3a845422c70586d39aab9549c9161e34df3982820ad8c2c7c4ea174ac",
    "note": "File gộp ghi cả bảng phân vùng: cấu hình về mặc định (nhớ sao lưu)."
   },
   {
    "file": "AllQuad-esp32dev-full.bin",
    "name": "ESP32 DevKit (WROOM-32), file gộp",
    "target": "esp",
-   "size": 1559680,
-   "sha256": "991ccf6fb64a5525c49e08886717f57c3e69a503565da00717adfd255d270578",
+   "size": 1564880,
+   "sha256": "d8e47974e9cf723078639f779dad1496f090959f99ab0603bda583fd9d227054",
    "match": "ESP32-DevKit",
    "note": "Từ v2.1 ô firmware 4 MB lớn hơn: phải nạp file gộp này một lần, cấu hình về mặc định (nhớ sao lưu)."
   },
@@ -31,71 +31,71 @@
    "file": "AllQuad-esp32s3-app.bin",
    "name": "ESP32-S3 DevKitC (giữ cấu hình)",
    "target": "esp",
-   "size": 1463264,
-   "sha256": "bf8fd2b23e06a860e44a77a4ed91b91a46c31b4f687f879521052d8ee6334299",
+   "size": 1468416,
+   "sha256": "b4ea07509cda7ad10d3521aec6de21e6695c0cb8799b96bd4c3a6f8d4839bd0f",
    "match": "ESP32-S3-DevKitC"
   },
   {
    "file": "AllQuad-esp32c6-app.bin",
    "name": "ESP32-C6 DevKitC (giữ cấu hình)",
    "target": "esp",
-   "size": 1592256,
-   "sha256": "f4eed9cc962dada94a22076bf8c5a64462b876e22171f918656abc14f3dde363",
+   "size": 1597456,
+   "sha256": "b460838435f3bc57a718ddfa1a3b50d86bac9ffe57b7f15244bf6285a042471d",
    "match": "ESP32-C6"
   },
   {
    "file": "AllQuad-esp32p4-app.bin",
    "name": "ESP32-P4 (giữ cấu hình)",
    "target": "esp",
-   "size": 1543824,
-   "sha256": "922445693ec8e58dcd03358bd1e07bfbe425e49e8ae71cb2ed05fa1d2fb9db65",
+   "size": 1548880,
+   "sha256": "0457461981c513d0a6db619fd32a2850203602e949b7673c1a5b44a15ab5b8b9",
    "match": "ESP32-P4"
   },
   {
    "file": "AllQuad-bridge-esp32c3-full.bin",
    "name": "Cầu WiFi ESP32-C3 (không phải FC)",
    "target": "esp",
-   "size": 1218736,
-   "sha256": "7113f068c05ef7c543e0cb03e0aa1985a3783031c4eef4186852bacca5b20089"
+   "size": 1222256,
+   "sha256": "1f61b87dddeac4431112a7c1f8554c70f68901341d984cc8881702c8f3c6bf04"
   },
   {
    "file": "AllQuad-stm32h743_devebox.bin",
    "name": "STM32H743 DevEBox",
    "target": "stm",
-   "size": 339380,
-   "sha256": "0e7970ca53c5829973e23f0d58c37a745d5e7755847bbf8519d826125755dfa6",
+   "size": 340948,
+   "sha256": "1e1b59408b37839a1ba805c515d8c3d20735d423226f2bc66619d8b13421cc80",
    "match": "DevEBox"
   },
   {
    "file": "AllQuad-stm32h743_weact.bin",
    "name": "STM32H743 WeAct",
    "target": "stm",
-   "size": 339460,
-   "sha256": "b1563884bdf045ff1b9b6eb28230321179ffcd5828c898422a91212fc1067e79",
+   "size": 341028,
+   "sha256": "c20ec14341f666edd17f91f5e1a2b5957ee3a23799f6e8b686b76e0155865b3a",
    "match": "STM32H743-WeAct"
   },
   {
    "file": "AllQuad-stm32f405.bin",
    "name": "STM32F405",
    "target": "stm",
-   "size": 311768,
-   "sha256": "ff7741d10ec10ef86edd91daed15d313429c537304eb76a1f7b28bce8f26cee1",
+   "size": 313736,
+   "sha256": "f9e138864de100816b24246528d25eef9b5acb85f1fa25b8380360eb0787fa9a",
    "match": "STM32F405"
   },
   {
    "file": "AllQuad-stm32f722.bin",
    "name": "STM32F722",
    "target": "stm",
-   "size": 310808,
-   "sha256": "5d5c8205419fe32a4ae0a195729b89fc89f14fedc07f27943f65e14a2c6975ab",
+   "size": 312360,
+   "sha256": "7cedc0938a6df9ee386bab0c6dc93cac1b398b16db7c27c4de35c266eb361d1d",
    "match": "STM32F722"
   },
   {
    "file": "AllQuad-blackpill_f411ce.bin",
    "name": "STM32F411 Black Pill",
    "target": "stm",
-   "size": 310592,
-   "sha256": "cbc493eb272fbbc3730816ef39f2c0369f97f0b800a37c7cc741c36043b19686",
+   "size": 312576,
+   "sha256": "715de46fc568ec738753339d613d206346028a42b06207aafc3697e2c81dbafc",
    "match": "F411"
   }
  ]

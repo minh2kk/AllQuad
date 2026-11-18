@@ -1698,6 +1698,10 @@ const HINT = {
   d_min_gain: "Mức tăng D khi gyro rung (prop wash)", d_min_adv: "Mức tăng D khi gạt cần nhanh",
   ff_jitter: "FF: lọc rung cần (gạt chậm / tay run thì giảm FF; 0 = tắt)", ff_boost: "FF: tăng tốc khi giật cần (0 = tắt)",
   ff_max_pct: "FF: giảm dần trên % tốc độ tối đa (chống vọt lố cuối cú lật; 0 = tắt)",
+  thr_limit_pct: "Giới hạn ga (% cần ga ở ACRO / ANGLE / HORIZON; 100 = không giới hạn)",
+  motor_limit_pct: "Giới hạn công suất motor (% dải ra motor; cho motor / pin mạnh hơn khung cần)",
+  beginner: "Chế độ bay lần đầu: tự cân bằng, nghiêng 25°, quay 250 / 120 °/s, ga 75 %, rào ảo",
+  beg_radius: "Bay lần đầu: bán kính rào ảo quanh điểm cất cánh (m, cần GPS)",
   dyn_lpf_min: "Lọc gyro động: tần số cắt ở ga 0 (Hz), 0 = tắt", dyn_lpf_max: "Lọc gyro động: tần số cắt ở ga tối đa (Hz)",
   dyn_idle_rpm: "Dynamic idle: RPM tối thiểu ÷ 100 (cần RPM từ ESC), 0 = tắt", thr_boost: "Throttle boost: tăng phản ứng ga (0-10)",
   thrust_expo: "Tuyến tính hoá lực đẩy (0 = tắt, thường 0,6)", vbat_sag_comp: "Bù sụt áp pin (%): phản ứng như pin đầy",
@@ -1795,7 +1799,7 @@ ENUMS.imu_align = ENUMS.mag_align = ["0°", "90°", "180°", "270°", "0° lật
 // unit shown inside the box (by name pattern)
 const UNITS = [[/_hz$|^notch\d_cut$|^rpm_min_hz$|^dyn_notch_m/, "Hz"], [/_m$|^rth_alt$|^fence_radius$|^fence_alt_max$|^rf_max_m$|_radius$|^land_slow_alt$/, "m"],
   [/speed|^climb_rate_max$/, "m/s"], [/_ms$/, "ms"], [/_s$/, "s"], [/angle|^board_|_deg$|^mag_declination$|^level_trim/, "°"],
-  [/_pct$|^bat_reserve_pct$/, "%"], [/_cell$/, "V"], [/^bat_capacity$/, "mAh"], [/rc_rate$|max_rate$|^iterm_relax$|^yaw_spin_thr$|^at_rate$/, "°/s"],
+  [/_pct$|^bat_reserve_pct$/, "%"], [/^beg_radius$/, "m"], [/_cell$/, "V"], [/^bat_capacity$/, "mAh"], [/rc_rate$|max_rate$|^iterm_relax$|^yaw_spin_thr$|^at_rate$/, "°/s"],
   [/^arm_throttle_max$|^mr\d+_(lo|hi)$/, "µs"], [/^pos_max_accel$/, "m/s²"]];
 const unitOf = (n) => (UNITS.find(([re]) => re.test(n)) || [])[1] || "";
 // "Title: detail" / "Title (detail)" -> a short title and a grey detail line
@@ -1909,6 +1913,8 @@ function buildPid() {
   pcard(ex, "Ga & I-term", ["anti_gravity", "iterm_relax", "iterm_limit", "tpa_rate", "tpa_breakpoint", "thr_boost", "pidsum_limit", "pidsum_lim_yaw"], "Giữ drone ổn định khi đổi ga nhanh.");
   pcard(ex, "D động (D-min)", ["d_min_pct", "d_min_gain", "d_min_adv"], "D thấp khi bay êm cho motor mát, tăng khi rung hoặc gạt cần mạnh.");
   pcard(ex, "Feedforward nâng cao", ["ff_jitter", "ff_boost", "ff_max_pct"], "Mượt hơn khi gạt cần chậm (quay phim), phản ứng sớm hơn khi giật cần, không vọt quá tốc độ tối đa. Mặc định giống Betaflight.");
+  pcard(ex, "Giới hạn & bay lần đầu", ["beginner", "beg_radius", "thr_limit_pct", "motor_limit_pct"],
+    "Bay lần đầu: mọi chế độ tay thành ANGLE, nghiêng tối đa 25°, quay 250 °/s (yaw 120), ga 75 %, lên 1,5 m/s, rào ảo quanh điểm cất cánh (vượt rào thì tự RTH; rào cần GPS). Cài đặt đã lưu không bị đổi: tắt là bay như cũ. Giới hạn ga chỉ thu nhỏ cần ga; giới hạn motor thu nhỏ cả dải ra motor.");
   pcard(ex, "Cảm giác cần & lực đẩy", ["rc_smooth_hz", "thrust_expo", "vbat_sag_comp", "airmode"]);
   pcard(ex, "Tự cân bằng (ANGLE / HORIZON)", ["angle_p", "angle_limit", "horizon_trans"]);
   pcard(ex, "Profile", ["pid_profile", "prof_ch"], "3 bộ PID / rates, đổi bằng công tắc. Chọn Profile 2 / 3 ở trên bảng PID để sửa.");

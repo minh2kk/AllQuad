@@ -1611,6 +1611,71 @@ static void testConfigMigrationV27() {
             paramSet(c, b7, 57600) && portBaudOf(c, 8) == 57600,
         "Parameters: serial6 / serial7 function and baud");
 }
+static void testConfigMigrationV28() {
+  Config old;
+  configDefaults(old);
+  old.pid[2].p = 77;
+  old.port_baud_ext2[0] = 2;
+  size_t oldSize = ((offsetof(Config, port_baud_ext2) + sizeof(old.port_baud_ext2) + 3) & ~(size_t)3) + 4;  // v28: ... port_baud_ext2, crc
+  size_t end = offsetof(Config, port_baud_ext2) + sizeof(old.port_baud_ext2);
+  memset((uint8_t*)&old + end, 0x5A, oldSize - 4 - end);
+  old.version = 28;
+  old.size = (uint16_t)oldSize;
+  uint32_t crc = crc32(&old, oldSize - 4);
+  memcpy((uint8_t*)&old + oldSize - 4, &crc, 4);
+  memset((uint8_t*)&old + oldSize, 0xEE, sizeof(Config) - oldSize);
+  Config c = old;
+  bool ok = configMigrate(c);
+  CHECK(ok && configValid(c) && c.pid[2].p == 77 && c.port_baud_ext2[0] == 2 && c.thr_limit_pct == 100 && c.motor_limit_pct == 100 &&
+            c.beginner == 0 && c.beg_radius == 60,
+        "Config v28 -> v29: settings kept, no limits, first-flight mode off");
+  int t = paramFind("thr_limit_pct"), m = paramFind("motor_limit_pct"), b = paramFind("beginner"), r = paramFind("beg_radius");
+  CHECK(t >= 0 && m >= 0 && b >= 0 && r >= 0 && paramSet(c, t, 80) && c.thr_limit_pct == 80 && !paramSet(c, m, 30) &&
+            paramSet(c, b, 1) && c.beginner == 1 && paramSet(c, r, 100) && c.beg_radius == 100,
+        "Parameters: throttle / motor limit, first-flight mode and radius");
+}
+static void testBeginnerLimits() {
+  Config c;
+  configDefaults(c);
+  c.angle_limit_deg = 55;
+  c.beginner = 1;
+  c.thr_limit_pct = 100;
+  c.fence_enable = 0;
+  c.fence_radius = 500;
+  c.beg_radius = 50;
+  c.fence_alt_max = 0;
+  Config e = c;
+  beginnerLimits(e);
+  CHECK(e.angle_limit_deg <= 25 && e.thr_limit_pct <= 75 && e.fence_enable == 1 && e.fence_radius <= 50.5f && e.fence_alt_max <= 40.5f &&
+            e.pos_max_speed <= 3.01f && e.pos_max_angle_deg <= 20.5f,
+        "First-flight mode: tilt, throttle, speed and a 50 m / 40 m fence");
+  Config tame = c;
+  tame.angle_limit_deg = 15;
+  tame.thr_limit_pct = 60;
+  tame.fence_enable = 1;
+  tame.fence_radius = 30;
+  Config t2 = tame;
+  beginnerLimits(t2);
+  CHECK(t2.angle_limit_deg == tame.angle_limit_deg && t2.thr_limit_pct == 60 && t2.fence_radius <= 30.5f,
+        "First-flight mode only tightens: tamer settings stay as set");
+}
+static void testMavlinkLowRate() {
+  // LoRa E32 at 9600 bit/s carries ~900 B/s at best: the low-rate stream must fit well below that
+  auto rate = [](bool low) {
+    hal::host::reset();
+    configDefaults(bus::config);
+    comms::MavlinkLink link;
+    link.begin(hal::Port::SERIAL2);
+    link.setLowRate(low);
+    uint32_t t = 1000;
+    for (int i = 0; i < 1000; i++) { link.update(t); t += 10; }  // 10 s
+    return hal::host::out(hal::Port::SERIAL2).size() / 10.0;
+  };
+  double lo = rate(true), hi = rate(false);
+  char msg[120];
+  snprintf(msg, sizeof msg, "MAVLink low rate fits a 9600 bit/s LoRa link: %.0f B/s (normal %.0f B/s)", lo, hi);
+  CHECK(lo > 20 && lo < 300 && hi > lo * 3, msg);
+}
 static void testFeedForward() {
   // stick snap: boost starts FF earlier; slow drift (below the jitter threshold) gets little FF;
   // near the max rate FF fades out
@@ -2257,6 +2322,9 @@ int main(int argc, char** argv) {
   testConfigMigrationV25();
   testConfigMigrationV26();
   testConfigMigrationV27();
+  testConfigMigrationV28();
+  testBeginnerLimits();
+  testMavlinkLowRate();
   testFeedForward();
   testFlightFeel();
   testEllipsoidFit();

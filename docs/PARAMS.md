@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 371 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 375 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -262,19 +262,19 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 
 | Tham số | Mặc định | Giới hạn | Mô tả |
 |---|---|---|---|
-| `serial1_fn` (KĐL) | 1 | 0 … 11 | Chức năng của SERIAL1: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
-| `serial2_fn` (KĐL) | 2 | 0 … 11 | Chức năng của SERIAL2: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
-| `serial3_fn` (KĐL) | 3 | 0 … 11 | Chức năng của SERIAL3: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial1_fn` (KĐL) | 1 | 0 … 12 | Chức năng của SERIAL1: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial2_fn` (KĐL) | 2 | 0 … 12 | Chức năng của SERIAL2: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial3_fn` (KĐL) | 3 | 0 … 12 | Chức năng của SERIAL3: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `udp_fn` (KĐL) | 3 | 0 … 8 | Chức năng của cổng UDP (WiFi): 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `serial1_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL1 |
 | `serial2_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL2 |
 | `serial3_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL3 |
-| `serial4_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL4: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
-| `serial5_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL5: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial4_fn` (KĐL) | 0 | 0 … 12 | Chức năng của SERIAL4: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial5_fn` (KĐL) | 0 | 0 … 12 | Chức năng của SERIAL5: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `serial4_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL4 |
 | `serial5_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL5 |
-| `serial6_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL6: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
-| `serial7_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL7: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial6_fn` (KĐL) | 0 | 0 … 12 | Chức năng của SERIAL6: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial7_fn` (KĐL) | 0 | 0 … 12 | Chức năng của SERIAL7: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `serial6_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL6 |
 | `serial7_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL7 |
 | `wifi_enable` (KĐL) | 0 | 0 … 1 | WiFi + MAVLink qua UDP 14550 (QGroundControl không dây), kèm trang 192.168.4.1 |
@@ -298,6 +298,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `motor_poles` | 14 | 2 … 40 | Số cực từ của motor (thường 14) |
 | `esc_telemetry` (KĐL) | 0 | 0 … 1 | Đọc telemetry ESC (cần cho RPM filter) |
 | `motor_idle` | 0.055 | 0 … 0.2 | Ga không tải khi arm (0,055 = 5,5 %) |
+| `motor_limit_pct` | 100 % | 50 … 100 | Giới hạn công suất motor (% dải ra motor; cho motor / pin mạnh hơn khung cần) |
 | `dshot_bidir` (KĐL) | 0 | 0 … 1 | Bidirectional DShot: đọc RPM qua dây tín hiệu (RPM filter không cần dây telemetry; ESC cần Bluejay/BLHeli_32/AM32) |
 
 ## VTX & LED
@@ -424,6 +425,9 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 
 | Tham số | Mặc định | Giới hạn | Mô tả |
 |---|---|---|---|
+| `thr_limit_pct` | 100 % | 25 … 100 | Giới hạn ga (% cần ga ở ACRO / ANGLE / HORIZON; 100 = không giới hạn) |
+| `beginner` | 0 | 0 … 1 | Chế độ bay lần đầu: tự cân bằng, nghiêng 25°, quay 250 / 120 °/s, ga 75 %, rào ảo |
+| `beg_radius` | 60 m | 20 … 500 | Bay lần đầu: bán kính rào ảo quanh điểm cất cánh (m, cần GPS) |
 | `gps_max_hacc` | 5 | 1 … 50 | Bỏ fix có sai số lớn hơn (m) |
 | `gps_glitch_m` | 8 m | 2 … 100 | Nhảy vị trí lớn hơn mức này coi là nhiễu (m) |
 | `gps_glitch_s` | 10 s | 1 … 60 | Nhiễu kéo dài quá thời gian này thì chấp nhận vị trí mới (s) |

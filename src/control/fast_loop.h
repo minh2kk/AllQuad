@@ -44,6 +44,8 @@ class FastLoop {
   // delta angle / delta velocity (body) integrated since the last call (for the navigation EKF)
   void takeDelta(Vec3& dAng, Vec3& dVel, float& dt);
   float accVibration() const { return vibration_; }
+  uint32_t accClips() const { return accClips_; }       // accelerometer samples at the end of the range
+  static constexpr float ACC_CLIP = 15.5f * GRAVITY;    // +-16 g IMU range
   // CPU cycles of the last run(): gyro filter chain, attitude, PID + mixer
   uint32_t cycFilter() const { return cycFilter_; }
   uint32_t cycAhrs() const { return cycAhrs_; }
@@ -71,6 +73,7 @@ class FastLoop {
   Vec3 dAngSum_, dVelSum_;
   float dtSum_ = 0;
   float vibration_ = 0;
+  uint32_t accClips_ = 0;
   bool wasArmed_ = false;
   uint32_t cycFilter_ = 0, cycAhrs_ = 0, cycPid_ = 0;
   // RC smoothing: the setpoint arrives in steps (control task / RC frames); PT2 per axis

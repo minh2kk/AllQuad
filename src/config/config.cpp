@@ -1,6 +1,7 @@
 #include "../common/size_opt.h"  // -Os on ESP32 (not flight critical)
 #include "config.h"
 
+#include <math.h>
 #include <string.h>
 
 namespace fc {
@@ -71,6 +72,32 @@ static void v27Defaults(Config& c) {
 }
 static void v28Defaults(Config& c) {
   for (int i = 0; i < NUM_PORTS_EXT2; i++) { c.port_fn_ext2[i] = 0; c.port_baud_ext2[i] = 0; }
+}
+static void v29Defaults(Config& c) {
+  c.thr_limit_pct = 100;
+  c.motor_limit_pct = 100;
+  c.beginner = 0;
+  c.beg_radius = 60;
+}
+
+void beginnerLimits(Config& c) {
+  if (!c.beginner) return;
+  c.angle_limit_deg = fminf(c.angle_limit_deg, 25.0f);
+  for (int p = 0; p < 3; p++)
+    for (int a = 0; a < 3; a++) {
+      RateProfile& r = p == 0 ? c.rates[a] : c.prof_rates[p - 1][a];
+      float mx = a == 2 ? 120.0f : 250.0f;
+      r.max = fminf(r.max, mx);
+      r.center = fminf(r.center, mx);
+    }
+  if (c.thr_limit_pct > (uint8_t)(BEGINNER_THR * 100)) c.thr_limit_pct = (uint8_t)(BEGINNER_THR * 100);
+  c.climb_rate_max = fminf(c.climb_rate_max, 1.5f);
+  c.pos_max_speed = fminf(c.pos_max_speed, 3.0f);
+  c.pos_max_angle_deg = fminf(c.pos_max_angle_deg, 20.0f);
+  c.fence_enable = 1;
+  c.fence_radius = c.fence_radius > 0 ? fminf(c.fence_radius, (float)c.beg_radius) : (float)c.beg_radius;
+  c.fence_alt_max = c.fence_alt_max > 0 ? fminf(c.fence_alt_max, 40.0f) : 40.0f;
+  c.fence_action = (uint8_t)FailsafeAction::RTH;
 }
 static void v23Defaults(Config& c) {
   c.osd_canvas = 0;  // auto
@@ -286,6 +313,7 @@ void configDefaults(Config& c) {
   v26Defaults(c);
   v27Defaults(c);
   v28Defaults(c);
+  v29Defaults(c);
   configSeal(c);
 }
 
@@ -315,6 +343,7 @@ bool configMigrate(Config& c) {
   if (c.version < 26) v26Defaults(d);
   if (c.version < 27) v27Defaults(d);
   if (c.version < 28) v28Defaults(d);
+  if (c.version < 29) v29Defaults(d);
   configSeal(d);
   c = d;
   return true;

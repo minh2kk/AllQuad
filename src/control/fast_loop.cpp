@@ -110,6 +110,9 @@ FAST_CODE void FastLoop::run(const Vec3& gyroRad, const Vec3& acc, bool imuOk, c
   cycFilter_ = c1 - c0;
 
   // ---- accelerometer & attitude ----
+  // clipping: a sample at the end of the +-16 g range means the real acceleration was larger (hard
+  // vibration, a loose FC); the attitude / position estimate then drifts. Counted for the warning.
+  if (fabsf(acc.x) > ACC_CLIP || fabsf(acc.y) > ACC_CLIP || fabsf(acc.z) > ACC_CLIP) accClips_++;
   Vec3 a = acc - Vec3(c.acc_bias[0], c.acc_bias[1], c.acc_bias[2]);
   for (int i = 0; i < 3; i++) a[i] *= c.acc_scale[i];  // 6-point calibration (1 = none)
   for (int i = 0; i < 3; i++) accFilt_[i] = accLpf_[i].apply(a[i]);
@@ -229,9 +232,11 @@ FAST_CODE void FastLoop::run(const Vec3& gyroRad, const Vec3& acc, bool imuOk, c
     idle = fmaxf(idle, dynIdleOut_);
   }
   float sag = (sp.sagFactor > 1.0f && sp.sagFactor < 1.5f) ? sp.sagFactor : 1.0f;
+  // motor_output_limit: the whole output range scaled down (idle stays where it is)
+  float top = c.motor_limit_pct >= 50 && c.motor_limit_pct < 100 ? c.motor_limit_pct * 0.01f : 1.0f;
   for (int i = 0; i < 4; i++) {
     float m = Mixer::linearize(mix[i], c.thrust_expo);  // thrust -> motor command
-    out.motor[i] = constrainf((idle + m * (1.0f - idle)) * sag, 0.0f, 1.0f);
+    out.motor[i] = constrainf((idle + m * (top - idle)) * sag, 0.0f, fminf(top * sag, 1.0f));
   }
   cycPid_ = cycles() - c2;
 }

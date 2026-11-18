@@ -140,6 +140,7 @@ class SimImu : public drv::ImuDriver {
       ph += 2.0f * PI_F * 180.0f / 1000.0f;
       a += Vec3(opt.accVib * sinf(ph), opt.accVib * cosf(ph * 1.1f), opt.accVib * sinf(ph * 0.9f));
     }
+    for (int i = 0; i < 3; i++) a[i] = constrainf(a[i], -16.0f * GRAVITY, 16.0f * GRAVITY);  // accel range
     return true;
   }
   const char* name() const override { return "SIM-IMU"; }
@@ -1474,7 +1475,7 @@ void scenarioEkfFaults() {
   setup([](Config& c) { c.rth_alt = 15; });
   bool baroFault = false, magFault = false;
   float altErr = 0, disarmT = -1, holdErr = 0;
-  uint16_t warnSeen = 0;
+  uint32_t warnSeen = 0;
   run(150, [&](float t) {
     if (t >= 3.0f) rcIn.ch[4] = 2000;
     if (t >= 3.5f && t < 6.0f) rcIn.ch[RC_THROTTLE] = 1580;
@@ -1604,6 +1605,55 @@ void scenarioVibeWarn() {
   check("No warning with normal vibration", !warnLow, "%.0f", warnLow);
   check("VIBRATION warning with a loose / unbalanced prop", warnHigh, "%.0f", warnHigh);
 }
+
+void scenarioAccClip() {
+  printf("\n== clip: accelerometer beyond its +-16 g range -> ACC CLIPPING warning ==\n");
+  setup([](Config&) {});
+  bool early = false, warn = false;
+  uint32_t clips = 0;
+  run(14, [&](float t) {
+    if (t >= 3.0f) rcIn.ch[4] = 2000;
+    if (t >= 3.5f && t < 6.0f) rcIn.ch[RC_THROTTLE] = 1580;
+    if (t >= 6.0f) { rcIn.ch[5] = 2000; rcIn.ch[RC_THROTTLE] = 1500; }
+    opt.accVib = t > 9 ? 200.0f : 0.0f;  // a loose FC: spikes past 16 g
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (t > 4 && t < 8.5f && (s.warnings & WARN_ACC_CLIP)) early = true;
+    if (t > 10 && (s.warnings & WARN_ACC_CLIP)) warn = true;
+    clips = bus::attitude.get().accClips;
+  });
+  opt.accVib = 0;
+  check("No clipping warning in normal flight", !early, "%.0f", early);
+  check("ACC CLIPPING warning when the accelerometer saturates", warn && clips > 100, "%.0f samples", (float)clips);
+}
+
+void scenarioBeginner() {
+  printf("\n== beginner: first-flight limits (ACRO switch flies ANGLE, 25 deg, fence -> RTH) ==\n");
+  setup([](Config& c) { c.beginner = 1; c.beg_radius = 40; });
+  float maxTilt = 0, maxDist = 0, thrMax = 0;
+  bool angle = true, rth = false;
+  run(70, [&](float t) {
+    if (t >= 3.0f) rcIn.ch[4] = 2000;  // arm; the mode switch stays low (ACRO)
+    if (t >= 3.5f) rcIn.ch[RC_THROTTLE] = t > 6 && t < 7 ? 2000 : t >= 8 ? 1720 : 1600;  // more throttle when tilted
+    rcIn.ch[RC_ROLL] = t >= 8 ? 2000 : 1500;  // full roll and keep it there: drifts away
+    if (t >= 12) { rcIn.ch[5] = 2000; rcIn.ch[RC_THROTTLE] = 1500; }  // ALTHOLD (allowed), still full roll
+  }, [&](float t) {
+    VehicleStatus s = status();
+    float tilt = acosf(constrainf(quad.q.cosTilt(), -1.0f, 1.0f)) * RAD2DEG;
+    if (t > 8.5f && t < 12 && s.mode != FlightMode::RTH) {
+      maxTilt = fmaxf(maxTilt, tilt);
+      if (s.mode != FlightMode::ANGLE) angle = false;
+    }
+    if (t > 6.2f && t < 7) thrMax = fmaxf(thrMax, bus::setpoint.get().throttle);
+    if (s.mode == FlightMode::RTH) rth = true;
+    maxDist = fmaxf(maxDist, hypotf(quad.pos.x, quad.pos.y));
+    if (getenv("AQ_SIM_DEBUG") && fmodf(t, 2.0f) < 0.001f)
+      printf("  t %.0f mode %d pos %.1f %.1f alt %.1f tilt %.1f warn %x\n", t, (int)s.mode, quad.pos.x, quad.pos.y, alt(), tilt, (unsigned)s.warnings);
+  });
+  check("First flight: ACRO switch flies ANGLE, tilt <= 27 deg", angle && maxTilt < 27.0f, "%.1f deg", maxTilt);
+  check("First flight: full throttle stick gives 75 %", thrMax < 0.77f && thrMax > 0.7f, "%.2f", thrMax);
+  check("First flight: leaving the 40 m fence starts RTH", rth && maxDist < 70.0f, "max %.0f m", maxDist);
+}
 }  // namespace
 
 
@@ -1683,7 +1733,7 @@ int main(int argc, char** argv) {
       {"spin", scenarioSpin}, {"logic", scenarioLogic}, {"profiles", scenarioProfiles}, {"polyfence", scenarioPolyFence},
       {"imufail", scenarioImuFail}, {"acc6", scenarioAcc6}, {"compassmot", scenarioCompassMot}, {"feel", scenarioFeel},
       {"ekf_faults", scenarioEkfFaults}, {"rescue", scenarioRescue}, {"rescue_sanity", scenarioRescueSanity},
-      {"launch", scenarioLaunch}, {"vibe", scenarioVibeWarn}};
+      {"launch", scenarioLaunch}, {"vibe", scenarioVibeWarn}, {"clip", scenarioAccClip}, {"beginner", scenarioBeginner}};
   if (!strcmp(which, "all")) {  // every scenario in a fresh process (clean firmware state)
     int failed = 0;
     for (auto& s : scenarios) {

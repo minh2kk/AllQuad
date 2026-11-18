@@ -27,7 +27,7 @@ struct Record {
   int32_t posN, posE;    // cm
   uint16_t vbatCv;
   int16_t currentCa;
-  uint8_t mode, navPhase, flags;  // flags: 1 armed, 2 failsafe, 4 landed
+  uint8_t mode, navPhase, flags;  // flags: 1 armed, 2 failsafe, 4 landed, 8 accelerometer clipping
   uint8_t crc;           // xor of all previous bytes
 };
 // ESC frame (0xA7, "H esc_frame 23"): per-motor RPM / temperature from bidirectional DShot, EDT or

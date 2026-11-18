@@ -284,7 +284,7 @@ void Commander::handleRequests(uint32_t now) {
 }
 
 uint32_t Commander::computeArmBlockers(bool rcOk) {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   const NavEstimate& e = navEst_;
   uint32_t b = 0;
   uint32_t now = os::timeMs();
@@ -324,6 +324,8 @@ void Commander::arm(uint32_t now, bool turtle) {
   est_.setHomeHere();
   if (ekf_.initialized()) ekf_.shift(0, 0, -ekf_.alt());  // height zero at the take-off point
   launched_ = false;
+  clipTold_ = false;
+  clipsFlight_ = 0;
   rthBestDist_ = 1e9f;
   rescueLanding_ = false;
   land_.reset();
@@ -362,9 +364,8 @@ void Commander::disarm(const char* why) {
 
 // ---------------------------------------------------------------- modes
 FlightMode Commander::pilotMode(bool rcOk) const {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   if (!rcOk) return mode_ == FlightMode::COUNT ? FlightMode::ANGLE : mode_;
-  (void)c;
   const uint32_t b = boxes_;
   if (boxOn(b, ModeBox::LAND)) return FlightMode::LAND;
   if (boxOn(b, ModeBox::SMART_RTL)) return FlightMode::SMART_RTL;
@@ -374,13 +375,14 @@ FlightMode Commander::pilotMode(bool rcOk) const {
   if (boxOn(b, ModeBox::CRUISE)) return FlightMode::CRUISE;
   if (boxOn(b, ModeBox::POSHOLD)) return FlightMode::POSHOLD;
   if (boxOn(b, ModeBox::ALTHOLD)) return FlightMode::ALTHOLD;
+  if (c.beginner) return FlightMode::ANGLE;  // first-flight mode: ACRO / HORIZON fly as ANGLE
   if (boxOn(b, ModeBox::HORIZON)) return FlightMode::HORIZON;
   if (boxOn(b, ModeBox::ANGLE)) return FlightMode::ANGLE;
   return FlightMode::ACRO;
 }
 
 FlightMode Commander::validate(FlightMode m) const {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   const NavEstimate& e = navEst_;
   (void)c;
   bool altOk = e.altValid;
@@ -423,7 +425,7 @@ FlightMode Commander::validate(FlightMode m) const {
 }
 
 void Commander::updateFailsafes(bool rcOk, uint32_t now) {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   if (!armed_) {
     rcFailsafe_ = false;
     actionMode_ = FlightMode::COUNT;
@@ -483,6 +485,10 @@ void Commander::updateFailsafes(bool rcOk, uint32_t now) {
 // ---------------------------------------------------------------- main cycle
 void Commander::run(uint32_t now, float dt) {
   if (cfgGen_ != bus::configGeneration) reconfigure();
+  if (bus::config.beginner) {  // first-flight limits on a copy: the stored settings stay as they are
+    eff_ = bus::config;
+    beginnerLimits(eff_);
+  }
   Config& c = bus::config;
   bus::rc.read(rc_);
   uint32_t sa = bus::attitude.read(att_);
@@ -604,7 +610,7 @@ void Commander::run(uint32_t now, float dt) {
 }
 
 void Commander::control(float dt, uint32_t now) {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   ControlSetpoint sp{};
   if (!armed_) {
     sp.motorMode = MotorMode::STOPPED;
@@ -632,7 +638,8 @@ void Commander::control(float dt, uint32_t now) {
   float cosTilt = att_.q.cosTilt();
   float accUp = -att_.accEarth.z;
   float rate[3] = {0, 0, stickRate(ys, profileRate(c, profile_, 2))};
-  float throttle = thr;
+  // throttle_limit: the stick's range scaled down in the manual modes (altitude modes compute their own)
+  float throttle = thr * (c.thr_limit_pct ? c.thr_limit_pct : 100) * 0.01f;
   bool descending = false;
 
   // ---- launch control (Betaflight): armed on the ground with the LAUNCH switch on, the craft holds a
@@ -798,7 +805,7 @@ void Commander::control(float dt, uint32_t now) {
 
 // ---------------------------------------------------------------- hover learning (ArduPilot MOT_HOVER_LEARN)
 void Commander::learnHover(float throttle, float cosTilt, float climbCmd, float dt) {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   const NavEstimate& e = navEst_;
   if (!c.hover_learn || !airborne_ || !e.altValid) return;
   if (fabsf(e.vz) > 0.3f || fabsf(climbCmd) > 0.1f || cosTilt < 0.94f || throttle < 0.08f || throttle > 0.9f) return;
@@ -864,7 +871,7 @@ void Commander::finishAutotune(bool keep) {
 
 // ---------------------------------------------------------------- surface tracking (rangefinder)
 float Commander::surfaceTarget(float baroTarget, float climb, float dt) {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   const NavEstimate& e = navEst_;
   if (!c.alt_surface || !e.aglValid) { aglHold_ = false; return baroTarget; }
   if (!aglHold_) { aglHold_ = true; aglTarget_ = e.agl; }
@@ -889,11 +896,11 @@ void Commander::guidedInput(uint32_t now) {
   else if (g.lat || g.lon) NavEstimator::llaToNed(g.lat * 1e-7, g.lon * 1e-7, e.homeLat, e.homeLon, n, ea);
   float alt = g.alt == g.alt ? g.alt : (mode_ == FlightMode::GUIDED ? navOut_.tgtAlt : e.alt);
   if (alt < 1.0f) alt = 1.0f;
-  if (fenceBreached(bus::config, e) == false && bus::config.fence_enable) {
+  if (fenceBreached(cfg(), e) == false && cfg().fence_enable) {
     // refuse targets outside the fence
     NavEstimate t = e;
     t.n = n; t.e = ea; t.alt = alt;
-    if (fenceBreached(bus::config, t)) { bus::postMessage("Guided: target outside the fence"); return; }
+    if (fenceBreached(cfg(), t)) { bus::postMessage("Guided: target outside the fence"); return; }
   }
   nav_.setGuided(n, ea, alt);
   if (mode_ != FlightMode::GUIDED) { gcsMode_ = FlightMode::GUIDED; gcsSwitchState_ = switchState_; }
@@ -903,7 +910,7 @@ void Commander::guidedInput(uint32_t now) {
 // ArduPilot crash check (attitude far from what self-levelling commands for 2 s) + an impact
 // followed by stillness, or lying upside down without turning. Motors are stopped.
 void Commander::crashCheck(uint32_t now) {
-  const Config& c = bus::config;
+  const Config& c = cfg();
   if (!c.crash_detect || !armed_ || !airborne_ || mode_ == FlightMode::TURTLE) { crashSinceMs_ = 0; return; }
   float tiltDeg = acosf(constrainf(att_.q.cosTilt(), -1.0f, 1.0f)) * RAD2DEG;
   float rates = att_.rateDps.norm();
@@ -1007,7 +1014,7 @@ int32_t Commander::logicValue(uint8_t type, int16_t v) const {
 
 void Commander::logicUpdate(uint32_t now) {
   (void)now;
-  const Config& c = bus::config;
+  const Config& c = cfg();
   uint8_t res = 0;
   uint32_t boxes = 0;
   uint16_t rc[16] = {0};
@@ -1094,18 +1101,28 @@ void Commander::publish(uint32_t now) {
   st.atStep = (uint8_t)autotune_.step();
   st.atLagMs = autotune_.lastLagMs();
   st.atSteadyErr = autotune_.lastSteadyErr();
-  uint16_t w = 0;
+  uint32_t w = 0;
   if (bat_.warn) w |= WARN_BAT_LOW;
   if (bat_.critical) w |= WARN_BAT_CRIT;
   if (armed_ && rcFailsafe_) w |= WARN_RX_LOST;
   if (e.homeSet && !e.gpsValid) w |= WARN_GPS_LOST;
   if (e.gpsGlitch) w |= WARN_GPS_GLITCH;
   if (useGpsHeading_ && !headingOk_ && e.gpsValid) w |= WARN_NO_HEADING;
-  if (fenceBreached(bus::config, e)) w |= WARN_FENCE;
+  if (fenceBreached(cfg(), e)) w |= WARN_FENCE;
   if (navOut_.landing && isNavMode(mode_)) w |= WARN_LANDING;
-  const Config& c = bus::config;
+  const Config& c = cfg();
   if (c.vibe_warn > 0 && armed_ && att_.vibration > c.vibe_warn) vibeWarnUntilMs_ = now + 2000;
   if ((int32_t)(vibeWarnUntilMs_ - now) > 0) w |= WARN_VIBRATION;
+  if (att_.accClips != clipsSeen_) {
+    if (armed_) {
+      clipWarnUntilMs_ = now + 3000;
+      if (!clipTold_) { clipTold_ = true; bus::postMessage("Accel clipping: check FC mounting / vibration"); }
+      clipsFlight_ += att_.accClips - clipsSeen_;
+    }
+    clipsSeen_ = att_.accClips;
+  }
+  if ((int32_t)(clipWarnUntilMs_ - now) > 0) w |= WARN_ACC_CLIP;
+  if (c.beginner) w |= WARN_BEGINNER;
   bool ekfOn = c.est_type == 1 && ekf_.initialized();
   if (ekfOn && (ekf_.status().faults & (EKF_BARO_FAULT | EKF_MAG_FAULT))) w |= WARN_EKF;
   if (launchWaiting_) w |= WARN_LAUNCH;
