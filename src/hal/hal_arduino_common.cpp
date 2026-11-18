@@ -212,6 +212,16 @@ bool portExists(Port p) {
   if (p == Port::UDP) return internal::udpSupported();
   return internal::serialPort(p) != nullptr;
 }
+const char* portLabel(Port p) {
+  static char buf[(int)Port::COUNT][32];
+  int rx = -1, tx = -1;
+  if (p == Port::SERIAL1) { rx = PIN_SERIAL1_RX; tx = PIN_SERIAL1_TX; }
+  if (p == Port::SERIAL2) { rx = PIN_SERIAL2_RX; tx = PIN_SERIAL2_TX; }
+  if (p == Port::SERIAL3) { rx = PIN_SERIAL3_RX; tx = PIN_SERIAL3_TX; }
+  if (!internal::serialPort(p) || rx < 0 || tx < 0) return "";
+  snprintf(buf[(int)p], sizeof(buf[0]), "RX GPIO%d TX GPIO%d", rx, tx);
+  return buf[(int)p];
+}
 
 int portRead(Port p) {
 #if defined(AQ_CONSOLE_DUAL)

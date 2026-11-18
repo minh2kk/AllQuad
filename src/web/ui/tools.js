@@ -289,8 +289,8 @@ const PORT_FN = [[0, "Không dùng"], [1, "Receiver (CRSF / SBUS / iBUS)"], [2, 
   [11, "Configurator (cầu WiFi ESP32-C3 / Bluetooth)"]];
 const BAUDS = [0, 9600, 19200, 38400, 57600, 115200, 230400, 250000, 400000, 460800, 921600, 1000000, 2000000];
 // [param prefix, label, hal::Port index] - a row is shown when the board has that port
-const PORTS = [["serial1", "UART1", 0], ["serial2", "UART2", 1], ["serial3", "UART3", 2], ["serial4", "UART4", 5],
-  ["serial5", "UART5", 6], ["udp", "WiFi UDP (ESP32)", 3]];
+const PORTS = [["serial1", "SERIAL1", 0], ["serial2", "SERIAL2", 1], ["serial3", "SERIAL3", 2], ["serial4", "SERIAL4", 5],
+  ["serial5", "SERIAL5", 6], ["serial6", "SERIAL6", 7], ["serial7", "SERIAL7", 8], ["udp", "WiFi UDP (ESP32)", 3]];
 const portShown = ([p, , idx]) => has(p + "_fn") && (S.portMask === undefined || ((S.portMask >> idx) & 1) || idx < 3);
 function selectHtml(n, opts) {
   return `<select data-p="${n}" aria-label="${n}">${opts.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select>`;
@@ -312,12 +312,13 @@ function bindSelects(host) {
 function buildPorts() {
   const host = $("portTable");
   if (!host || !has("serial1_fn")) return;
-  const rows = PORTS.filter(portShown).map(([p, label]) => {
+  const rows = PORTS.filter(portShown).map(([p, label, idx]) => {
     const fn = val(p + "_fn"), fixed = [0, 1, 2, 9, 10].includes(fn) || p === "udp";
     const opts = PORT_FN.filter(([v]) => p !== "udp" || [0, 3, 4].includes(v) || v === fn);
     const baud = has(p + "_baud") && !fixed ? selectHtml(p + "_baud", BAUDS.map((b) => [b, b ? String(b) : "mặc định"])) : `<span class="muted">${fn === 1 ? "theo giao thức" : fn === 2 ? "tự cấu hình" : fn >= 9 ? (fn === 9 ? "4800" : "9600") : "—"}</span>`;
     const extra = fn === 1 && has("rx_protocol") ? selectHtml("rx_protocol", [[0, "CRSF / ELRS"], [1, "SBUS"], [2, "iBUS"]]) : "";
-    return `<tr><td><b>${label}</b></td><td>${selectHtml(p + "_fn", opts)}</td><td>${extra}</td><td>${baud}</td></tr>`;
+    const pins = S.portPins && S.portPins[idx];  // e.g. "USART1 RX PA10 TX PA9": what to wire
+    return `<tr><td><b>${label}</b>${pins ? `<br><small class="muted num">${esc(pins)}</small>` : ""}</td><td>${selectHtml(p + "_fn", opts)}</td><td>${extra}</td><td>${baud}</td></tr>`;
   });
   host.innerHTML = "<tr><th>Cổng</th><th>Chức năng</th><th></th><th>Tốc độ</th></tr>" + rows.join("");
   bindSelects(host);

@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 367 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 371 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -273,6 +273,10 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `serial5_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL5: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
 | `serial4_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL4 |
 | `serial5_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL5 |
+| `serial6_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL6: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial7_fn` (KĐL) | 0 | 0 … 11 | Chức năng của SERIAL7: 0 tắt, 1 receiver, 2 GPS, 3 MAVLink, 4 MSP, 5 DisplayPort (OSD kính số), 6 telemetry ESC, 7 TFmini, 8 blackbox, 9 VTX SmartAudio, 10 VTX Tramp |
+| `serial6_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL6 |
+| `serial7_baud` (KĐL) | 0 | 0 … 2000000 | Tốc độ baud của SERIAL7 |
 | `wifi_enable` (KĐL) | 0 | 0 … 1 | WiFi + MAVLink qua UDP 14550 (QGroundControl không dây), kèm trang 192.168.4.1 |
 | `web_enable` (KĐL) | 0 | 0 … 1 | WiFi + trang cấu hình 192.168.4.1 |
 | `wifi_armed` | 0 | 0 … 1 | Giữ WiFi khi đang bay (tắt = bớt nhiễu, tiết kiệm CPU) |

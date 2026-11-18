@@ -663,6 +663,15 @@ static void testCli() {
     CHECK(so.find("[ OK ] reset") != std::string::npos && so.find("[WARN] baro") != std::string::npos &&
               so.find("[WARN] rx") != std::string::npos && so.find("selftest: ") != std::string::npos,
           "CLI selftest: one line per check, summary");
+    // two receivers configured: reported (the second one is ignored by the firmware)
+    bus::config.port_fn[0] = (uint8_t)PortFn::RX;
+    bus::config.port_fn_ext2[1] = (uint8_t)PortFn::RX;
+    hal::host::out(hal::Port::CONSOLE).clear();
+    for (char ch : std::string("selftest\n")) cli.feed((uint8_t)ch, 500, false);
+    const std::string& s2 = hal::host::out(hal::Port::CONSOLE);
+    CHECK(s2.find("[WARN] ports     RX on both SERIAL1 and SERIAL7: only SERIAL1 is used") != std::string::npos,
+          "CLI selftest: the same single-use function on two serial ports is reported");
+    bus::config.port_fn_ext2[1] = 0;
     if (getenv("AQ_SHOW_SELFTEST")) printf("%s", so.c_str());
   }
 }
@@ -1579,6 +1588,29 @@ static void testConfigMigrationV26() {
   CHECK(ok && configValid(c) && c.pid[1].d == 33 && c.sd_dma == 1 && c.ff_jitter == 7 && c.ff_boost == 15 && c.ff_max_pct == 90,
         "Config v26 -> v27: settings kept, feed-forward shaping defaults");
 }
+static void testConfigMigrationV27() {
+  Config old;
+  configDefaults(old);
+  old.pid[0].i = 91;
+  old.port_fn_ext[1] = (uint8_t)PortFn::GPS;
+  old.ff_boost = 22;
+  size_t oldSize = ((offsetof(Config, ff_max_pct) + 1 + 3) & ~(size_t)3) + 4;  // v27: ... ff_max_pct, crc
+  memset((uint8_t*)&old + offsetof(Config, ff_max_pct) + 1, 0x5A, oldSize - 4 - offsetof(Config, ff_max_pct) - 1);
+  old.version = 27;
+  old.size = (uint16_t)oldSize;
+  uint32_t crc = crc32(&old, oldSize - 4);
+  memcpy((uint8_t*)&old + oldSize - 4, &crc, 4);
+  memset((uint8_t*)&old + oldSize, 0xEE, sizeof(Config) - oldSize);
+  Config c = old;
+  bool ok = configMigrate(c);
+  CHECK(ok && configValid(c) && c.pid[0].i == 91 && portFnOf(c, 6) == (uint8_t)PortFn::GPS && c.ff_boost == 22 &&
+            portFnOf(c, 7) == 0 && portFnOf(c, 8) == 0 && portBaudOf(c, 7) == 0 && portBaudOf(c, 8) == 0,
+        "Config v27 -> v28: settings kept, SERIAL6 / SERIAL7 off");
+  int f6 = paramFind("serial6_fn"), b7 = paramFind("serial7_baud");
+  CHECK(f6 >= 0 && b7 >= 0 && paramInfo(f6).reboot && paramSet(c, f6, (float)PortFn::MAVLINK) && portFnOf(c, 7) == (uint8_t)PortFn::MAVLINK &&
+            paramSet(c, b7, 57600) && portBaudOf(c, 8) == 57600,
+        "Parameters: serial6 / serial7 function and baud");
+}
 static void testFeedForward() {
   // stick snap: boost starts FF earlier; slow drift (below the jitter threshold) gets little FF;
   // near the max rate FF fades out
@@ -2224,6 +2256,7 @@ int main(int argc, char** argv) {
   testConfigMigrationV21();
   testConfigMigrationV25();
   testConfigMigrationV26();
+  testConfigMigrationV27();
   testFeedForward();
   testFlightFeel();
   testEllipsoidFit();

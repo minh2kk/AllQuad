@@ -34,6 +34,8 @@ static const ParamInfo PARAMS[] = {
     PR("serial3_baud", U32, port_baud[2], 0, 2000000),
     PR("serial4_fn", U8, port_fn_ext[0], 0, 11), PR("serial5_fn", U8, port_fn_ext[1], 0, 11),
     PR("serial4_baud", U32, port_baud_ext[0], 0, 2000000), PR("serial5_baud", U32, port_baud_ext[1], 0, 2000000),
+    PR("serial6_fn", U8, port_fn_ext2[0], 0, 11), PR("serial7_fn", U8, port_fn_ext2[1], 0, 11),
+    PR("serial6_baud", U32, port_baud_ext2[0], 0, 2000000), PR("serial7_baud", U32, port_baud_ext2[1], 0, 2000000),
     PR("wifi_enable", U8, wifi_enable, 0, 1),
     PR("web_enable", U8, web_enable, 0, 1),
     P("wifi_armed", U8, wifi_armed, 0, 1),

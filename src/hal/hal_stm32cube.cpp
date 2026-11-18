@@ -81,11 +81,17 @@ static inline void irqRestore(uint32_t p) { __set_PRIMASK(p); }
 
 // ============================================================ platform
 const char* platformName() {
-  static char name[64];
+  static char name[80];
   if (!name[0]) {
     uint32_t hse = stm32::hseFrequency();
-    snprintf(name, sizeof(name), "%s (%lu MHz, %s %lu MHz)", AQ_BOARD_NAME, (unsigned long)(SystemCoreClock / 1000000u),
-             hse ? "crystal" : "no crystal, HSI", (unsigned long)(hse ? hse / 1000000u : 16u));
+    const char* rev = "";
+#if defined(STM32H7xx)
+    // silicon revision (DBGMCU_IDCODE REV_ID): only rev V (and X) run 480 MHz (VOS0); rev Y stops at 400 MHz
+    uint32_t r = HAL_GetREVID();
+    rev = r == 0x1003 ? ", rev Y" : r == 0x2003 ? ", rev V" : r == 0x2001 ? ", rev X" : ", rev ?";
+#endif
+    snprintf(name, sizeof(name), "%s (%lu MHz%s, %s %lu MHz)", AQ_BOARD_NAME, (unsigned long)(SystemCoreClock / 1000000u),
+             rev, hse ? "crystal" : "no crystal, HSI", (unsigned long)(hse ? hse / 1000000u : 16u));
   }
   return name;
 }
@@ -146,7 +152,19 @@ struct Uart {
   volatile uint32_t rh = 0, rt = 0, th = 0, tt = 0;
   volatile uint32_t overruns = 0, framing = 0, noise = 0, dropped = 0, rxBytes = 0, txBytes = 0;
 };
-Uart uarts[5];
+// one slot per serial port the board has (buffers are 1.3-1.6 kB each: the F405 / F411 have 128 kB RAM)
+#if defined(AQ_SERIAL7_UART)
+constexpr int UART_SLOTS = 7;
+#elif defined(AQ_SERIAL6_UART)
+constexpr int UART_SLOTS = 6;
+#elif defined(AQ_SERIAL5_UART)
+constexpr int UART_SLOTS = 5;
+#elif defined(AQ_SERIAL4_UART)
+constexpr int UART_SLOTS = 4;
+#else
+constexpr int UART_SLOTS = 3;
+#endif
+Uart uarts[UART_SLOTS];
 
 int uartSlot(Port p) {
   switch (p) {
@@ -155,6 +173,8 @@ int uartSlot(Port p) {
     case Port::SERIAL3: return 2;
     case Port::SERIAL4: return 3;
     case Port::SERIAL5: return 4;
+    case Port::SERIAL6: return 5;
+    case Port::SERIAL7: return 6;
     default: return -1;
   }
 }
@@ -177,6 +197,12 @@ void uartSetup() {
 #if defined(AQ_SERIAL5_UART) && defined(PIN_SERIAL5_RX)
   uarts[4].reg = AQ_SERIAL5_UART; uarts[4].af = AQ_SERIAL5_AF; uarts[4].rx = PIN_SERIAL5_RX; uarts[4].tx = PIN_SERIAL5_TX;
 #endif
+#if defined(AQ_SERIAL6_UART) && defined(PIN_SERIAL6_RX)
+  uarts[5].reg = AQ_SERIAL6_UART; uarts[5].af = AQ_SERIAL6_AF; uarts[5].rx = PIN_SERIAL6_RX; uarts[5].tx = PIN_SERIAL6_TX;
+#endif
+#if defined(AQ_SERIAL7_UART) && defined(PIN_SERIAL7_RX)
+  uarts[6].reg = AQ_SERIAL7_UART; uarts[6].af = AQ_SERIAL7_AF; uarts[6].rx = PIN_SERIAL7_RX; uarts[6].tx = PIN_SERIAL7_TX;
+#endif
   for (Uart& u : uarts)
     if (u.rx < 0 || u.tx < 0) u.reg = nullptr;
 }
@@ -189,7 +215,7 @@ Uart* uartOf(Port p) {
 #if defined(AQ_QEMU)
   if (i == QEMU_CONSOLE_SLOT) return nullptr;
 #endif
-  return (i >= 0 && uarts[i].reg) ? &uarts[i] : nullptr;
+  return (i >= 0 && i < UART_SLOTS && uarts[i].reg) ? &uarts[i] : nullptr;
 }
 
 // clock enable, interrupt number, kernel clock (APB2 for USART1/6, APB1 for the rest)
@@ -282,6 +308,33 @@ bool portExists(Port p) {
   if (p == Port::CONSOLE) return true;
   if (p == Port::UDP) return false;
   return uartOf(p) != nullptr;
+}
+const char* portLabel(Port p) {
+  static char buf[(int)Port::COUNT][32];
+  Uart* u = uartOf(p);
+  if (!u) return "";
+  const char* nm = u->reg == USART1 ? "USART1" : u->reg == USART2 ? "USART2" : "UART";
+#if defined(USART3)
+  if (u->reg == USART3) nm = "USART3";
+#endif
+#if defined(UART4)
+  if (u->reg == UART4) nm = "UART4";
+#endif
+#if defined(UART5)
+  if (u->reg == UART5) nm = "UART5";
+#endif
+#if defined(USART6)
+  if (u->reg == USART6) nm = "USART6";
+#endif
+#if defined(UART7)
+  if (u->reg == UART7) nm = "UART7";
+#endif
+#if defined(UART8)
+  if (u->reg == UART8) nm = "UART8";
+#endif
+  // pins are (port << 4) | n
+  snprintf(buf[(int)p], sizeof(buf[0]), "%s RX P%c%d TX P%c%d", nm, 'A' + (u->rx >> 4), u->rx & 15, 'A' + (u->tx >> 4), u->tx & 15);
+  return buf[(int)p];
 }
 
 static void uartOpen(Uart* u, uint32_t baud, UartFormat fmt, bool inverted);
@@ -678,14 +731,14 @@ static void spiBusInit(SpiBus& b, SPI_TypeDef* reg, uint8_t af, int sck, int mis
   if (reg == SPI1) {
     __HAL_RCC_SPI1_CLK_ENABLE();
 #if defined(STM32H7xx)
-    b.kernelHz = 100000000u;  // SPI123: PLL1Q
+    b.kernelHz = stm32::spiKernelHz();  // SPI123: PLL1Q
 #else
     b.kernelHz = HAL_RCC_GetPCLK2Freq();
 #endif
   } else if (reg == SPI2) {
     __HAL_RCC_SPI2_CLK_ENABLE();
 #if defined(STM32H7xx)
-    b.kernelHz = 100000000u;
+    b.kernelHz = stm32::spiKernelHz();
 #else
     b.kernelHz = HAL_RCC_GetPCLK1Freq();
 #endif
@@ -694,7 +747,7 @@ static void spiBusInit(SpiBus& b, SPI_TypeDef* reg, uint8_t af, int sck, int mis
   else if (reg == SPI3) {
     __HAL_RCC_SPI3_CLK_ENABLE();
 #if defined(STM32H7xx)
-    b.kernelHz = 100000000u;
+    b.kernelHz = stm32::spiKernelHz();
 #else
     b.kernelHz = HAL_RCC_GetPCLK1Freq();
 #endif

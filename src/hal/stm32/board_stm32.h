@@ -13,6 +13,12 @@
 #define AQ_SERIAL3_AF 8
 #define AQ_SERIAL4_UART USART1   // PA10 / PA9
 #define AQ_SERIAL4_AF 7
+#define AQ_SERIAL5_UART USART2   // PD6 / PD5
+#define AQ_SERIAL5_AF 7
+#define AQ_SERIAL6_UART UART4    // PD0 / PD1
+#define AQ_SERIAL6_AF 8
+#define AQ_SERIAL7_UART USART6   // PC7 / PC6
+#define AQ_SERIAL7_AF 7
 #define AQ_I2C I2C2              // PB11 / PB10
 #define AQ_I2C_AF 4
 #define AQ_SPI_IMU SPI2          // PB13-PB15
@@ -41,6 +47,8 @@
 #define AQ_SERIAL4_AF 8
 #define AQ_SERIAL5_UART USART6   // PC7 / PC6
 #define AQ_SERIAL5_AF 8
+#define AQ_SERIAL6_UART USART3   // PB11 / PB10
+#define AQ_SERIAL6_AF 7
 #define AQ_I2C I2C1              // PB7 / PB6
 #define AQ_I2C_AF 4
 #define AQ_SPI_IMU SPI1          // PA5-PA7

@@ -53,9 +53,13 @@ bool spiWriteRaw(SpiDev d, const uint8_t* data, size_t len);  // chip-select aro
 
 // ---- serial ports ----
 // SERIAL4 / 5 come after CONSOLE so the stored port indices (0-3) keep their meaning
-enum class Port : uint8_t { SERIAL1 = 0, SERIAL2 = 1, SERIAL3 = 2, UDP = 3, CONSOLE = 4, SERIAL4 = 5, SERIAL5 = 6, COUNT = 7 };
+enum class Port : uint8_t {
+  SERIAL1 = 0, SERIAL2 = 1, SERIAL3 = 2, UDP = 3, CONSOLE = 4, SERIAL4 = 5, SERIAL5 = 6, SERIAL6 = 7, SERIAL7 = 8, COUNT = 9
+};
 enum class UartFormat : uint8_t { F8N1, F8E2, F8N2 };
 bool portExists(Port p);
+// what a serial port is on this board, for the configurator: "USART1 RX PA10 TX PA9" ("" = no such UART)
+const char* portLabel(Port p);
 void portOpen(Port p, uint32_t baud, UartFormat fmt = UartFormat::F8N1, bool inverted = false);
 int portRead(Port p);  // -1 if empty
 size_t portWrite(Port p, const uint8_t* data, size_t len);

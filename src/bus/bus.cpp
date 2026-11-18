@@ -57,7 +57,7 @@ volatile uint32_t magCalUntilMs = 0;
 volatile bool magCalDone = false;
 volatile LoopPerf loopPerf;
 volatile uint32_t fastLoops = 0;
-volatile GpsLink gpsLink = {7, 0, 0, 0};
+volatile GpsLink gpsLink = {0xFF, 0, 0, 0};  // port 0xFF: no GPS port (>= hal::Port::COUNT)
 volatile RxLinkStats rxLink;
 volatile bool otaActive = false;
 volatile bool gyroCalRequest = false;

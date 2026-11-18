@@ -211,6 +211,13 @@ void Cli::cmdSelftest() {
     if (worst >= 0 && worstFree < 256) line(2, "stack", "task %s has only %lu B free", os::taskStats(worst).name, (unsigned long)worstFree);
     else if (worst >= 0 && worstFree < 512) line(1, "stack", "task %s has %lu B free", os::taskStats(worst).name, (unsigned long)worstFree);
     else line(0, "stack", "%d tasks, lowest free %lu B", os::taskCount(), (unsigned long)(worst >= 0 ? worstFree : 0));
+    uint32_t hf, hl;
+    os::heapStats(hf, hl);
+    if (hf) {
+      if (hl < 2048) line(2, "heap", "%lu B free, lowest %lu B", (unsigned long)hf, (unsigned long)hl);
+      else if (hl < 6144) line(1, "heap", "%lu B free, lowest %lu B", (unsigned long)hf, (unsigned long)hl);
+      else line(0, "heap", "%lu B free, lowest %lu B", (unsigned long)hf, (unsigned long)hl);
+    }
     if (over) line(1, "tasks", "%lu overruns (a task missed its period; 'tasks' shows which)", (unsigned long)over);
   }
   // IMU
@@ -259,7 +266,7 @@ void Cli::cmdSelftest() {
   }
   // UARTs
   {
-    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5"};
+    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5", "SERIAL6", "SERIAL7"};
     int open = 0;
     for (int i = 0; i < (int)hal::Port::COUNT; i++) {
       hal::PortStats ps;
@@ -271,10 +278,39 @@ void Cli::cmdSelftest() {
       else line(0, "uart", "%s: rx %lu B, tx %lu B, no line errors", pn[i], (unsigned long)ps.rxBytes, (unsigned long)ps.txBytes);
     }
     if (!open) line(0, "uart", "no UART opened");
+    // port functions: set on a UART this board does not have, or a single-use function on two ports
+    const Config& pc = bus::config;
+    static const char* const fnName[] = {"-", "RX", "GPS", "MAVLink", "MSP", "DisplayPort", "ESC telemetry", "rangefinder",
+                                         "blackbox", "SmartAudio", "Tramp", "configurator"};
+    int first[12];
+    for (int f = 0; f < 12; f++) first[f] = -1;
+    int portIssues = 0;
+    for (int i = 0; i < (int)hal::Port::COUNT; i++) {
+      // UDP exists only with WiFi (ESP32); its default MAVLink function is harmless elsewhere
+      if (i == (int)hal::Port::CONSOLE || i == (int)hal::Port::UDP) continue;
+      uint8_t f = portFnOf(pc, i);
+      if (!f || f >= 12) continue;
+      if (!hal::portExists((hal::Port)i)) {
+        line(1, "ports", "%s is set to %s, but this board has no %s (function ignored)", pn[i], fnName[f], pn[i]);
+        portIssues++;
+        continue;
+      }
+      // several MAVLink / MSP ports are fine; everything else talks to one device
+      if (f != (uint8_t)PortFn::MAVLINK && f != (uint8_t)PortFn::MSP && first[f] >= 0) {
+        line(1, "ports", "%s on both %s and %s: only %s is used", fnName[f], pn[first[f]], pn[i], pn[first[f]]);
+        portIssues++;
+      }
+      if (first[f] < 0) first[f] = i;
+    }
+    if (first[(int)PortFn::VTX_SA] >= 0 && first[(int)PortFn::VTX_TRAMP] >= 0) {
+      line(1, "ports", "SmartAudio and Tramp both set: one VTX control at a time (SmartAudio is used)");
+      portIssues++;
+    }
+    if (!portIssues) line(0, "ports", "functions on existing UARTs, no duplicates");
   }
   // GPS
   if (bus::gpsLink.port < (uint8_t)hal::Port::COUNT && !bus::gpsLink.frames) {
-    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5"};
+    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5", "SERIAL6", "SERIAL7"};
     hal::PortStats ps{};
     bool open = hal::portStats((hal::Port)bus::gpsLink.port, ps);
     if (!open || !ps.rxBytes)

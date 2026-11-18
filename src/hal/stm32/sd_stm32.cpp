@@ -42,7 +42,7 @@ bool waitTransfer(uint32_t timeoutMs) {
   return true;
 }
 
-uint8_t clockDiv = 2;  // SDMMC_CK = 100 MHz / (2 x div): 25 MHz
+uint8_t clockDiv = 2;  // SDMMC_CK = PLL1Q (100 / 96 MHz) / (2 x div): ~25 MHz
 
 // ---- DMA (IDMA) transfers
 bool dmaWanted = false, dmaOn = false;
@@ -171,7 +171,8 @@ bool sdMount(uint8_t, uint8_t mhz, const uint8_t*, char* err, size_t n) {
   sdUnmount();
   uint32_t m = mhz ? mhz : 25;
   if (m > 50) m = 50;
-  clockDiv = (uint8_t)((100 + 2 * m - 1) / (2 * m));
+  uint32_t k = stm32::spiKernelHz() / 1000000u;  // PLL1Q also clocks the SDMMC
+  clockDiv = (uint8_t)((k + 2 * m - 1) / (2 * m));
   if (!clockDiv) clockDiv = 1;
   cardUp = false;
   if (disk_initialize(0)) { snprintf(err, n, "no card (SDMMC1)"); return false; }

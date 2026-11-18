@@ -82,6 +82,15 @@ void paramsJson(Sink s, void* ctx) {
   uint32_t ports = 0;  // bit = hal::Port index that exists on this board
   for (int i = 0; i < (int)hal::Port::COUNT; i++) if (hal::portExists((hal::Port)i)) ports |= 1u << i;
   j.key("ports"); j.num(ports, 0);
+  j.key("portpins");  // UART instance and pins per port index, for the wiring hints of the Ports tab
+  j.begin('{');
+  for (int i = 0; i < (int)hal::Port::COUNT; i++) {
+    const char* l = hal::portLabel((hal::Port)i);
+    if (!l[0]) continue;
+    char k[4] = {(char)('0' + i), 0};
+    j.key(k); j.str(l);
+  }
+  j.end('}');
   {  // SD card modes this board can drive, fixed wiring, default pins
     uint8_t def[6];
     hal::sdDefaultPins(def);

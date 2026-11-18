@@ -1010,6 +1010,7 @@ static int ledPin = -1;
 static rmt_data_t ledData[32 * 24];
 bool ledStripBegin(uint8_t pin, uint8_t count) {
   if (!pin || count == 0 || count > 32) return false;
+  if (pinBusy(pin)) return false;  // motors, a serial port, the IMU bus ... or a pin the chip keeps (flash / PSRAM / USB)
   // ESP32 has 8 RMT TX channels (DShot uses 4); the S3 has only 4, so with DShot there is none left
   if (bidir) return false;  // bidirectional DShot uses every RMT channel
   if (!rmtInit(pin, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000)) return false;

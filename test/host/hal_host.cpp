@@ -116,6 +116,7 @@ bool spiWrite(SpiDev d, uint8_t reg, uint8_t v) {
 bool spiWriteRaw(SpiDev, const uint8_t*, size_t) { return false; }
 
 bool portExists(Port) { return true; }
+const char* portLabel(Port) { return ""; }
 void portOpen(Port p, uint32_t baud, UartFormat, bool) { if ((int)p < (int)Port::COUNT) host::openBaud[(int)p] = baud; }
 int portRead(Port p) {
   auto& q = host::inQ[(int)p];

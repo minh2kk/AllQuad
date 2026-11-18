@@ -16,6 +16,7 @@
 // ============================================================ clocks
 namespace {
 uint32_t hseHz = 0;      // 0: running from the internal oscillator
+uint32_t pll1qHz = 100000000u;  // H7: SPI1-3 / SDMMC kernel clock
 bool usTimerUp = false;  // 1 MHz time base running (HAL_GetTick switches to it)
 volatile uint32_t usHigh = 0;
 }  // namespace
@@ -72,24 +73,36 @@ static void clockInit() {
   // QEMU does not model the RCC: the olimex-stm32-h405 machine runs the core (and SysTick) at 168 MHz
   SystemCoreClock = 168000000u;
 #elif defined(STM32H7xx)
-  // 25 MHz crystal -> PLL1 400 MHz (VOS1, valid for every silicon revision), AHB 200, APBs 100 MHz.
-  // PLL1Q 100 MHz: SPI1-3 and SDMMC kernel clock. PLL3Q 48 MHz: USB (exact, no CRS needed).
+  // 25 MHz crystal -> PLL1. Silicon rev V: 480 MHz (VOS0 = VOS1 + overdrive), AHB 240, APBs 120 MHz.
+  // Rev Y (and anything unknown): 400 MHz (VOS1), AHB 200, APBs 100 MHz.
+  // PLL1Q 96 / 100 MHz: SPI1-3 and SDMMC kernel clock. PLL3Q 48 MHz: USB (exact, no CRS needed).
+#if defined(AQ_H7_400MHZ)  // build flag: stay at 400 MHz even on rev V
+  const bool fast = false;
+#else
+  const bool fast = HAL_GetREVID() == 0x2003;
+#endif
   HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
   while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  if (fast) {
+    __HAL_RCC_SYSCFG_CLK_ENABLE();  // the overdrive bit sits in SYSCFG
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
+    while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  }
   RCC_OscInitTypeDef osc = {};
   osc.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   osc.HSEState = RCC_HSE_ON;
   osc.PLL.PLLState = RCC_PLL_ON;
   osc.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   osc.PLL.PLLM = AQ_HSE_HZ / 5000000u;  // 5 MHz into the PLL
-  osc.PLL.PLLN = 160;                   // VCO 800 MHz
-  osc.PLL.PLLP = 2;                     // 400 MHz
-  osc.PLL.PLLQ = 8;                     // 100 MHz
+  osc.PLL.PLLN = fast ? 192 : 160;      // VCO 960 / 800 MHz
+  osc.PLL.PLLP = 2;                     // 480 / 400 MHz
+  osc.PLL.PLLQ = fast ? 10 : 8;         // 96 / 100 MHz
   osc.PLL.PLLR = 2;
   osc.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;  // 4-8 MHz input
   osc.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
   osc.PLL.PLLFRACN = 0;
+  pll1qHz = fast ? 96000000u : 100000000u;
   if (HAL_RCC_OscConfig(&osc) != HAL_OK) return clockError();
   hseHz = AQ_HSE_HZ;
   RCC_ClkInitTypeDef clk = {};
@@ -102,7 +115,8 @@ static void clockInit() {
   clk.APB1CLKDivider = RCC_APB1_DIV2;
   clk.APB2CLKDivider = RCC_APB2_DIV2;
   clk.APB4CLKDivider = RCC_APB4_DIV2;
-  if (HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_2) != HAL_OK) return clockError();
+  // flash wait states for the AXI clock: 200 MHz (VOS1) 2, 240 MHz (VOS0) 4
+  if (HAL_RCC_ClockConfig(&clk, fast ? FLASH_LATENCY_4 : FLASH_LATENCY_2) != HAL_OK) return clockError();
   RCC_PeriphCLKInitTypeDef pc = {};
   pc.PeriphClockSelection = RCC_PERIPHCLK_USB;
   pc.PLL3.PLL3M = AQ_HSE_HZ / 1000000u;  // 1 MHz
@@ -248,6 +262,7 @@ uint64_t timeUs64() {
   }
 }
 uint32_t hseFrequency() { return hseHz; }
+uint32_t spiKernelHz() { return pll1qHz; }
 }  // namespace stm32
 }  // namespace hal
 

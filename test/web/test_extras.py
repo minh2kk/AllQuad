@@ -198,7 +198,7 @@ async def main():
             lines = open(await d.path(), encoding="utf-8").read().splitlines()
             check(lines[0].startswith('"loopIteration","time (us)","axisP[0]"') and "gyroADC[0]" in lines[0] and len(lines) == n + 1,
                   "blackbox: Betaflight-style CSV export (%d rows)" % (len(lines) - 1))
-            await pg.screenshot(path=os.path.join(SHOTS, "extras-blackbox.png"), full_page=True)
+            await pg.screenshot(path=os.path.join(SHOTS, "extras-blackbox.png"))  # viewport: a full-page shot of the long analysis page can stall headless Chromium
         else:
             print("(build/web/normal.bin missing: blackbox compare skipped)")
 
@@ -307,6 +307,13 @@ async def main():
         n4 = await pg.locator("#portTable [data-p=serial4_fn]").count()
         mask = await pg.evaluate("S.portMask")
         check((n4 > 0) == bool((mask >> 5) & 1), "ports: UART4 row follows the board's port mask (mask %s)" % mask)
+        n7 = await pg.locator("#portTable [data-p=serial7_fn]").count()
+        check((n7 > 0) == bool((mask >> 8) & 1), "ports: UART6 / UART7 rows (H743: 7 UARTs) follow the port mask")
+        # wiring hint under each port: the UART instance and its pins, as the firmware reports them
+        txt = await pg.evaluate("S.portPins = {'0': 'USART3 RX PD9 TX PD8', '8': 'USART6 RX PC7 TX PC6'}; buildPorts(); $('portTable').innerText")
+        check("USART3 RX PD9 TX PD8" in txt and "USART6 RX PC7 TX PC6" in txt, "ports: UART pins shown under each port")
+        await pg.locator("#portTable").screenshot(path=os.path.join(SHOTS, "extras-ports-pins.png"))
+        await pg.evaluate("S.portPins = null; buildPorts()")
 
         # ---- sensors: calibration + mounting
         await tab(pg, "sensors")

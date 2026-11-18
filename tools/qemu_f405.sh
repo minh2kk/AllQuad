@@ -9,9 +9,9 @@ cd "$(dirname "$0")/.."
 ELF=.pio/build/stm32f405_qemu/firmware.elf
 [ -f "$ELF" ] || pio run -e stm32f405_qemu
 OUT=$(mktemp)
-(sleep 25; printf '\r\nversion\r\n'; sleep 4; printf 'status\r\n'; sleep 4; printf 'crash test\r\n'; sleep 28
+(sleep 25; printf '\r\nversion\r\n'; sleep 4; printf 'status\r\n'; sleep 4; printf 'selftest\r\n'; sleep 4; printf 'crash test\r\n'; sleep 28
  printf '\r\ncrash\r\n'; sleep 4) |
-  timeout 75 qemu-system-arm -M olimex-stm32-h405 -kernel "$ELF" -display none -serial stdio -monitor none >"$OUT" 2>&1 || true
+  timeout 80 qemu-system-arm -M olimex-stm32-h405 -kernel "$ELF" -display none -serial stdio -monitor none >"$OUT" 2>&1 || true
 cat "$OUT"
 if grep -q "AllQuad .* parameters" "$OUT" && grep -q "arming blocked" "$OUT" &&
    grep -q "hard fault (caused the last reset)" "$OUT"; then

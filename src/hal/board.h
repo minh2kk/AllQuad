@@ -8,6 +8,8 @@
 #if defined(BOARD_ESP32_DEVKIT)
 // ---------------- ESP32 (WROOM-32 DevKit) ----------------
 #define AQ_BOARD_NAME "ESP32-DevKit"
+// kept by the chip / board (tools/check_pins.py): UART0 console, SPI flash
+#define AQ_PINS_RESERVED "1 3 6 7 8 9 10 11"
 // IMU SPI bus (VSPI)
 #define PIN_SPI_SCK 18
 #define PIN_SPI_MISO 19
@@ -49,6 +51,7 @@
 // rear-left, M4 front-left): this build defaults motor1..4_out to 3, 2, 4, 1 (changeable in the
 // configurator, Motor tab). Spin directions FL CCW, FR CW, RR CCW, RL CW = props-out: yaw_reversed 1.
 #define AQ_BOARD_NAME "ESP32-S3-N16R8"
+#define AQ_PINS_RESERVED "19 20 26 27 28 29 30 31 32 33 34 35 36 37 43 44"  // USB, flash, octal PSRAM, UART0 console
 #define AQ_CONSOLE_DUAL 1
 #define PIN_SPI_SCK 12      // ICM-45686
 #define PIN_SPI_MISO 13
@@ -91,6 +94,7 @@
 #elif defined(BOARD_ESP32S3_DEVKIT)
 // ---------------- ESP32-S3 DevKitC-1 ----------------
 #define AQ_BOARD_NAME "ESP32-S3-DevKitC"
+#define AQ_PINS_RESERVED "19 20 26 27 28 29 30 31 32"  // native USB, SPI flash
 // DevKitC-1 (and the N16R8 clones) have two USB-C ports: "USB" (native USB) and "COM/UART" (a
 // CH343 / CP2102 bridge on UART0). The console answers on both: whichever port last sent a byte
 // gets the replies. UART0 is therefore not a free serial port (SERIAL3 does not exist).
@@ -141,6 +145,7 @@
 // Motors MUST stay on GPIOB (DShot DMA bit-bang on one port) and on TIM3 (PWM).
 // TIM1 + DMA2 Stream5 (DShot) and TIM5 (scheduler) are reserved.
 #define AQ_BOARD_NAME "STM32F411-BlackPill"
+#define AQ_PINS_RESERVED "PA11 PA12 PA13 PA14 PC14 PC15"  // USB, SWD, 32 kHz crystal
 #define PIN_SPI_SCK PA5     // SPI1
 #define PIN_SPI_MISO PA6
 #define PIN_SPI_MOSI PA7
@@ -179,6 +184,7 @@
 #else
 #define AQ_BOARD_NAME "STM32F405"
 #endif
+#define AQ_PINS_RESERVED "PA11 PA12 PA13 PA14"  // USB, SWD
 #define PIN_SPI_SCK PA5     // SPI1: IMU
 #define PIN_SPI_MISO PA6
 #define PIN_SPI_MOSI PA7
@@ -200,6 +206,8 @@
 #define PIN_SERIAL4_TX PC12
 #define PIN_SERIAL5_RX PC7  // USART6
 #define PIN_SERIAL5_TX PC6
+#define PIN_SERIAL6_RX PB11 // USART3 (free on this layout: I2C is I2C1 on PB6 / PB7)
+#define PIN_SERIAL6_TX PB10
 #define PIN_MOTOR1 PB4      // TIM3_CH1
 #define PIN_MOTOR2 PB5      // TIM3_CH2
 #define PIN_MOTOR3 PB0      // TIM3_CH3
@@ -224,9 +232,14 @@
 // The ESC has no BEC: power the board's 5V pin from a 5 V BEC (or the flight controller's).
 #if defined(BOARD_STM32H743_DEVEBOX)
 #define AQ_BOARD_NAME "STM32H743-DevEBox"
+#define AQ_PINS_KEYS "PE3 PC5"  // keys K1 / K2
 #else
 #define AQ_BOARD_NAME "STM32H743-WeAct"
+#define AQ_PINS_KEYS "PC13"     // key K1
 #endif
+// USB, SWD, 32 kHz crystal, microSD (SDMMC1), QSPI flash, SPI flash, LCD header, keys (tools/check_pins.py)
+#define AQ_PINS_RESERVED "PA11 PA12 PA13 PA14 PC14 PC15 PC8 PC9 PC10 PC11 PC12 PD2 PB2 PB6 PD11 PD12 PD13 PE2 " \
+                         "PB3 PB4 PD7 PE10 PE11 PE12 PE13 PE14 " AQ_PINS_KEYS
 #define PIN_SPI_SCK PB13    // SPI2: IMU
 #define PIN_SPI_MISO PB14
 #define PIN_SPI_MOSI PB15
@@ -247,8 +260,13 @@
 #define PIN_SERIAL3_TX PE1
 #define PIN_SERIAL4_RX PA10 // USART1 (header pins PA9 / PA10; VBUS sensing is off, PA9 stays a UART pin)
 #define PIN_SERIAL4_TX PA9
-#define PIN_SERIAL5_RX -1   // every other UART of the H743 shares pins with SPI2 / QSPI / LCD / motors here
-#define PIN_SERIAL5_TX -1
+#define PIN_SERIAL5_RX PD6  // USART2 (header pins; the other USART2 pins PA2 / PA3 are motors 3 / 4)
+#define PIN_SERIAL5_TX PD5
+#define PIN_SERIAL6_RX PD0  // UART4 (header pins; its other pins: PA0 / PA1 = motors, PB8 = LED strip)
+#define PIN_SERIAL6_TX PD1
+#define PIN_SERIAL7_RX PC7  // USART6 (camera header D0 / D1, like UART8: leave the camera unplugged)
+#define PIN_SERIAL7_TX PC6
+// UART5 stays unused: its pins are SDMMC (PC12 / PD2), SPI2 (PB12 / PB13) or QSPI / flash (PB5 / PB6)
 #define PIN_MOTOR1 PA0      // TIM2_CH1 (DShot: bit-bang on GPIOA, TIM1 + DMA2 Stream5)
 #define PIN_MOTOR2 PA1      // TIM2_CH2
 #define PIN_MOTOR3 PA2      // TIM2_CH3
@@ -270,6 +288,7 @@
 // ---------------- ESP32-C6 DevKitC-1 (single core RISC-V, WiFi 6) ----------------
 // The C6 has 2 RMT transmit channels: 4 DShot outputs do not fit, motors run OneShot125 / PWM.
 #define AQ_BOARD_NAME "ESP32-C6-DevKitC"
+#define AQ_PINS_RESERVED "12 13 24 25 26 27 28 29 30"  // native USB, SPI flash
 #define PIN_SPI_SCK 20
 #define PIN_SPI_MISO 19
 #define PIN_SPI_MOSI 18
@@ -301,6 +320,7 @@
 // ---------------- ESP32-P4 (dual core RISC-V 400 MHz, no radio on chip) ----------------
 // WiFi needs an ESP32-C6 companion (ESP-Hosted); without it the configurator runs over USB.
 #define AQ_BOARD_NAME "ESP32-P4"
+#define AQ_PINS_RESERVED "24 25"  // USB serial / JTAG
 #define PIN_SPI_SCK 36
 #define PIN_SPI_MISO 37
 #define PIN_SPI_MOSI 38
@@ -342,7 +362,7 @@
 #define PIN_SD_D3 -1
 #endif
 
-// serial ports 4 / 5: only boards with spare UARTs define them
+// serial ports 4-7: only boards with spare UARTs define them
 #ifndef PIN_SERIAL4_RX
 #define PIN_SERIAL4_RX -1
 #define PIN_SERIAL4_TX -1
@@ -350,4 +370,12 @@
 #ifndef PIN_SERIAL5_RX
 #define PIN_SERIAL5_RX -1
 #define PIN_SERIAL5_TX -1
+#endif
+#ifndef PIN_SERIAL6_RX
+#define PIN_SERIAL6_RX -1
+#define PIN_SERIAL6_TX -1
+#endif
+#ifndef PIN_SERIAL7_RX
+#define PIN_SERIAL7_RX -1
+#define PIN_SERIAL7_TX -1
 #endif

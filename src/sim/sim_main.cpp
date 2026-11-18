@@ -289,6 +289,7 @@ void setup(const std::function<void(Config&)>& tweak, Quat attitude = Quat::from
   Config& c = bus::config;
   for (int i = 0; i < NUM_PORTS; i++) c.port_fn[i] = (uint8_t)PortFn::NONE;
   for (int i = 0; i < NUM_PORTS_EXT; i++) c.port_fn_ext[i] = (uint8_t)PortFn::NONE;
+  for (int i = 0; i < NUM_PORTS_EXT2; i++) c.port_fn_ext2[i] = (uint8_t)PortFn::NONE;
   c.acc_calibrated = 1;
   c.mag_bias[0] = 1e-4f;
   c.cur_scale = 10.0f;

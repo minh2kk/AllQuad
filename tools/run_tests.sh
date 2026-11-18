@@ -4,6 +4,7 @@
 #   pip install pymavlink   (for the MAVLink check)
 set -e
 cd "$(dirname "$0")/.."
+python3 tools/check_pins.py
 tools/build_host.sh "$@"
 ./build/tests
 if python3 -c "import pymavlink" 2>/dev/null; then python3 tools/test_mavlink.py; else echo "(pymavlink not installed: MAVLink check skipped)"; fi

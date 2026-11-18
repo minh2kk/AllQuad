@@ -46,6 +46,8 @@ void startScheduler();          // STM32: never returns. ESP32/host: returns.
 uint64_t timeUs();
 uint32_t timeMs();
 int taskCount();
+// free heap now and the lowest it has been since boot (bytes; 0 / 0 on the PC)
+void heapStats(uint32_t& freeNow, uint32_t& lowest);
 TaskStats taskStats(int i);
 void resetTaskStats();
 

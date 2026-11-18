@@ -36,6 +36,7 @@ const char* triggerSource() { return "timer"; }
 uint64_t timeUs() { return nowUs; }
 uint32_t timeMs() { return (uint32_t)(nowUs / 1000); }
 int taskCount() { return nTasks; }
+void heapStats(uint32_t& freeNow, uint32_t& lowest) { freeNow = lowest = 0; }
 TaskStats taskStats(int i) { return tasks[i].stats; }
 void resetTaskStats() {
   for (int i = 0; i < nTasks; i++) tasks[i].stats.maxUs = 0;

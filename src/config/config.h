@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 27;
+constexpr uint16_t CONFIG_VERSION = 28;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -36,6 +36,7 @@ enum class PortFn : uint8_t {
 };
 constexpr int NUM_PORTS = 4;  // UART1, UART2, UART3, UDP (ESP32 WiFi)
 constexpr int NUM_PORTS_EXT = 2;  // UART4, UART5 (v22, boards with more UARTs: H743, F405, F722)
+constexpr int NUM_PORTS_EXT2 = 2;  // SERIAL6, SERIAL7 (v28: H743 7 UARTs, F405 / F722 6)
 
 // Mode switches (Betaflight "Modes" tab / iNav): a box is active while its AUX channel is inside [lo, hi] us.
 // Several ranges may drive the same box (any active range activates it). Flight mode priority when several
@@ -317,6 +318,9 @@ struct Config {
   uint8_t ff_jitter;              // stick moves smaller than this per RC frame get less FF (0 = off)
   uint8_t ff_boost;               // stick acceleration added to FF (0 = off)
   uint8_t ff_max_pct;             // FF fades out above this % of the max rate (0 / 100 = off)
+  // ---- v28: serial ports 6 and 7 ----
+  uint8_t port_fn_ext2[NUM_PORTS_EXT2];
+  uint32_t port_baud_ext2[NUM_PORTS_EXT2];
 
   uint32_t crc;
 };
@@ -347,11 +351,13 @@ const ParamInfo& paramInfo(int i);
 inline uint8_t portFnOf(const Config& c, int port) {
   if (port >= 0 && port < NUM_PORTS) return c.port_fn[port];
   if (port >= 5 && port < 5 + NUM_PORTS_EXT) return c.port_fn_ext[port - 5];
+  if (port >= 7 && port < 7 + NUM_PORTS_EXT2) return c.port_fn_ext2[port - 7];
   return 0;
 }
 inline uint32_t portBaudOf(const Config& c, int port) {
   if (port >= 0 && port < NUM_PORTS) return c.port_baud[port];
   if (port >= 5 && port < 5 + NUM_PORTS_EXT) return c.port_baud_ext[port - 5];
+  if (port >= 7 && port < 7 + NUM_PORTS_EXT2) return c.port_baud_ext2[port - 7];
   return 0;
 }
 // gains of the active PID / rate profile (0 = pid / rates, 1-2 = prof_pid / prof_rates)

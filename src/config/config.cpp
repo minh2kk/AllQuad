@@ -69,6 +69,9 @@ static void v27Defaults(Config& c) {
   c.ff_boost = 15;
   c.ff_max_pct = 90;
 }
+static void v28Defaults(Config& c) {
+  for (int i = 0; i < NUM_PORTS_EXT2; i++) { c.port_fn_ext2[i] = 0; c.port_baud_ext2[i] = 0; }
+}
 static void v23Defaults(Config& c) {
   c.osd_canvas = 0;  // auto
   c.osd_font = 0;    // Betaflight glyphs
@@ -282,6 +285,7 @@ void configDefaults(Config& c) {
   v25Defaults(c);
   v26Defaults(c);
   v27Defaults(c);
+  v28Defaults(c);
   configSeal(c);
 }
 
@@ -310,6 +314,7 @@ bool configMigrate(Config& c) {
   if (c.version < 25) v25Defaults(d);
   if (c.version < 26) v26Defaults(d);
   if (c.version < 27) v27Defaults(d);
+  if (c.version < 28) v28Defaults(d);
   configSeal(d);
   c = d;
   return true;

@@ -38,7 +38,7 @@ extern uint32_t SystemCoreClock;
 #elif defined(STM32F722xx)
 #define configTOTAL_HEAP_SIZE (112 * 1024)
 #elif defined(STM32F405xx)
-#define configTOTAL_HEAP_SIZE (66 * 1024)
+#define configTOTAL_HEAP_SIZE (64 * 1024)
 #else  // F411: 128 kB RAM
 #define configTOTAL_HEAP_SIZE (66 * 1024)
 #endif

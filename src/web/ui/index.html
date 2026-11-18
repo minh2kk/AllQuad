@@ -2682,6 +2682,7 @@ async function loadParams() {
     S.order = [];
     for (const p of j.params) { S.params[p.n] = { v: p.v, min: p.min, max: p.max, f: p.f === 1, r: p.r === 1 }; S.order.push(p.n); }
     S.portMask = typeof j.ports === "number" ? j.ports : 0x0F;  // older firmware: UART1-3 + UDP
+    S.portPins = j.portpins || null;
     S.sd = j.sd || { modes: 0, fixed: true, def: [] };  // SD card modes / wiring of this board
     buildPid();
   } catch (e) {

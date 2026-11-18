@@ -92,9 +92,9 @@ Kiểm tra nhanh trên board: `tools\aqtest.bat` (Windows) gửi `status` / `per
 | `esp32c6` | ESP32-C6 | 1 kHz | OneShot125, không thẻ SD |
 | `esp32p4` | ESP32-P4 | 1–2 kHz | không WiFi: cấu hình qua USB |
 | `blackpill_f411ce` | STM32F411 BlackPill | 1 kHz | |
-| `stm32f405` / `stm32f722` | FC F405 / F722 | 1–2 kHz | SERIAL4/5 |
+| `stm32f405` / `stm32f722` | FC F405 / F722 | 1–2 kHz | 6 UART (SERIAL1–6) |
 | `stm32h743_weact` | **WeAct MiniSTM32H743** | **3,2 kHz** (tối đa 4) | khe **microSD có sẵn** (bật mặc định), DShot600 + bidir + EDT |
-| `stm32h743_devebox` | **MCUDev DevEBox STM32H743VIT6** | **3,2 kHz** | như WeAct; IMU INT1 → PC4, I2C2 PB11/PB10, RX trên PA9/PA10 = SERIAL4 |
+| `stm32h743_devebox` | **MCUDev DevEBox STM32H743VIT6** | **3,2 kHz** | như WeAct; IMU INT1 → PC4, I2C2 PB11/PB10, RX trên PA9/PA10 = SERIAL4; 7 UART (SERIAL1–7) |
 | `stm32f405_qemu` | (máy ảo QEMU) | – | chỉ để kiểm tra khởi động: `tools/qemu_f405.sh` |
 
 | Loại | Thiết bị (tự nhận diện) |
@@ -497,7 +497,7 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 
 ## Cổng, trạm mặt đất, WiFi
 
-**Chức năng cổng** (`serial1_fn`…`serial5_fn`, `udp_fn`; baud `serialN_baud`):
+**Chức năng cổng** (`serial1_fn`…`serial7_fn`, `udp_fn`; baud `serialN_baud`; SERIAL6/7 từ cấu hình v28):
 
 | Mã | Chức năng | Mã | Chức năng |
 |---|---|---|---|
@@ -506,7 +506,23 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 | 2 | GPS | 8 | blackbox (OpenLog) |
 | 3 | MAVLink | 9 | VTX SmartAudio |
 | 4 | MSP (cả optical flow / rangefinder MSP) | 10 | VTX Tramp |
-| 5 | MSP DisplayPort (OSD kính số) | | |
+| 5 | MSP DisplayPort (OSD kính số) | 11 | configurator (cầu WiFi ESP32-C3 / Bluetooth) |
+
+**Cổng serial theo board** (tab Cổng hiện UART và chân dưới tên từng cổng):
+
+| Cổng | H743 WeAct / DevEBox | F405 / F722 | F411 BlackPill |
+|---|---|---|---|
+| SERIAL1 | USART3 RX PD9 / TX PD8 | USART2 PA3 / PA2 | USART2 PA3 / PA2 |
+| SERIAL2 | UART7 PE7 / PE8 | USART1 PA10 / PA9 | USART1 PA10 / PA9 |
+| SERIAL3 | UART8 PE0 / PE1 | UART4 PC11 / PC10 | – |
+| SERIAL4 | USART1 PA10 / PA9 | UART5 PD2 / PC12 | – |
+| SERIAL5 | USART2 PD6 / PD5 | USART6 PC7 / PC6 | – |
+| SERIAL6 | UART4 PD0 / PD1 | USART3 PB11 / PB10 | – |
+| SERIAL7 | USART6 PC7 / PC6 | – | – |
+
+- H743: UART5 không dùng (chân của nó là thẻ SD, SPI2 của IMU hoặc flash QSPI). SERIAL3 và SERIAL7 nằm trên header camera: không cắm camera.
+- Chống trùng chân: `tools/check_pins.py` (chạy trong `run_tests.sh` và CI) kiểm mọi board: không chân nào dùng hai lần, không đụng chân board / chip giữ riêng (`AQ_PINS_RESERVED`: USB, SWD, thẻ SD, flash, PSRAM…), và mỗi chân RX / TX đúng là chân của UART đó với đúng alternate function.
+- `selftest` báo cổng được gán chức năng nhưng board không có, và chức năng dùng một lần (receiver, GPS, ESC, VTX…) gán cho hai cổng (chỉ cổng đầu được dùng). ESP32: `led_pin` trùng chân board / chip thì dải LED không bật.
 
 - **USB:** CLI, MSP, MAVLink và giao thức của trang cấu hình dùng chung một cổng (tự nhận).
 - **WiFi:**
