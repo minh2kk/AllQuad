@@ -119,6 +119,34 @@ section[hidden] { display: none; }
   nav.tabs button[aria-selected="true"] { background: color-mix(in srgb, var(--acc) 12%, transparent); }
 }
 
+/* ---------- usability layer (ux.js) ---------- */
+[data-pghide] { display: none !important; }
+#navMore { display: none; }
+body.barshow main { padding-bottom: 120px; }
+.bits { display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: flex-end; max-width: 60%; }
+.bits .check { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 4px 0; font-size: .88rem; white-space: nowrap; }
+.bits .check input { width: 16px; height: 16px; margin: 0; }
+.prow.wide { display: block; }
+.prow.wide .bits { justify-content: flex-start; max-width: none; margin-top: 4px; }
+.con-more { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.con-more .btn { flex: 1 1 auto; font-size: .88rem; }
+details.con-help, details.fl-help { margin: 10px 0 4px; font-size: .88rem; }
+details.con-help summary, details.fl-help summary { cursor: pointer; color: var(--acc); font-weight: 600; }
+#flasher .panel.drop { outline: 2px dashed var(--acc); outline-offset: 4px; }
+#flInfo.bad { color: var(--danger); }
+@media (max-width: 899px) {
+  #navMore { display: block; }
+  nav.tabs { overflow-x: hidden; }
+  nav.tabs button { flex: 1 1 0; min-width: 0; }
+  nav.tabs button[data-tab]:not([data-tab=overview]):not([data-tab=setup]):not([data-tab=pid]):not([data-tab=modes]):not([aria-selected=true]) { display: none; }
+  body.navsheet::before { content: ""; position: fixed; inset: 0; background: rgba(10, 20, 30, .45); z-index: 40; }
+  body.navsheet nav.tabs { z-index: 41; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; max-height: 80vh; overflow-y: auto;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); border-radius: 16px 16px 0 0; box-shadow: 0 -12px 40px rgba(0, 0, 0, .25); }
+  body.navsheet nav.tabs button:not(.navmini-btn) { display: block !important; border-top: 0; border-radius: 10px; padding: 12px 4px; }
+  body.navsheet nav.tabs .tgroup { display: block; grid-column: 1 / -1; font-size: .7rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-2); padding: 8px 4px 0; }
+}
+
 /* ---------- surfaces ---------- */
 .panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px; margin: 12px 0; box-shadow: var(--shadow); }
 .panel > h3:first-child { margin-top: 0; }
@@ -341,7 +369,7 @@ input[type=range] { accent-color: var(--acc); }
 @media (max-width: 600px) { .prow { grid-template-columns: minmax(0, 1fr) 112px; gap: 10px; } .panel { padding: 14px; } }
 @media (min-width: 900px) { .applybar { left: calc(92px + 50%); transform: translateX(-50%); right: auto; width: min(640px, calc(100% - 140px)); bottom: 18px; } }
 @media (min-width: 1200px) { .applybar { left: calc(106px + 50%); } }
-.toast { position: fixed; left: 50%; transform: translateX(-50%); top: 96px; z-index: 9; background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 10px; display: none; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--sh, 84px) + 52px); z-index: 9; background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 10px; display: none; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 .toast.show { display: block; }
 /* ---------- laptop tools: CLI, motors, ports, OSD, sensors, flasher ---------- */
 .term { background: #0E1620; color: #D7E3EE; border-color: #0E1620; }
@@ -1096,12 +1124,15 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
 
   <!-- ======================= PARAMETERS ======================= -->
   <section id="tab-params" hidden>
-    <h2 data-j="Preset">Preset</h2>
-    <p class="muted">Bộ giá trị khởi đầu theo loại khung và kiểu bay. Chọn một bộ: các thay đổi vào hàng chờ, xem lại rồi bấm Áp dụng và Lưu.</p>
-    <div class="presets" id="presetList"></div>
-    <h2 data-j="Tất cả">Tất cả tham số</h2>
+    <h2 data-j="Tất cả tham số">Tất cả tham số</h2>
     <input type="search" id="pSearch" placeholder="Tìm tham số, ví dụ: rth, fence, osd" aria-label="Tìm tham số">
     <div class="cards" id="paramGroups" style="margin-top:6px"></div>
+    <h2 data-j="Preset & hồ sơ">Preset & hồ sơ</h2>
+    <p class="muted">Bộ giá trị khởi đầu theo loại khung và kiểu bay. Chọn một bộ: các thay đổi vào hàng chờ, xem lại rồi bấm Lưu.</p>
+    <div class="presets" id="presetList"></div>
+    <div id="profHost"></div>
+    <h2 data-j="Lịch sử & so sánh">Lịch sử & so sánh</h2>
+    <div id="paramTools"></div>
   </section>
 
   <!-- ======================= SYSTEM ======================= -->
@@ -1188,7 +1219,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
 
 <div class="applybar" id="applyBar" role="region" aria-label="Thay đổi chưa áp dụng">
   <span id="applyText"></span>
-  <span class="row"><button class="btn" id="discardBtn">Bỏ</button><button class="btn primary" id="applyBtn">Áp dụng</button></span>
+  <span class="row"><button class="btn" id="discardBtn">Bỏ</button><button class="btn" id="applyBtn" title="Đổi trên FC ngay, mất khi tắt nguồn: để thử trước khi lưu">Chỉ áp dụng</button><button class="btn primary" id="applySaveBtn" title="Áp dụng và lưu vào flash (Ctrl+S)">Lưu</button></span>
 </div>
 <div class="toast" id="toast" role="status"></div>
 <div class="login" id="login" hidden>
@@ -1206,28 +1237,34 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
 <div class="login" id="connect" hidden>
   <div class="panel connect" role="dialog" aria-labelledby="comTitle">
     <h2 id="comTitle" style="margin-top:0">Kết nối với flight controller</h2>
-    <p class="muted" style="margin-bottom:4px">Cắm cáp USB vào FC rồi chọn cổng COM của nó.</p>
+    <p class="muted" style="margin-bottom:4px">Cắm cáp USB vào FC rồi chọn cổng của nó. Lần sau trang tự nối lại khi bạn cắm cáp.</p>
+    <button class="btn primary" id="comAgain" hidden>Kết nối lại cổng vừa dùng</button>
     <button class="btn primary" id="comPick">Chọn cổng COM</button>
     <button class="btn primary" id="usbPick" hidden>Kết nối USB trực tiếp (điện thoại, WebUSB)</button>
-    <button class="btn" id="comAgain" hidden>Kết nối lại cổng vừa dùng</button>
-    <button class="btn" id="sitlBtn" hidden>Mô phỏng trên máy (SITL, không cần board)</button>
-    <button class="btn" id="demoBtn" hidden>Thử với drone ảo (demo, chạy trong trình duyệt)</button>
-    <button class="btn flOpen">Nạp firmware…</button>
-    <button class="btn" id="pwaInstall" hidden>Cài làm ứng dụng (dùng được khi không có mạng)</button>
-    <label class="opt" for="comBaud"><span style="padding-top:10px">Tốc độ</span>
-      <select id="comBaud">
-        <option value="921600">921600 (ESP32, mặc định)</option>
-        <option value="115200">115200 (firmware cũ)</option>
-      </select>
-    </label>
     <p class="note" id="comState" hidden></p>
     <p class="note bad" id="comErr" hidden></p>
+    <div class="con-more">
+      <button class="btn flOpen">Nạp firmware…</button>
+      <button class="btn" id="demoBtn" hidden>Drone ảo (demo)</button>
+      <button class="btn" id="sitlBtn" hidden>Mô phỏng SITL</button>
+      <button class="btn" id="pwaInstall" hidden>Cài làm ứng dụng</button>
+    </div>
     <p class="muted" id="pwaInfo" hidden style="font-size:.8rem;margin:0"></p>
-    <ul class="steps">
-      <li>Không thấy cổng: cài driver CP210x hoặc CH340 cho ESP32 DevKit. ESP32-S3 và STM32 hiện là "USB Serial Device".</li>
-      <li>Đóng terminal, CLI hay Betaflight/INAV Configurator đang giữ cổng.</li>
-      <li>ESP32 còn vào được bằng WiFi: nối mạng AllQuad-xxxx, mở 192.168.4.1.</li>
-    </ul>
+    <details class="con-help">
+      <summary>Không kết nối được?</summary>
+      <ul class="steps">
+        <li>Không thấy cổng: cài driver CP210x hoặc CH340 cho ESP32 DevKit. ESP32-S3 và STM32 hiện là "USB Serial Device".</li>
+        <li>Đóng terminal, CLI hay Betaflight/INAV Configurator đang giữ cổng.</li>
+        <li>ESP32 còn vào được bằng WiFi: nối mạng AllQuad-xxxx, mở 192.168.4.1.</li>
+        <li>FC đang chạy firmware rất cũ (115200 baud): đổi tốc độ bên dưới. STM32 nối USB trực tiếp thì tốc độ không ảnh hưởng.</li>
+      </ul>
+      <label class="opt" for="comBaud"><span style="padding-top:10px">Tốc độ</span>
+        <select id="comBaud">
+          <option value="921600">921600 (mặc định)</option>
+          <option value="115200">115200 (firmware cũ)</option>
+        </select>
+      </label>
+    </details>
   </div>
 </div>
 
@@ -1595,6 +1632,10 @@ function setEdit(n, v) {
     else if (document.activeElement !== el) el.value = fmt(n, v);
     el.closest(".stepper, .prow")?.classList.toggle("changed", n in S.edits);
   });
+  document.querySelectorAll(`[data-pbits="${n}"]`).forEach((el) => {
+    el.checked = (v & +el.dataset.bit) !== 0;
+    el.closest(".prow")?.classList.toggle("changed", n in S.edits);
+  });
   refreshApplyBar();
   if (/rc_rate|max_rate|expo/.test(n)) drawRates();
   if (/lpf|notch|loop_hz/.test(n)) drawFilters();
@@ -1742,6 +1783,14 @@ const ENUMS = {
   dyn_notch_count: ["Tắt", "1 notch", "2 notch"],
   osd_canvas: ["Tự động", "SD 30×16", "HD 50×18 (HDZero)", "HD 53×20 (DJI, Walksnail)", "HD 60×22"], osd_font: ["Icon Betaflight", "Chỉ chữ"],
 };
+ENUMS.prof_ch = ["Không dùng", , , , , ...Array.from({ length: 12 }, (_, i) => `AUX${i + 1} (CH${i + 5})`)];
+ENUMS.flow_align = ["0°", "90°", "180°", "270°"];
+// bit masks: one tick box per bit instead of "add the numbers up"
+const BITS = {
+  at_axes: [[1, "Roll"], [2, "Pitch"], [4, "Yaw"]],
+  at_steps: [[1, "P / D"], [2, "Feedforward"], [4, "I"], [8, "Bộ lọc"]],
+  flow_flip: [[1, "Lật X"], [2, "Lật Y"]],
+};
 ENUMS.imu_align = ENUMS.mag_align = ["0°", "90°", "180°", "270°", "0° lật", "90° lật", "180° lật", "270° lật"];
 // unit shown inside the box (by name pattern)
 const UNITS = [[/_hz$|^notch\d_cut$|^rpm_min_hz$|^dyn_notch_m/, "Hz"], [/_m$|^rth_alt$|^fence_radius$|^fence_alt_max$|^rf_max_m$|_radius$|^land_slow_alt$/, "m"],
@@ -1763,13 +1812,24 @@ function prow(n) {
   d.className = "prow";
   d.dataset.name = n;
   const en = ENUMS[n];
-  // a select lists the choices itself: drop "0 tắt, 1 RTH…" from the title
-  const [title, detail] = !HINT[n] ? [n, ""] : en && /:\s*\d/.test(HINT[n]) ? [HINT[n].split(":")[0], ""] : splitHint(HINT[n]);
+  // a select / tick boxes list the choices themselves: drop "0 tắt, 1 RTH…" / "1 roll, 2 pitch…" from the title
+  const [title, detail] = !HINT[n] ? [n, ""] : (en || BITS[n]) && /:\s*\d/.test(HINT[n]) ? [HINT[n].split(":")[0], ""] : splitHint(HINT[n]);
+  const bits = BITS[n];
   const bool = !p.f && p.min === 0 && p.max === 1 && !en, unit = unitOf(n);
-  const range = en || bool ? "" : ` · ${p.min}…${p.max}`;
+  const range = en || bool || bits ? "" : ` · ${p.min}…${p.max}`;
   d.innerHTML = `<div><div class="name">${esc(title)}${p.r ? '<span class="badge">khởi động lại</span>' : ""}</div><div class="hint"><code>${n}</code>${detail ? " · " + esc(detail) : ""}<span class="num">${range}</span></div></div>`;
   let el;
-  if (bool) {
+  if (bits) {
+    const c = document.createElement("div");
+    c.className = "bits";
+    d.classList.add("wide");
+    c.innerHTML = bits.map(([b, t]) => `<label class="check"><input type="checkbox" data-pbits="${n}" data-bit="${b}"> ${esc(t)}</label>`).join("");
+    c.querySelectorAll("input").forEach((x) => {
+      x.checked = (val(n) & +x.dataset.bit) !== 0;
+      x.onchange = () => setEdit(n, x.checked ? val(n) | +x.dataset.bit : val(n) & ~+x.dataset.bit);
+    });
+    d.appendChild(c);
+  } else if (bool) {
     const t = document.createElement("label");
     t.className = "tog";
     t.innerHTML = `<input type="checkbox" data-p="${n}" aria-label="${n}"><i></i>`;
@@ -2969,6 +3029,7 @@ $("secSsid").oninput = () => { $("secSsid").dataset.touched = "1"; };
 /*TOOLS_JS*/
 /*EXTRAS_JS*/
 /*PRO_JS*/
+/*UX_JS*/
 // opened from a file or the laptop launcher (?usb): connect over USB; served by the drone: WiFi
 // the laptop / phone copy (AllQuad-Configurator.html carries the demo firmware) also when hosted on https
 if (/[?&]bridge\b/.test(location.search)) bridgeConnect();

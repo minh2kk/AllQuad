@@ -6,24 +6,24 @@
    "file": "AllQuad-esp32s3-n16r8-app.bin",
    "name": "ESP32-S3 N16R8 (giữ cấu hình)",
    "target": "esp",
-   "size": 1464304,
-   "sha256": "ddc0c5d109ae943664f12e913f1578d40d99373834aef95580495dc1036b3681",
+   "size": 1468528,
+   "sha256": "6ad388623397806febc1b678689f632262beaf3315f6dbda479d29c56468aab2",
    "match": "ESP32-S3-N16R8"
   },
   {
    "file": "AllQuad-esp32s3-n16r8-full.bin",
    "name": "ESP32-S3 N16R8, file gộp (board trống / đổi phân vùng)",
    "target": "esp",
-   "size": 1529840,
-   "sha256": "c89b0e640932e83a7346ed4067a00e61aa8e5f00594a80c888126ce8e9ef7c2c",
+   "size": 1534064,
+   "sha256": "32ef2a20f0fbb4fca3c11f31707c3028c366a654fc0eed3bd9d48d3d08d33465",
    "note": "File gộp ghi cả bảng phân vùng: cấu hình về mặc định (nhớ sao lưu)."
   },
   {
    "file": "AllQuad-esp32dev-full.bin",
    "name": "ESP32 DevKit (WROOM-32), file gộp",
    "target": "esp",
-   "size": 1555440,
-   "sha256": "083277e6a15ab73901cdd61a93b5401d72500ab86953b7f3806d390bb900f6f7",
+   "size": 1559680,
+   "sha256": "991ccf6fb64a5525c49e08886717f57c3e69a503565da00717adfd255d270578",
    "match": "ESP32-DevKit",
    "note": "Từ v2.1 ô firmware 4 MB lớn hơn: phải nạp file gộp này một lần, cấu hình về mặc định (nhớ sao lưu)."
   },
@@ -31,32 +31,32 @@
    "file": "AllQuad-esp32s3-app.bin",
    "name": "ESP32-S3 DevKitC (giữ cấu hình)",
    "target": "esp",
-   "size": 1459024,
-   "sha256": "79d16a3e55103ae9ac42b7f1f1f11dcc0e9781483d464cdd70a964b692b9e5b7",
+   "size": 1463264,
+   "sha256": "bf8fd2b23e06a860e44a77a4ed91b91a46c31b4f687f879521052d8ee6334299",
    "match": "ESP32-S3-DevKitC"
   },
   {
    "file": "AllQuad-esp32c6-app.bin",
    "name": "ESP32-C6 DevKitC (giữ cấu hình)",
    "target": "esp",
-   "size": 1588016,
-   "sha256": "af84b8917974d53cb6d93d6d06fe0dd033dd3cce6a9d5162a6d2f20ef3f21725",
+   "size": 1592256,
+   "sha256": "f4eed9cc962dada94a22076bf8c5a64462b876e22171f918656abc14f3dde363",
    "match": "ESP32-C6"
   },
   {
    "file": "AllQuad-esp32p4-app.bin",
    "name": "ESP32-P4 (giữ cấu hình)",
    "target": "esp",
-   "size": 1539584,
-   "sha256": "39b699301ada48d074ede238fd4524e661126b1c414a25166feb15b210661522",
+   "size": 1543824,
+   "sha256": "922445693ec8e58dcd03358bd1e07bfbe425e49e8ae71cb2ed05fa1d2fb9db65",
    "match": "ESP32-P4"
   },
   {
    "file": "AllQuad-bridge-esp32c3-full.bin",
    "name": "Cầu WiFi ESP32-C3 (không phải FC)",
    "target": "esp",
-   "size": 1214496,
-   "sha256": "f239e34f54ca2a479a9ab40ef216568c915d721b2a8f089a56f2a9cc2bb0903c"
+   "size": 1218736,
+   "sha256": "7113f068c05ef7c543e0cb03e0aa1985a3783031c4eef4186852bacca5b20089"
   },
   {
    "file": "AllQuad-stm32h743_devebox.bin",

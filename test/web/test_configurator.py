@@ -16,6 +16,14 @@ PORT = 8181
 fails = []
 
 
+
+async def navto(pg, name):
+    """open a tab; on a phone the less used tabs sit behind the "Thêm" button"""
+    sel = "nav button[data-tab=%s]" % name
+    if not await pg.locator(sel).is_visible() and await pg.locator("#navMore").is_visible():
+        await pg.click("#navMore")
+    await pg.click(sel)
+
 def check(ok, msg):
     print("[%s] %s" % ("PASS" if ok else "FAIL", msg))
     if not ok:
@@ -81,7 +89,7 @@ async def main():
             check(await pg.is_hidden("#connect") and "Cầu WiFi" in await pg.inner_text("#linkRate"),
                   "WiFi bridge page: connected to the FC through /link without a click")
             await pg.screenshot(path=os.path.join(SHOTS, "bridge.png"))
-            await pg.click("nav button[data-tab=system]")
+            await navto(pg, "system")
             await pg.wait_for_selector("#brSsid", timeout=5000)
             await pg.wait_for_function("$('brSsid').value === 'AllQuad-Link-SIM'", timeout=3000)
             check("mặc định" in await pg.inner_text("#brWarn"), "WiFi bridge: System tab warns about the default password")
@@ -120,7 +128,7 @@ async def main():
             await pg.wait_for_timeout(300)
             back = await pg.evaluate("api('/api/params').then(j => j.params.find(p => p.n === 'roll_p').v)")
             check(abs(back - 63) < 1e-3, "CLI text inside a frame is not executed (roll_p still %s)" % back)
-            await pg.click("nav button[data-tab=system]")
+            await navto(pg, "system")
             await pg.wait_for_timeout(1500)
             check("telemetry" in await pg.inner_text("#taskTable") and await pg.is_hidden("#otaPick")
                   and await pg.is_visible("#comClose") and await pg.is_hidden("#logoutBtn"),
@@ -165,7 +173,7 @@ async def main():
             await pg.wait_for_timeout(1000)
             rate = await pg.evaluate("S.lastStatusMs") - t0
             check(rate > 0 and await pg.evaluate("Date.now() - S.lastStatusMs < 500"), "live status keeps coming over the port")
-            await pg.click("nav button[data-tab=modes]")
+            await navto(pg, "modes")
             await pg.wait_for_timeout(500)
             await pg.screenshot(path=os.path.join(SHOTS, "usb-modes.png"))
             # framing error / break on the line (e.g. an ESP32 printing while it resets): not a disconnect

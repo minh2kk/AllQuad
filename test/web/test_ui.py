@@ -10,6 +10,14 @@ SHOTS = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "web",
 PORT = 8097
 fails = []
 
+
+async def navto(pg, name):
+    """open a tab; on a phone the less used tabs sit behind the "Thêm" button"""
+    sel = "nav button[data-tab=%s]" % name
+    if not await pg.locator(sel).is_visible() and await pg.locator("#navMore").is_visible():
+        await pg.click("#navMore")
+    await pg.click(sel)
+
 def check(ok, msg):
     print("[%s] %s" % ("PASS" if ok else "FAIL", msg))
     if not ok: fails.append(msg)
@@ -39,7 +47,7 @@ async def main():
         ws = json.loads(urllib.request.urlopen("http://127.0.0.1:%d/mock/ws_clients" % PORT).read())["n"]
         polls = await pg.evaluate("S.polling === true")
         check(ws == 1 and not polls, "live status over one WebSocket (no polling)")
-        await pg.click("nav button[data-tab=pid]")
+        await navto(pg, "pid")
         before = await pg.input_value("#pidMatrix input[data-p=roll_p]")
         await pg.locator("#pidMatrix .stepper").first.locator("button").last.click()
         after = await pg.input_value("#pidMatrix input[data-p=roll_p]")
@@ -49,7 +57,7 @@ async def main():
         # applied: the bar turns into the "not saved to flash yet" reminder
         check(not await pg.is_visible("#applyBtn") and await pg.is_visible("#saveNowBtn"), "change applied (save reminder shown)")
         await pg.screenshot(path=os.path.join(SHOTS, "pid.png"), full_page=True)
-        await pg.click("nav button[data-tab=modes]")
+        await navto(pg, "modes")
         rows = await pg.locator("#modeList .mrow").count()
         await pg.click("#modeAdd")
         last = pg.locator("#modeList .mrow").last
@@ -61,13 +69,13 @@ async def main():
         check(rows == 9 and "HORIZON" in await pg.inner_text("#modeActive"),
               "modes: default 9 ranges, new HORIZON range on AUX7 becomes active")
         await pg.screenshot(path=os.path.join(SHOTS, "modes.png"), full_page=True)
-        await pg.click("nav button[data-tab=nav]")
+        await navto(pg, "nav")
         await pg.wait_for_timeout(1500)
         kv = await pg.inner_text("#navKv")
         check(await pg.evaluate("S.mission && S.mission.items.length === 9 && S.mission.rally.length === 1")
               and "Tây Nam" in kv and "compass" in kv, "navigation: mission loaded, wind & heading shown")
         await pg.screenshot(path=os.path.join(SHOTS, "nav.png"))
-        await pg.click("nav button[data-tab=blackbox]")
+        await navto(pg, "blackbox")
         await pg.click("#bbDownload")
         await pg.wait_for_selector("#bbResults:not([hidden])", timeout=30000)
         n = await pg.locator("#bbSuggest .sug").count()
@@ -95,7 +103,7 @@ async def main():
         await pg.wait_for_function("document.querySelectorAll('#sdFiles .sdrow').length === 1", timeout=5000)
         check(True, "SD card: log deleted, list refreshed")
         await pg.screenshot(path=os.path.join(SHOTS, "sdcard.png"))
-        await pg.click("nav button[data-tab=system]")
+        await navto(pg, "system")
         wire = await pg.inner_text("#sdWire")
         opts = await pg.locator("#sdParams select[data-p=sd_mode] option").count()
         check("CLK → GPIO 30" in wire and "D0 → GPIO 32" in wire and opts == 4,
@@ -105,7 +113,7 @@ async def main():
         check("SCK" in wire and "CS → GPIO 35" in wire and await pg.locator("#sdOpt input[data-p=sd_d3]").count() == 1,
               "SD wiring: SPI shows SCK / MOSI / MISO / CS")
         await pg.click("#discardBtn")
-        await pg.click("nav button[data-tab=params]")
+        await navto(pg, "params")
         await pg.fill("#pSearch", "fence")
         vis = await pg.locator("#paramGroups .prow:visible").count()
         check(0 < vis < 20, "parameter search filters rows (%d)" % vis)
@@ -121,7 +129,7 @@ async def main():
         finally:
             srv2.terminate()
         # backup download, restore from an edited file, firmware update
-        await pg.click("nav button[data-tab=system]")
+        await navto(pg, "system")
         await pg.wait_for_timeout(1500)  # > 10 WebSocket frames: lite frames must keep the slow fields
         tbl = await pg.inner_text("#taskTable")
         check("telemetry" in tbl and "4700 B" in tbl, "task table with stack headroom survives lite status frames")
@@ -148,7 +156,7 @@ async def main():
         check(await pg.inner_text("#otaPct") == "100%", "firmware upload with progress, then reboot")
         await pg.screenshot(path=os.path.join(SHOTS, "system.png"), full_page=True)
         # change the WiFi / web password: logged out, the new password works, the warning is gone
-        await pg.click("nav button[data-tab=system]")
+        await navto(pg, "system")
         await pg.fill("#secSsid", "MyQuad")
         await pg.fill("#secWifi", "s3cret-pass")
         await pg.fill("#secCur", "allquad123")

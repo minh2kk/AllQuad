@@ -247,8 +247,8 @@ function profHost() {
     <div class="row"><input type="text" id="profName" placeholder="Tên, ví dụ: 5 inch freestyle" maxlength="40" style="flex:1;min-width:180px"><button type="button" class="btn primary" id="profSave">Lưu cấu hình hiện tại</button>
     <label class="btn" for="profImp" style="display:inline-flex;align-items:center">Nhập file</label><input type="file" id="profImp" accept=".json,application/json" hidden></div>
     <div id="profRows" style="margin-top:8px"></div>`;
-  const anchor = $("pSearch");
-  anchor.parentElement.insertBefore(p, anchor);
+  if ($("profHost")) $("profHost").appendChild(p);
+  else $("pSearch").parentElement.insertBefore(p, $("pSearch"));
   $("profSave").onclick = () => {
     const name = $("profName").value.trim() || `Hồ sơ ${new Date().toLocaleString("vi-VN")}`;
     const vals = {};

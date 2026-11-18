@@ -184,6 +184,15 @@ Cùng một giao diện, ba cách kết nối:
 | **CLI** | Dòng lệnh như Betaflight, nhớ lệnh, Tab tự hoàn thành, nút nhanh | — |
 | **Hệ thống** | **Khởi động & sự cố** (lý do reset, bản ghi crash STM32 kèm PC / LR, watchdog), cài đặt cầu WiFi (khi nối qua cầu), Lưu / khởi động lại / mặc định / sáng-tối, sao lưu & khôi phục, so sánh với file sao lưu, nạp firmware USB, cập nhật WiFi (OTA), WiFi & bảo mật, **cài đặt blackbox + thẻ SD**, cảnh báo giọng nói, logic conditions, bảng task và thời gian từng khâu vòng bay | `wifi_enable`, `web_enable`, `wifi_armed`, `mav_sysid` |
 
+**Thao tác:**
+- Tab dài chia thành **trang**: thanh nút dưới đầu trang (ví dụ PID · Cảm giác bay · Rates · Bộ lọc · Tất cả) chỉ hiện một phần; trang nhớ phần đang mở. Tìm kiếm (Ctrl K) và các liên kết tự mở đúng phần.
+- **Lưu một bước**: sửa xong bấm **Lưu** (áp dụng + ghi flash) hoặc Ctrl+S; *Chỉ áp dụng* để thử trước (mất khi tắt nguồn). Tham số cần khởi động lại thì sau khi lưu có nút **Khởi động lại FC**.
+- Tham số dạng bit (trục / bước autotune, lật cảm biến quang) là ô tích; kênh chọn profile là danh sách AUX.
+- Điện thoại: thanh dưới giữ Tổng quan, Thiết lập, PID & lọc, Chế độ; các tab khác ở nút **Thêm**.
+- Màn hình kết nối: nút *Kết nối lại* ghi tên thiết bị (STM32, ESP32 CP210x…); tốc độ baud và mẹo nằm trong *Không kết nối được?*.
+- Nạp firmware: kéo thả file vào hộp thoại; trang tự nhận ra ESP32 hay STM32 từ file, đọc tên board trong file và cảnh báo nếu khác board FC đang nối.
+- Tab Tham số: ô tìm kiếm và nhóm tham số đứng đầu; preset + hồ sơ, lịch sử + so sánh ở các trang riêng.
+
 **Không đè tải lên FC:**
 - Trạng thái được đẩy qua **một WebSocket**: 10 Hz ở tab cần dữ liệu nhanh, 2 Hz ở các tab khác, 2 Hz khi armed.
 - Bản tin được chia tầng: GPS / ước lượng gửi xen kẽ, autotune chỉ khi đang chạy.

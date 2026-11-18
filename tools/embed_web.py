@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bundle the web configurator into firmware.
 
-src/web/ui/index.html + analysis.js + tools.js + extras.js + pro.js
+src/web/ui/index.html + analysis.js + tools.js + extras.js + pro.js + ux.js
   -> build/web/index.html            (single file, minified, open in a browser for preview)
   -> build/web/index.dev.html        (same, not minified)
   -> build/web/AllQuad-Configurator.html  (same page for a laptop: open in Chrome/Edge, connect USB;
@@ -34,13 +34,16 @@ def bundle():
         extras = f.read()
     with open(os.path.join(UI, "pro.js"), encoding="utf-8") as f:
         pro = f.read()
-    for ph in ("/*ANALYSIS_JS*/", "/*TOOLS_JS*/", "/*EXTRAS_JS*/", "/*PRO_JS*/"):
+    with open(os.path.join(UI, "ux.js"), encoding="utf-8") as f:
+        ux = f.read()
+    for ph in ("/*ANALYSIS_JS*/", "/*TOOLS_JS*/", "/*EXTRAS_JS*/", "/*PRO_JS*/", "/*UX_JS*/"):
         if ph not in html:
             sys.exit("index.html: placeholder %s missing" % ph)
     html = html.replace("/*ANALYSIS_JS*/", js.replace("</script", "<\\/script"))
     html = html.replace("/*TOOLS_JS*/", tools.replace("</script", "<\\/script"))
     html = html.replace("/*EXTRAS_JS*/", extras.replace("</script", "<\\/script"))
-    return html.replace("/*PRO_JS*/", pro.replace("</script", "<\\/script"))
+    html = html.replace("/*PRO_JS*/", pro.replace("</script", "<\\/script"))
+    return html.replace("/*UX_JS*/", ux.replace("</script", "<\\/script"))
 
 
 WASM = os.path.join(ROOT, "build", "web", "allquad.wasm")

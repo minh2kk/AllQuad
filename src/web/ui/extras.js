@@ -619,7 +619,7 @@ function histInit() {
   p.innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">Lịch sử thay đổi</h3>
     <span class="row"><button class="btn" id="histCsv">Xuất CSV</button><button class="btn ghost" id="histClear">Xoá lịch sử</button></span></div>
     <p class="muted">Lưu trong trình duyệt này: mỗi lần Áp dụng, Khôi phục file hay Nạp mặc định. Hoàn tác đưa giá trị cũ vào thay đổi chờ.</p><div id="histList"></div>`;
-  $("paramGroups").parentElement.insertBefore(p, $("paramGroups"));
+  ($("paramTools") || $("paramGroups").parentElement).appendChild(p);
   $("histCsv").onclick = histCsv;
   $("histClear").onclick = () => { if (confirm("Xoá toàn bộ lịch sử thay đổi trong trình duyệt này?")) { lsSet("aq-history", []); histRender(); } };
 }
@@ -1464,8 +1464,8 @@ function cmpHost() {
     <p class="card-d">Chọn một file sao lưu (.txt): trang liệt kê các tham số khác với drone hiện tại.</p>
     <div class="row"><label class="btn" for="cmpFile">Chọn file…</label><input type="file" id="cmpFile" accept=".txt,text/plain" hidden><span class="muted" id="cmpMsg"></span></div>
     <div id="cmpOut"></div>`;
-  const grid = $("paramGroups");
-  sec.insertBefore(p, grid);
+  if ($("paramTools")) $("paramTools").prepend(p);
+  else sec.insertBefore(p, $("paramGroups"));
   $("cmpFile").onchange = async (ev) => {
     const f = ev.target.files[0];
     if (!f) return;
