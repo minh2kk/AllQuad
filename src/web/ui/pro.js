@@ -834,6 +834,7 @@ const SEARCH_ACTIONS = [
   ["Failsafe & pin", "modes", "failsafe pin battery"],
   ["Bản đồ & nhiệm vụ waypoint", "nav", "mission waypoint map ban do"],
   ["Cổng serial, VTX, LED", "ports", "uart serial vtx led"],
+  ["Sơ đồ chân GPIO (đấu dây)", "pins", "gpio pin chan dau day wiring pinout so do"],
   ["Bố cục OSD", "osd", "osd"],
   ["Phân tích blackbox", "blackbox", "blackbox log pid tune"],
   ["Lưu vào flash, sao lưu, nạp firmware", "system", "save backup restore firmware flash ota"],
@@ -879,6 +880,7 @@ function searchRun() {
     : '<p class="muted">Không tìm thấy.</p>';
   host.querySelectorAll(".gs-it").forEach((b) => (b.onclick = () => {
     $("searchDlg").hidden = true;
+    if (b.dataset.tab === "pins" && typeof pinShow === "function") return pinShow();
     if (b.dataset.tab) return gotoTab(b.dataset.tab);
     searchGo(b.dataset.n);
   }));

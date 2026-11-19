@@ -10,6 +10,8 @@ const has = (n) => !!S.params[n];
 
 function onParamsLoaded() {
   buildPorts();
+  buildPinMap();
+  pinLinks();
   buildVtx();
   buildLed();
   buildOsd();
@@ -19,6 +21,7 @@ function onParamsLoaded() {
 }
 function onParamEdit(n) {
   if (/^serial\d_fn|^udp_fn|^rx_protocol/.test(n)) buildPorts();
+  if (PIN_PARAMS.test(n)) buildPinMap();
   if (n === "vtxt_powers" || /^vtxt_mw/.test(n)) buildVtx();
   else if (/^vtx_|^vtxt_|^serial\d_fn/.test(n)) updateVtx();
   if (/^led_/.test(n)) updateLed();
@@ -327,6 +330,149 @@ function buildPorts() {
   const dup = fns.filter((f, i) => fns.indexOf(f) !== i);
   $("portNote").textContent = (dup.length ? `Cảnh báo: "${PORT_FN[dup[0]][1]}" đang gán cho hai cổng. ` : "") +
     "Đổi chức năng cổng cần Lưu rồi khởi động lại FC. Cổng USB luôn dành cho configurator, CLI, MSP và MAVLink.";
+}
+
+// ---------------------------------------------------------------- pin map
+// What every pin of the board is wired to (firmware: src/hal/board.h, /api/params "pinmap") and what the
+// settings use it for now. Pins set by parameters (ESP32: led_pin, sd_*) come from the settings; a pin
+// used twice is flagged.
+const PIN_PARAMS = /^(serial\d_fn|udp_fn|motor\d_out|osd_backend|imu_dual|imu_sync|led_pin|sd_|cur_scale)/;
+const PIN_GROUP = { imu: "IMU (SPI)", osd: "OSD MAX7456 (SPI)", i2c: "I2C", uart: "Cổng serial", motor: "Motor", adc: "Đo pin",
+  led: "LED trạng thái", buzzer: "Còi", ledstrip: "Dải LED", sd: "Thẻ SD", reserved: "Board / chip" };
+const PIN_FILTERS = [["all", "Tất cả"], ["used", "Đang dùng"], ["uart", "Cổng serial"], ["motor", "Motor"], ["sens", "Cảm biến"], ["other", "Khác"]];
+const PIN_FGROUPS = { uart: ["uart"], motor: ["motor"], sens: ["imu", "i2c", "osd", "adc"], other: ["led", "buzzer", "ledstrip", "sd", "reserved"] };
+const SD_NAMES = ["CLK / SCK", "CMD / MOSI", "D0 / MISO", "D1", "D2", "D3 / CS"];
+const MOTOR_POS = ["sau phải", "trước phải", "sau trái", "trước trái"];
+S.pinFilter = "all"; S.pinQ = ""; S.pinSort = "fn";
+function pinRows() {
+  const pm = S.pinMap;
+  if (!pm || !pm.pins) return [];
+  const gpio = pm.pins.some((r) => /^GPIO/.test(r[0]));  // ESP32: SD / LED strip pins are parameters
+  const sdFree = gpio && S.sd && !S.sd.fixed;
+  const pv = (n, d) => (has(n) ? val(n) : d);
+  const rows = [];
+  for (const [pin, g, arg, what] of pm.pins) {
+    const r = { pin, g, label: "", use: "", wire: "", on: true };
+    if (g === "imu") {
+      r.label = what === "CS2" ? "IMU 2 chip select" : what === "INT" ? "IMU INT1 (data ready)" : "IMU " + what;
+      if (what === "CS2") { r.on = !!pv("imu_dual", 0); r.use = r.on ? "IMU dự phòng" : "không dùng (imu_dual 0)"; }
+      else if (what === "INT") { r.on = !!pv("imu_sync", 1); r.use = r.on ? "vòng bay chạy theo IMU" : "không dùng (imu_sync 0)"; }
+      else r.use = "IMU";
+    } else if (g === "osd") {
+      r.label = "OSD " + what; r.on = pv("osd_backend", 0) === 1; r.use = r.on ? "MAX7456 (analog)" : "không dùng (OSD không phải analog)";
+    } else if (g === "i2c") {
+      r.label = "I2C " + what; r.use = "baro, compass"; r.wire = what === "SDA" ? "SDA của baro / compass" : "SCL của baro / compass";
+    } else if (g === "uart") {
+      const port = PORTS.find((x) => x[2] === arg) || ["", "SERIAL?"];
+      const lab = S.portPins && S.portPins[arg], inst = lab && !/^RX/.test(lab) ? lab.split(" ")[0] : "";
+      const fn = pv(port[0] + "_fn", 0);
+      r.label = `${port[1]} ${what}${inst ? ` (${inst})` : ""}`;
+      r.on = fn > 0; r.use = fn > 0 ? (PORT_FN.find((f) => f[0] === fn) || [0, "?"])[1] : "trống";
+      r.wire = what === "RX" ? "nối chân TX của thiết bị" : "nối chân RX của thiết bị";
+    } else if (g === "motor") {
+      let m = 0;
+      for (let k = 1; k <= 4; k++) if (pv(`motor${k}_out`, k) === arg) m = k;
+      r.label = `Đầu ra motor ${arg}`; r.use = m ? `motor ${m} (${MOTOR_POS[m - 1]})` : "không motor nào"; r.on = !!m;
+      r.wire = "dây tín hiệu ESC " + arg;
+    } else if (g === "adc") {
+      if (what === "VBAT") { r.label = "Đo điện áp pin"; r.use = "điện áp pin"; r.wire = "qua cầu chia áp, không nối thẳng pin"; }
+      else { r.label = "Cảm biến dòng"; r.on = pv("cur_scale", 0) > 0; r.use = r.on ? "dòng điện" : "không dùng (cur_scale 0)"; r.wire = "chân CURR của ESC 4-in-1"; }
+    } else if (g === "led") { r.label = "LED trạng thái"; r.use = "LED"; }
+    else if (g === "buzzer") { r.label = "Còi"; r.use = "còi"; r.wire = "qua transistor"; }
+    else if (g === "ledstrip") { r.label = "Dải LED WS2812 (data)"; r.on = pv("led_pin", 0) > 0; r.use = r.on ? "dải LED" : "không dùng (led_pin 0)"; }
+    else if (g === "sd") {
+      if (sdFree) continue;  // from the parameters below
+      r.label = "Thẻ SD " + SD_NAMES[arg]; r.on = pv("sd_mode", 0) > 0; r.use = r.on ? "thẻ SD" : "không dùng (sd_mode 0)";
+    } else { r.label = "Board / chip dùng"; r.use = "USB, SWD, flash, PSRAM, thạch anh, nút…"; r.reserved = true; }
+    rows.push(r);
+  }
+  if (gpio && pv("led_pin", 0) > 0) rows.push({ pin: "GPIO" + val("led_pin"), g: "ledstrip", label: "Dải LED WS2812 (data)", use: "dải LED (led_pin)", wire: "", on: true });
+  if (sdFree && pv("sd_mode", 0) > 0) {
+    const mode = val("sd_mode"), need = mode === 1 ? [0, 1, 2, 5] : mode === 2 ? [0, 1, 2] : [0, 1, 2, 3, 4, 5];
+    const nm = ["sd_clk", "sd_cmd", "sd_d0", "sd_d1", "sd_d2", "sd_d3"];
+    for (const i of need) {
+      const v = pv(nm[i], 255), p = v !== 255 ? v : S.sd.def && S.sd.def[i] !== 255 ? S.sd.def[i] : -1;
+      rows.push({ pin: p >= 0 ? "GPIO" + p : "chưa đặt", g: "sd", label: "Thẻ SD " + SD_NAMES[i], use: `thẻ SD (${nm[i]})`, wire: "", on: true, missing: p < 0 });
+    }
+  }
+  // the same pin for two things that are both in use
+  const by = {};
+  for (const r of rows) if (r.on && !r.missing) (by[r.pin] = by[r.pin] || []).push(r);
+  for (const list of Object.values(by)) if (list.length > 1) for (const r of list) r.clash = list.filter((x) => x !== r).map((x) => x.label);
+  return rows;
+}
+function pinKey(p) {  // natural order: PA2 < PA10, GPIO4 < GPIO12
+  const m = /^(P([A-K])|GPIO)(\d+)$/.exec(p);
+  return m ? (m[2] ? m[2].charCodeAt(0) * 100 : 0) + +m[3] : 1e6;
+}
+function buildPinMap() {
+  const host = $("pinPanel");
+  if (!host) return;
+  if (!S.pinMap || !S.pinMap.pins) { host.innerHTML = '<p class="muted" style="margin:0">Firmware này chưa gửi sơ đồ chân: nạp bản mới.</p>'; return; }
+  const all = pinRows();
+  if (!host.querySelector("#pinQ")) {
+    host.innerHTML = `<div class="row" style="justify-content:space-between"><span class="muted" id="pinHead"></span>
+      <span class="row"><input type="search" id="pinQ" placeholder="Tìm chân / chức năng, vd PA9, GPS, motor" aria-label="Tìm chân" style="min-height:34px;width:260px;max-width:100%;box-shadow:none">
+      <button class="btn ghost" id="pinSort" type="button"></button></span></div>
+      <div class="seg" id="pinSeg" role="group" aria-label="Lọc chân" style="margin:8px 0;flex-wrap:wrap">${PIN_FILTERS.map(([k, t]) => `<button type="button" data-f="${k}" aria-pressed="false">${t}</button>`).join("")}</div>
+      <p class="note bad" id="pinClash" hidden></p>
+      <div style="overflow-x:auto"><table class="ports" id="pinTable"></table></div>
+      <p class="muted" style="margin-bottom:0;font-size:.82rem">Theo sơ đồ chân của firmware (src/hal/board.h). Mạch FC thương mại có thể đi dây khác: so với sơ đồ của nhà sản xuất. CLI: <span class="num">pins</span> (vd <span class="num">pins uart</span>).</p>`;
+    $("pinQ").oninput = (e) => { S.pinQ = e.target.value; buildPinMap(); };
+    $("pinSort").onclick = () => { S.pinSort = S.pinSort === "fn" ? "pin" : "fn"; buildPinMap(); };
+    $("pinSeg").querySelectorAll("button").forEach((b) => (b.onclick = () => { S.pinFilter = b.dataset.f; buildPinMap(); }));
+  }
+  $("pinSeg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.f === S.pinFilter)));
+  $("pinSort").textContent = S.pinSort === "fn" ? "Xếp theo tên chân" : "Xếp theo chức năng";
+  const used = all.filter((r) => r.on && !r.reserved).length;
+  $("pinHead").innerHTML = `${esc(S.pinMap.board)} · <b>${used}</b> chân đang dùng, ${all.filter((r) => r.reserved).length} chân board giữ`;
+  const clashes = all.filter((r) => r.clash);
+  $("pinClash").hidden = !clashes.length;
+  const cp = {};
+  for (const r of clashes) (cp[r.pin] = cp[r.pin] || []).push(r.label);
+  $("pinClash").textContent = clashes.length ? "Trùng chân: " + Object.entries(cp).map(([p, l]) => `${p} (${l.join(" + ")})`).join("; ") + ". Đổi một trong hai rồi lưu." : "";
+  const q = noAccPin(S.pinQ.trim());
+  let rows = all.filter((r) => S.pinFilter === "all" || (S.pinFilter === "used" ? r.on && !r.reserved : PIN_FGROUPS[S.pinFilter].includes(r.g)));
+  if (q) rows = rows.filter((r) => noAccPin(`${r.pin} ${r.label} ${r.use} ${r.wire} ${PIN_GROUP[r.g]}`).includes(q));
+  if (S.pinSort === "pin") rows = rows.slice().sort((a, b) => pinKey(a.pin) - pinKey(b.pin));
+  let last = "";
+  const tr = rows.map((r) => {
+    const head = S.pinSort === "fn" && r.g !== last ? `<tr class="pin-g"><th colspan="3">${PIN_GROUP[r.g]}</th></tr>` : "";
+    last = r.g;
+    const st = r.clash ? "bad" : r.missing ? "warn" : r.reserved ? "off" : r.on ? "ok" : "off";
+    return head + `<tr class="pin-r ${st}" data-pin="${esc(r.pin)}"><td class="num"><i class="pin-dot"></i><b>${esc(r.pin)}</b></td>
+      <td>${esc(r.label)}${r.wire ? `<br><small class="muted">${esc(r.wire)}</small>` : ""}</td>
+      <td class="${r.clash ? "bad" : r.on ? "" : "muted"}">${esc(r.clash ? "TRÙNG với " + r.clash.join(", ") : r.missing ? "chưa đặt chân" : r.use)}</td></tr>`;
+  });
+  $("pinTable").innerHTML = "<tr><th>Chân</th><th>Nối với</th><th>Đang dùng cho</th></tr>" + (tr.join("") || '<tr><td colspan="3" class="muted">Không có chân nào khớp.</td></tr>');
+}
+const noAccPin = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
+// "Chân nối" buttons on the other tabs: open the pin map filtered to that part
+function pinShow(filter, q) {
+  S.pinFilter = filter || "all";
+  S.pinQ = q || "";
+  gotoTab("ports");
+  buildPinMap();
+  const inp = $("pinQ");
+  if (inp) inp.value = S.pinQ;
+  const pnl = $("pinPanel");
+  if (pnl) pnl.scrollIntoView({ block: "start" });
+}
+function pinLinks() {
+  const add = (anchor, filter, q, text) => {
+    const a = typeof anchor === "string" ? $(anchor) : anchor;
+    if (!a || (a.nextElementSibling && a.nextElementSibling.classList.contains("pin-link"))) return;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn ghost pin-link";
+    b.textContent = text || "Xem chân nối";
+    b.onclick = () => pinShow(filter, q);
+    a.after(b);
+  };
+  add("portNote", "uart", "", "Xem chân GPIO của các cổng");
+  add("motorDirNote", "motor", "", "Xem chân motor");
+  add("modelAtt", "sens", "", "Xem chân cảm biến");
+  add("sdInfo", "other", "thẻ sd", "Xem chân thẻ SD");
 }
 
 // ---------------------------------------------------------------- VTX

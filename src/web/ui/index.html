@@ -741,6 +741,13 @@ table.ports th { text-transform: uppercase; letter-spacing: .04em; font-size: .7
 .ev.mode { border-color: color-mix(in srgb, var(--yaw) 40%, var(--rule)); }
 .ev:hover { background: var(--soft); }
 #heatChart { background: var(--frame); }
+/* pin map */
+#pinTable .pin-g th { padding-top: 12px; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: .82rem; }
+.pin-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--rule); margin-right: 8px; vertical-align: 1px; }
+.pin-r.ok .pin-dot { background: var(--ok); } .pin-r.warn .pin-dot { background: var(--amber); } .pin-r.bad .pin-dot { background: var(--danger); }
+.pin-r.off td { color: var(--ink-2); }
+.pin-r td:first-child { white-space: nowrap; }
+.pin-link { min-height: 30px !important; padding: 3px 10px !important; font-size: .8rem; margin: 4px 0; }
 /* simple view */
 body.simple .prow.adv, body.simple .adv-only { display: none; }
 /* compact sidebar on laptops */
@@ -1078,6 +1085,9 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
   <section id="tab-ports" hidden>
     <h2 data-j="Cổng serial">Cổng serial</h2>
     <div class="panel"><table class="ports" id="portTable"></table><p class="muted" id="portNote" style="margin-bottom:0"></p></div>
+    <h2 data-j="Sơ đồ chân">Sơ đồ chân (GPIO)</h2>
+    <p class="muted">Chân nào của board nối với gì, và cài đặt hiện tại đang dùng nó cho việc gì. Dùng khi đấu dây hoặc kiểm tra trùng chân.</p>
+    <div class="panel" id="pinPanel"></div>
     <h2 data-j="VTX">Phát video (VTX)</h2>
     <div class="panel" id="vtxPanel"></div>
     <h2 data-j="LED">Dải LED</h2>
@@ -2749,6 +2759,7 @@ async function loadParams() {
     for (const p of j.params) { S.params[p.n] = { v: p.v, min: p.min, max: p.max, f: p.f === 1, r: p.r === 1 }; S.order.push(p.n); }
     S.portMask = typeof j.ports === "number" ? j.ports : 0x0F;  // older firmware: UART1-3 + UDP
     S.portPins = j.portpins || null;
+    S.pinMap = j.pinmap || null;  // board pin map (Ports tab)
     S.sd = j.sd || { modes: 0, fixed: true, def: [] };  // SD card modes / wiring of this board
     buildPid();
   } catch (e) {

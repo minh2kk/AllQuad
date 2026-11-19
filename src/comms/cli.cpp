@@ -10,8 +10,14 @@
 #include <string.h>
 
 #include "../bus/bus.h"
+#include "../hal/pinmap.h"
 #include "../logging/sdlog.h"
 #include "../navigation/mission.h"
+
+namespace {
+const char* const kFnName[] = {"-", "receiver", "GPS", "MAVLink", "MSP", "DisplayPort", "ESC telemetry", "rangefinder",
+                               "blackbox", "SmartAudio", "Tramp", "configurator", "MAVLink (low rate)"};
+}  // namespace
 
 namespace comms {
 
@@ -281,8 +287,7 @@ void Cli::cmdSelftest() {
     if (!open) line(0, "uart", "no UART opened");
     // port functions: set on a UART this board does not have, or a single-use function on two ports
     const Config& pc = bus::config;
-    static const char* const fnName[] = {"-", "RX", "GPS", "MAVLink", "MSP", "DisplayPort", "ESC telemetry", "rangefinder",
-                                         "blackbox", "SmartAudio", "Tramp", "configurator", "MAVLink (low rate)"};
+    const char* const* fnName = kFnName;
     int first[13];
     for (int f = 0; f < 13; f++) first[f] = -1;
     int portIssues = 0;
@@ -434,7 +439,68 @@ void Cli::exec(char* line, uint32_t now) {
           "fence [clear|add <latE7> <lonE7>] | logic [n ...] | log [erase] | sd [ls | rm <file> | mount] | goto <latE7> <lonE7> [alt] (GUIDED)\r\n"
           "diff (backup: changed settings) | dump (backup: everything)\r\n"
           "wifi [name <ssid> | pass <8-63 chars> | webpass <6-64 chars, - = same as wifi> | reset]\r\n"
-          "version | reboot | bootloader (USB flashing: ESP32-S3 ROM / STM32 DFU) | scan (wiring check) | net (WiFi check)\r\n");
+          "version | reboot | bootloader (USB flashing: ESP32-S3 ROM / STM32 DFU) | scan (wiring check) | net (WiFi check)\r\n"
+          "pins [filter] (what each pin of the board is wired to, and what uses it now)\r\n");
+  } else if (!strcmp(cmd, "pins")) {
+    // board pin map + what the settings use it for now; "pins uart", "pins PB" ... filter the lines
+    hal::PinUse pm[hal::PINMAP_MAX];  // on the stack: no RAM kept for a rare request (F405 is tight)
+    int n = hal::pinMap(pm, hal::PINMAP_MAX);
+    const Config& c = bus::config;
+    print("pin map of %s (src/hal/board.h)\r\n", hal::pinMapBoard());
+    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5", "SERIAL6", "SERIAL7"};
+    for (int i = 0; i < n; i++) {
+      const hal::PinUse& u = pm[i];
+      char pin[8], what[40], use[48];
+      hal::pinText(u.pin, pin, sizeof(pin));
+      use[0] = 0;
+      switch (u.group) {
+        case hal::PinGroup::IMU:
+          snprintf(what, sizeof(what), "IMU SPI %s", u.what);
+          if (u.arg == 1) snprintf(use, sizeof(use), c.imu_dual ? "second IMU" : "off (imu_dual 0)");
+          else if (!strcmp(u.what, "INT")) snprintf(use, sizeof(use), c.imu_sync ? "loop sync" : "off (imu_sync 0)");
+          break;
+        case hal::PinGroup::OSD: snprintf(what, sizeof(what), "OSD SPI %s", u.what);
+          snprintf(use, sizeof(use), c.osd_backend == 1 ? "MAX7456" : "off (osd_backend)"); break;
+        case hal::PinGroup::I2C: snprintf(what, sizeof(what), "I2C %s (baro, compass)", u.what); break;
+        case hal::PinGroup::UART: {
+          int f = portFnOf(c, u.arg);
+          char inst[12] = "";  // "USART3 RX PD9 TX PD8" -> "USART3" (ESP32 labels have no instance name)
+          const char* l = hal::portLabel((hal::Port)u.arg);
+          if (strncmp(l, "RX", 2)) { int k = 0; while (l[k] && l[k] != ' ' && k < 11) { inst[k] = l[k]; k++; } inst[k] = 0; }
+          snprintf(what, sizeof(what), "%s %s%s%s", u.arg < 9 ? pn[u.arg] : "?", u.what, inst[0] ? " " : "", inst);
+          snprintf(use, sizeof(use), "%s", f >= 0 && f < 13 ? (f ? kFnName[f] : "free") : "?");
+          break;
+        }
+        case hal::PinGroup::MOTOR: {
+          int m = 0;
+          for (int k = 0; k < 4; k++) if (c.motor_out[k] == u.arg) m = k + 1;
+          snprintf(what, sizeof(what), "motor output %d", u.arg);
+          if (m) snprintf(use, sizeof(use), "mixer motor %d", m);
+          break;
+        }
+        case hal::PinGroup::ANALOG: snprintf(what, sizeof(what), u.arg ? "current sensor (ADC)" : "battery voltage (ADC)"); break;
+        case hal::PinGroup::LED: snprintf(what, sizeof(what), "status LED"); break;
+        case hal::PinGroup::BUZZER: snprintf(what, sizeof(what), "buzzer"); break;
+        case hal::PinGroup::LEDSTRIP: snprintf(what, sizeof(what), "LED strip data");
+          snprintf(use, sizeof(use), c.led_pin ? "on" : "off (led_pin 0)"); break;
+        case hal::PinGroup::SD: snprintf(what, sizeof(what), "SD card %s", u.what);
+          snprintf(use, sizeof(use), c.sd_mode ? "on" : "off (sd_mode 0)"); break;
+        default: snprintf(what, sizeof(what), "board / chip (USB, SWD, flash ...)"); break;
+      }
+      if (a1) {  // filter: pin name or function text, case-insensitive
+        char all[96];
+        snprintf(all, sizeof(all), "%s %s %s %s", pin, what, use, hal::pinGroupName(u.group));
+        bool hit = false;
+        for (char* p = all; *p && !hit; p++) {
+          int k = 0;
+          while (a1[k] && p[k] && ((p[k] | 32) == (a1[k] | 32))) k++;
+          hit = !a1[k];
+        }
+        if (!hit) continue;
+      }
+      print("  %-6s %-34s %s\r\n", pin, what, use);
+    }
+    if (c.led_pin) print("  LED strip parameter led_pin %d\r\n", c.led_pin);
   } else if (!strcmp(cmd, "net")) {
     char* b = (char*)malloc(900);
     if (b) { hal::netReport(b, 900); print("%s", b); free(b); }

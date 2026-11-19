@@ -116,7 +116,12 @@ bool spiWrite(SpiDev d, uint8_t reg, uint8_t v) {
 bool spiWriteRaw(SpiDev, const uint8_t*, size_t) { return false; }
 
 bool portExists(Port) { return true; }
-const char* portLabel(Port) { return ""; }
+// the UARTs of the STM32H743 DevEBox map (src/hal/pinmap.cpp uses the same map for the demo drone)
+const char* portLabel(Port p) {
+  static const char* const l[] = {"USART3 RX PD9 TX PD8", "UART7 RX PE7 TX PE8", "UART8 RX PE0 TX PE1", "", "",
+                                  "USART1 RX PA10 TX PA9", "USART2 RX PD6 TX PD5", "UART4 RX PD0 TX PD1", "USART6 RX PC7 TX PC6"};
+  return (int)p < (int)(sizeof(l) / sizeof(l[0])) ? l[(int)p] : "";
+}
 void portOpen(Port p, uint32_t baud, UartFormat, bool) { if ((int)p < (int)Port::COUNT) host::openBaud[(int)p] = baud; }
 int portRead(Port p) {
   auto& q = host::inQ[(int)p];

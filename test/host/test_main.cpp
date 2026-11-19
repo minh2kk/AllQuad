@@ -1,6 +1,7 @@
 // AllQuad host unit tests.
 //   build/tests                         run all unit tests
 //   build/tests mavlink-io in out       MAVLink conversation driver used by tools/test_mavlink.py
+#include "../../src/hal/pinmap.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -669,7 +670,7 @@ static void testCli() {
     hal::host::out(hal::Port::CONSOLE).clear();
     for (char ch : std::string("selftest\n")) cli.feed((uint8_t)ch, 500, false);
     const std::string& s2 = hal::host::out(hal::Port::CONSOLE);
-    CHECK(s2.find("[WARN] ports     RX on both SERIAL1 and SERIAL7: only SERIAL1 is used") != std::string::npos,
+    CHECK(s2.find("[WARN] ports     receiver on both SERIAL1 and SERIAL7: only SERIAL1 is used") != std::string::npos,
           "CLI selftest: the same single-use function on two serial ports is reported");
     bus::config.port_fn_ext2[1] = 0;
     if (getenv("AQ_SHOW_SELFTEST")) printf("%s", so.c_str());
@@ -1676,6 +1677,29 @@ static void testMavlinkLowRate() {
   snprintf(msg, sizeof msg, "MAVLink low rate fits a 9600 bit/s LoRa link: %.0f B/s (normal %.0f B/s)", lo, hi);
   CHECK(lo > 20 && lo < 300 && hi > lo * 3, msg);
 }
+static void testPinMap() {
+  hal::PinUse pm[hal::PINMAP_MAX];
+  int n = hal::pinMap(pm, hal::PINMAP_MAX);
+  bool dup = false, motors = false, rx1 = false;
+  for (int i = 0; i < n; i++) {
+    for (int k = i + 1; k < n; k++) dup |= pm[i].pin == pm[k].pin;
+    char b[8];
+    if (pm[i].group == hal::PinGroup::MOTOR && pm[i].arg == 1) motors = !strcmp(hal::pinText(pm[i].pin, b, sizeof(b)), "PA0");
+    if (pm[i].group == hal::PinGroup::UART && pm[i].arg == 0 && !strcmp(pm[i].what, "RX")) rx1 = !strcmp(hal::pinText(pm[i].pin, b, sizeof(b)), "PD9");
+  }
+  CHECK(n > 40 && !dup && motors && rx1, "Pin map: every pin listed once (motor 1 PA0, SERIAL1 RX PD9 on the demo map)");
+  configDefaults(bus::config);
+  std::string pj;
+  web::paramsJson(sinkString, &pj);
+  CHECK(pj.find("\"pinmap\":{\"board\":") != std::string::npos && pj.find("[\"PD9\",\"uart\",0,\"RX\"]") != std::string::npos,
+        "Pin map sent to the configurator (/api/params pinmap)");
+  std::string out;
+  web::cliExec("pins uart", sinkString, &out, true);
+  CHECK(out.find("PD9") != std::string::npos && out.find("SERIAL1 RX USART3") != std::string::npos && out.find("RX") != std::string::npos &&
+            out.find("PA0") == std::string::npos,
+        "CLI pins: filtered list with the port function");
+  if (getenv("AQ_PINS_DUMP")) { std::string all; web::cliExec("pins", sinkString, &all, true); printf("%s", all.c_str()); }
+}
 static void testFeedForward() {
   // stick snap: boost starts FF earlier; slow drift (below the jitter threshold) gets little FF;
   // near the max rate FF fades out
@@ -2325,6 +2349,7 @@ int main(int argc, char** argv) {
   testConfigMigrationV28();
   testBeginnerLimits();
   testMavlinkLowRate();
+  testPinMap();
   testFeedForward();
   testFlightFeel();
   testEllipsoidFit();

@@ -11,6 +11,7 @@
 #include "../estimation/nav_estimator.h"
 #include "credentials.h"
 #include "../hal/hal.h"
+#include "../hal/pinmap.h"
 #include "../logging/sdlog.h"
 #include "../navigation/mission.h"
 
@@ -91,6 +92,26 @@ void paramsJson(Sink s, void* ctx) {
     j.key(k); j.str(l);
   }
   j.end('}');
+  {  // board pin map (src/hal/board.h): [pin, group, arg, what] per used pin, for the pin map of the Ports tab
+    hal::PinUse pm[hal::PINMAP_MAX];  // on the stack: no RAM kept for a rare request (F405 is tight)
+    int n = hal::pinMap(pm, hal::PINMAP_MAX);
+    j.key("pinmap");
+    j.begin('{');
+    j.key("board"); j.str(hal::pinMapBoard());
+    j.key("pins");
+    j.begin('[');
+    for (int i = 0; i < n; i++) {
+      char b[8];
+      j.begin('[');
+      j.comma(); j.str(hal::pinText(pm[i].pin, b, sizeof(b)));
+      j.comma(); j.str(hal::pinGroupName(pm[i].group));
+      j.comma(); j.num(pm[i].arg, 0);
+      j.comma(); j.str(pm[i].what);
+      j.end(']');
+    }
+    j.end(']');
+    j.end('}');
+  }
   {  // SD card modes this board can drive, fixed wiring, default pins
     uint8_t def[6];
     hal::sdDefaultPins(def);

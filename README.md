@@ -551,6 +551,13 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 - `selftest` báo cổng được gán chức năng nhưng board không có, và chức năng dùng một lần (receiver, GPS, ESC, VTX…) gán cho hai cổng (chỉ cổng đầu được dùng). ESP32: `led_pin` trùng chân board / chip thì dải LED không bật.
 
 - **USB:** CLI, MSP, MAVLink và giao thức của trang cấu hình dùng chung một cổng (tự nhận).
+- **Sơ đồ chân (GPIO)** (tab Cổng & thiết bị → "Sơ đồ chân", hoặc tìm "chân" / "gpio", CLI `pins`):
+  - Từng chân của board: nối với gì (IMU, I2C, cổng serial RX / TX kèm tên UART, đầu ra motor, đo pin, LED, còi, dải LED, thẻ SD, chân board giữ cho USB / SWD / flash).
+  - Cột "Đang dùng cho" theo cài đặt hiện tại, kể cả thay đổi chưa áp dụng: chức năng cổng, motor nào của bộ trộn, OSD, thẻ SD, dải LED.
+  - Lọc (đang dùng, cổng, motor, cảm biến, khác), tìm theo tên chân hoặc chức năng, xếp theo tên chân.
+  - Chân dùng hai lần (ESP32: `led_pin`, chân thẻ SD tự đặt) được báo đỏ.
+  - Nút "Xem chân…" ở tab Motor, Cảm biến, Cổng và phần thẻ SD mở thẳng phần liên quan.
+  - Theo `src/hal/board.h`: FC thương mại có thể đi dây khác, so với sơ đồ của nhà sản xuất.
 - **WiFi:**
   - `wifi_enable 1`: MAVLink UDP 14550 cho QGC + trang cấu hình.
   - `web_enable 1`: chỉ trang cấu hình.
@@ -631,6 +638,7 @@ Ví dụ: `logic 1 1 2 1 2 0 1200 1 0 0` = độ cao > 120 m → kêu còi.
 | `log [erase]` | log trong flash |
 | `sd [ls \| rm <file> \| mount]` | thẻ SD |
 | `wifi …`, `net` | WiFi (chỉ qua USB), kiểm tra kết nối WiFi |
+| `pins [lọc]` | sơ đồ chân của board: mỗi chân nối với gì và cài đặt đang dùng nó cho việc gì (`pins uart`, `pins PB`, `pins motor`) |
 | `scan` | kiểm tra dây: thiết bị I2C, mức SDA/SCL lúc khởi động (thiếu pull-up / chạm GND / module chưa cấp nguồn), mã chip ở các địa chỉ baro / compass, tốc độ I2C, mã IMU |
 | `reboot`, `bootloader` | khởi động lại; vào chế độ nạp (ESP32-S3 ROM / STM32 DFU) |
 
@@ -693,7 +701,7 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Hạng mục | Kết quả |
 |---|---|
 | Biên dịch PlatformIO | 12 / 12 môi trường (6 ESP32, 5 STM32 + QEMU, cầu WiFi C3) |
-| Unit test (kèm AddressSanitizer + UBSan) | **218 / 218** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v29, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
+| Unit test (kèm AddressSanitizer + UBSan) | **221 / 221** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v29, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
 | Mô phỏng toàn hệ thống | 42 kịch bản đạt (EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
 | QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset |
 | Script Lua EdgeTX | `aqtlm` + `aqcfg` chạy trong Lua 5.2, `aqcfg` nói chuyện với mã MSP-over-CRSF thật |
