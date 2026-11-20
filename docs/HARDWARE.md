@@ -12,7 +12,7 @@
 | GPS | **u-blox M10** | M8, NMEA | Tự cấu hình UBX 10 Hz, 115200. |
 | Receiver | **ExpressLRS (CRSF)** | SBUS, iBUS | CRSF có telemetry về tay điều khiển. |
 | ESC | **AM32 / BLHeli32** + DShot300 + dây telemetry | BLHeli_S / Bluejay, PWM | Dây telemetry ESC bật RPM filter. |
-| Optical flow | **Matek 3901-L0X**, MicoAir MTF-01 (MSP) | — | Giữ vị trí trong nhà / không GPS. |
+| Optical flow | **Matek 3901-L0X**, MicoAir MTF-01 / 01P / 02 (MSP hoặc Micolink, 115200) | — | Giữ vị trí trong nhà / không GPS. |
 | Khoảng cách | TF-Luna / TFmini-S | — | Hạ cánh êm, đo độ cao mặt đất. |
 | OSD | DJI O3 / Walksnail / HDZero (DisplayPort) | MAX7456 / AT7456E (analog) | |
 

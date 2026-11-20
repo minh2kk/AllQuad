@@ -429,7 +429,8 @@ function portStatsRender(st) {
   if (shown("ports") && portStatsHost()) psDraw();
 }
 function psCount(st) {
-  const now = Date.now(), cur = { t: now, p: {}, rxc: Array.isArray(st.rxc) ? st.rxc : null, gpsl: Array.isArray(st.gpsl) ? st.gpsl : null };
+  const now = Date.now(), cur = { t: now, p: {}, rxc: Array.isArray(st.rxc) ? st.rxc : null, gpsl: Array.isArray(st.gpsl) ? st.gpsl : null,
+    snsl: Array.isArray(st.snsl) ? st.snsl : null };
   for (const r of st.ports) if (Array.isArray(r) && r.length >= 7) cur.p[r[0]] = r;
   const prev = PS.last;
   if (prev && now - prev.t >= 300) {
@@ -444,6 +445,8 @@ function psCount(st) {
   if (PS.base) for (const k in cur.p) { const b = PS.base.p[k]; if (b && cur.p[k][1] < b[1]) PS.base = null; }
   if (PS.base && PS.base.rxc && cur.rxc && cur.rxc[0] < PS.base.rxc[0]) PS.base = null;
   if (!PS.base) PS.base = cur;
+  if (prev && prev.snsl && cur.snsl && now - prev.t >= 300 && cur.snsl[0] === prev.snsl[0])
+    PS.snHz = (cur.snsl[2] + cur.snsl[3] - prev.snsl[2] - prev.snsl[3]) / ((now - prev.t) / 1000);
   if (prev && prev.rxc && cur.rxc && now - prev.t >= 300 && cur.rxc[1] >= prev.rxc[1]) PS.rxHz = (cur.rxc[1] - prev.rxc[1]) / ((now - prev.t) / 1000);
 }
 function psDraw() {
@@ -455,7 +458,9 @@ function psDraw() {
     const f = e && has(e[0] + "_fn") ? S.params[e[0] + "_fn"].v : 0;
     const t = typeof PORT_FN !== "undefined" && PORT_FN.find((x) => x[0] === f);
     const g = cur.gpsl && cur.gpsl[0] === idx ? cur.gpsl : null;  // GPS: protocol + baud found
-    return (t ? t[1] : "") + (g ? (g[2] ? ` · ${g[3] === 1 ? "UBX" : g[3] === 2 ? "NMEA" : ""} ${g[1]} baud` : ` · đang dò baud (${g[1]})`) : "");
+    const sn = cur.snsl && cur.snsl[0] === idx ? cur.snsl : null;  // flow / range module: protocol seen
+    const snTxt = sn ? (sn[2] || sn[3] ? ` · ${sn[3] > sn[2] ? "Micolink" : "MSP"} ${(PS.snHz || 0).toFixed(0)} khung/s` : sn[4] ? " · đang nhận MAVLink" : " · chưa có khung") : "";
+    return (t ? t[1] : "") + snTxt + (g ? (g[2] ? ` · ${g[3] === 1 ? "UBX" : g[3] === 2 ? "NMEA" : ""} ${g[1]} baud` : ` · đang dò baud (${g[1]})`) : "");
   };
   const fmtB = (v) => (v >= 10240 ? (v / 1024).toFixed(0) + " KB/s" : v >= 1024 ? (v / 1024).toFixed(1) + " KB/s" : v.toFixed(0) + " B/s");
   let warn = [];
@@ -463,6 +468,11 @@ function psDraw() {
     const r = cur.p[cur.gpsl[0]];
     warn.push(!r || !r[1] ? `GPS (${name(cur.gpsl[0])}): chưa nhận được byte nào - nối TX của GPS vào chân RX của cổng này (đấu chéo), GPS có nguồn 5 V, chung GND`
       : `GPS (${name(cur.gpsl[0])}): có dữ liệu nhưng chưa có khung GPS hợp lệ (đang thử ${cur.gpsl[1]} baud) - sai baud hoặc nhiễu`);
+  }
+  if (cur.snsl && !cur.snsl[2] && !cur.snsl[3]) {
+    const sn = cur.snsl, r = cur.p[sn[0]];
+    warn.push(sn[4] ? `${name(sn[0])}: module cảm biến đang gửi MAVLink - dùng MicoAssistant (cáp USB-TTL) chuyển module sang MSP (iNav) hoặc Micolink, 115200 baud`
+      : `${name(sn[0])}: có dữ liệu nhưng không có khung MSP / Micolink - sai baud (module thường 115200)${r && r[4] ? ", có lỗi khung" : ""} hoặc sai giao thức`);
   }
   const rows = Object.keys(cur.p).map(Number).sort((a, b) => a - b).map((k) => {
     const a = cur.p[k], b = (PS.base.p[k]) || a, r = PS.rate[k] || [0, 0];

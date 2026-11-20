@@ -105,7 +105,7 @@ Kiểm tra nhanh trên board: `tools\aqtest.bat` (Windows) gửi `status` / `per
 | GPS | u-blox M8/M9/M10 (UBX NAV-PVT, tự cấu hình 10 Hz) + NMEA |
 | Receiver | **CRSF / ExpressLRS** (kèm telemetry ngược), SBUS, iBUS |
 | ESC | DShot300/600 (lệnh đặc biệt), **bidirectional DShot**, **EDT** (nhiệt / áp / dòng qua dây tín hiệu), PWM, OneShot125; telemetry serial BLHeli32 / AM32 / KISS |
-| Khác | TFmini / TF-Luna / TF02, optical flow MSP (MTF-01, 3901-L0X), VTX SmartAudio / Tramp / MSP, LED WS2812, **thẻ microSD** |
+| Khác | TFmini / TF-Luna / TF02, optical flow MSP (3901-L0X, MicoAir MTF-01 / 01P / 02: MSP hoặc Micolink), VTX SmartAudio / Tramp / MSP, LED WS2812, **thẻ microSD** |
 
 Sơ đồ chân từng board: [`docs/HARDWARE.md`](docs/HARDWARE.md).
 
@@ -551,6 +551,11 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 - `selftest` báo cổng được gán chức năng nhưng board không có, và chức năng dùng một lần (receiver, GPS, ESC, VTX…) gán cho hai cổng (chỉ cổng đầu được dùng). ESP32: `led_pin` trùng chân board / chip thì dải LED không bật.
 
 - **USB:** CLI, MSP, MAVLink và giao thức của trang cấu hình dùng chung một cổng (tự nhận).
+- **Optical flow + đo khoảng cách (MicoAir MTF-01 / 01P / 02, Matek 3901-L0X):** cổng chức năng 4 (MSP), 115200.
+  - Nối TX của module vào RX của cổng (đấu chéo), 5 V, GND chung.
+  - Firmware nhận cả **MSP** (chế độ iNav) lẫn **Micolink** (giao thức riêng của MicoAir), không cần đổi giao thức trong MicoAssistant nếu module đang ở một trong hai.
+  - Module để chế độ MAVLink (bản cho ArduPilot / PX4) thì không dùng được: `selftest` (dòng `flow`) và bảng lưu lượng ở tab Cổng báo "đang nhận MAVLink". Dùng MicoAssistant + cáp USB-TTL chuyển sang MSP hoặc Micolink.
+  - Kiểm tra chiều trước khi bay (`flow_flip`, `flow_align`): xem [`docs/HARDWARE.md`](docs/HARDWARE.md).
 - **Sơ đồ chân (GPIO)** (tab Cổng & thiết bị → "Sơ đồ chân", hoặc tìm "chân" / "gpio", CLI `pins`):
   - Từng chân của board: nối với gì (IMU, I2C, cổng serial RX / TX kèm tên UART, đầu ra motor, đo pin, LED, còi, dải LED, thẻ SD, chân board giữ cho USB / SWD / flash).
   - Cột "Đang dùng cho" theo cài đặt hiện tại, kể cả thay đổi chưa áp dụng: chức năng cổng, motor nào của bộ trộn, OSD, thẻ SD, dải LED.
@@ -701,7 +706,7 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Hạng mục | Kết quả |
 |---|---|
 | Biên dịch PlatformIO | 12 / 12 môi trường (6 ESP32, 5 STM32 + QEMU, cầu WiFi C3) |
-| Unit test (kèm AddressSanitizer + UBSan) | **221 / 221** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v29, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
+| Unit test (kèm AddressSanitizer + UBSan) | **223 / 223** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v29, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
 | Mô phỏng toàn hệ thống | 42 kịch bản đạt (EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
 | QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset |
 | Script Lua EdgeTX | `aqtlm` + `aqcfg` chạy trong Lua 5.2, `aqcfg` nói chuyện với mã MSP-over-CRSF thật |

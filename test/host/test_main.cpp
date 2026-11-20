@@ -1700,6 +1700,55 @@ static void testPinMap() {
         "CLI pins: filtered list with the port function");
   if (getenv("AQ_PINS_DUMP")) { std::string all; web::cliExec("pins", sinkString, &all, true); printf("%s", all.c_str()); }
 }
+static void testFlowModuleProtocols() {
+  // MicoAir MTF-01 / 01P on an MSP port: Micolink decoded, MAVLink recognised (wrong module setting)
+  hal::host::reset();
+  configDefaults(bus::config);
+  bus::sensorLink.port = 0xFF;
+  comms::MspLink link;
+  link.begin(hal::Port::SERIAL1);
+  auto frame = [](uint8_t seq, uint32_t mm, int16_t fx, int16_t fy, uint8_t q) {
+    uint8_t f[27] = {0xEF, 0x01, 0x00, 0x51, seq, 20};
+    uint8_t* p = f + 6;
+    uint32_t t = seq * 10u;
+    memcpy(p, &t, 4); memcpy(p + 4, &mm, 4);
+    p[8] = 200; p[9] = 1; p[10] = 1;
+    memcpy(p + 12, &fx, 2); memcpy(p + 14, &fy, 2);
+    p[16] = q; p[17] = 1;
+    uint8_t sum = 0;
+    for (int i = 0; i < 26; i++) sum = (uint8_t)(sum + f[i]);
+    f[26] = sum;
+    return std::vector<uint8_t>(f, f + 27);
+  };
+  uint32_t r0 = bus::range.seq(), f0 = bus::flow.seq();
+  for (int i = 0; i < 5; i++) {
+    for (uint8_t b : frame((uint8_t)i, 1234, 50, -20, 180)) hal::host::in(hal::Port::SERIAL1).push_back(b);
+    hal::host::in(hal::Port::SERIAL1).push_back(0x55);  // noise between frames
+    link.update(1000 + i * 10);
+  }
+  RangeSample r = bus::range.get();
+  FlowSample f = bus::flow.get();
+  CHECK(bus::range.seq() != r0 && r.valid && fabsf(r.distM - 1.234f) < 1e-4f && bus::flow.seq() != f0 && fabsf(f.rateX - 0.5f) < 1e-4f &&
+            fabsf(f.rateY + 0.2f) < 1e-4f && f.quality == 180 && bus::sensorLink.port == 0 && bus::sensorLink.mico == 5,
+        "MSP sensor port: Micolink range 1.234 m + flow 0.5 / -0.2 rad/s decoded (MTF-01 factory protocol)");
+  // the same module set to MAVLink (ArduPilot): no data, but the selftest says why
+  hal::host::reset();
+  comms::MspLink link2;
+  link2.begin(hal::Port::SERIAL2);
+  bus::sensorLink.port = 0xFF;
+  for (int i = 0; i < 6; i++) {
+    const uint8_t mav[] = {0xFD, 14, 0, 0, (uint8_t)i, 200, 158, 132, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0x12, 0x34};
+    for (uint8_t b : mav) hal::host::in(hal::Port::SERIAL2).push_back(b);
+    link2.update(2000 + i * 10);
+  }
+  bus::config.port_fn[1] = (uint8_t)PortFn::MSP;
+  std::string st;
+  web::cliExec("selftest", sinkString, &st, true);
+  CHECK(bus::sensorLink.port == 1 && bus::sensorLink.mav >= 5 && !bus::sensorLink.mico && !bus::sensorLink.msp &&
+            st.find("[FAIL] flow") != std::string::npos && st.find("MicoAssistant") != std::string::npos,
+        "MSP sensor port: a module sending MAVLink is reported (selftest: switch it to MSP / Micolink)");
+  bus::sensorLink.port = 0xFF;
+}
 static void testFeedForward() {
   // stick snap: boost starts FF earlier; slow drift (below the jitter threshold) gets little FF;
   // near the max rate FF fades out
@@ -2350,6 +2399,7 @@ int main(int argc, char** argv) {
   testBeginnerLimits();
   testMavlinkLowRate();
   testPinMap();
+  testFlowModuleProtocols();
   testFeedForward();
   testFlightFeel();
   testEllipsoidFit();

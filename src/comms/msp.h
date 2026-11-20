@@ -77,6 +77,15 @@ class MspLink {
   ReplyHook hook_ = nullptr;
   void* hookCtx_ = nullptr;
   void error(const MspFrame& req);
+  // sensor modules on an MSP port: Micolink (MicoAir MTF-01 / 01P / 02 factory protocol) is decoded too,
+  // MAVLink is only recognised (the module must be switched to MSP or Micolink)
+  void sniff(uint8_t b, uint32_t now);
+  void micolink(const uint8_t* f, uint32_t now);
+  void flowSample(float rx, float ry, uint8_t quality, uint32_t now);
+  uint8_t mico_[26];  // header + the 20-byte range message (longer frames are summed, not kept: RAM on the F405)
+  uint8_t micoN_ = 0, micoSum_ = 0;
+  uint8_t win_[6] = {0, 0, 0, 0, 0, 0};
+  uint32_t rxBytes_ = 0, mspFrames_ = 0, micoFrames_ = 0, mavHints_ = 0;
 };
 
 }  // namespace comms

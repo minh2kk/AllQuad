@@ -331,6 +331,36 @@ void Cli::cmdSelftest() {
     if (!g.fix3d) line(1, "gps", "%s %lu baud, %u satellites, no 3D fix yet (needs open sky)", pr, (unsigned long)bus::gpsLink.baud, g.sats);
     else line(0, "gps", "%s %lu baud, 3D fix, %u satellites, hAcc %.1f m", pr, (unsigned long)bus::gpsLink.baud, g.sats, (double)g.hAcc);
   }
+  // optical flow / rangefinder module on an MSP port
+  {
+    static const char* const pn[] = {"SERIAL1", "SERIAL2", "SERIAL3", "UDP", "USB", "SERIAL4", "SERIAL5", "SERIAL6", "SERIAL7"};
+    const Config& sc = bus::config;
+    uint8_t sp = bus::sensorLink.port;
+    if (sp < (uint8_t)hal::Port::COUNT) {
+      uint32_t by = bus::sensorLink.bytes, ms = bus::sensorLink.msp, mi = bus::sensorLink.mico, mv = bus::sensorLink.mav;
+      RangeSample r = bus::range.get();
+      FlowSample f = bus::flow.get();
+      if (ms || mi)
+        line(0, "flow", "%s: %s, range %s%.2f m, flow quality %u", pn[sp], mi > ms ? "Micolink" : "MSP", r.valid ? "" : "invalid ",
+             (double)(r.valid ? r.distM : 0.0f), bus::flow.seq() ? f.quality : 0);
+      else if (mv)
+        line(2, "flow", "%s: %lu bytes of MAVLink - set the module to MSP (iNav) or Micolink with MicoAssistant", pn[sp],
+             (unsigned long)by);
+      else {
+        hal::PortStats ps{};
+        hal::portStats((hal::Port)sp, ps);
+        line(2, "flow", "%s: %lu bytes but no MSP / Micolink frame - wrong baud (module: 115200) or protocol (framing errors %lu)",
+             pn[sp], (unsigned long)by, (unsigned long)ps.framing);
+      }
+    } else {
+      for (int i = 0; i < (int)hal::Port::COUNT; i++)
+        if (i != (int)hal::Port::UDP && i != (int)hal::Port::CONSOLE && portFnOf(sc, i) == (uint8_t)PortFn::MSP &&
+            hal::portExists((hal::Port)i)) {
+          line(1, "flow", "%s (MSP): nothing received - a flow / range module: its TX to the FC RX pin, 5 V, GND common", pn[i]);
+          break;
+        }
+    }
+  }
   // battery
   if (b.voltage < 2.0f) line(1, "battery", "%.2f V - no battery (USB only) or voltage sensing not wired / scaled", (double)b.voltage);
   else line(0, "battery", "%.2f V, %u cells, %u%%", (double)b.voltage, b.cells, b.percent);

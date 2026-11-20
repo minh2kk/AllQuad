@@ -70,7 +70,11 @@ extern volatile bool otaActive;  // firmware update being written: arming blocke
 extern volatile uint32_t fastLoops;
 // GPS link diagnostics: port (hal::Port, 0xFF = none), baud rate in use, valid frames, protocol 0 / 1 UBX / 2 NMEA
 struct GpsLink { uint8_t port, proto; uint32_t baud, frames; };
-extern volatile GpsLink gpsLink;          // flight-loop iterations since boot (watchdog progress check)
+extern volatile GpsLink gpsLink;
+// MSP sensor port (optical flow / rangefinder modules, e.g. MicoAir MTF-01): what arrives on it. port 0xFF = none;
+// msp / mico = valid MSP / Micolink frames, mav = MAVLink frame starts seen (module set to the wrong protocol)
+struct SensorLink { uint8_t port; uint32_t bytes, msp, mico, mav; };
+extern volatile SensorLink sensorLink;          // flight-loop iterations since boot (watchdog progress check)
 extern volatile int8_t escTelemMotor;        // motor whose ESC telemetry was last requested
 // Motor test from the configurator (disarmed, props off): 0..1 per motor, stops by itself when no
 // new value arrives for MOTOR_TEST_TIMEOUT_MS. Arming is blocked while it runs.

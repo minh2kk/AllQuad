@@ -387,6 +387,13 @@ void statusJson(Sink s, void* ctx, bool full) {
   }  // mid
   j.key("warn"); j.num(st.warnings, 0);
   j.key("rpml"); j.num(bus::rpmLostMask, 0);
+  if (bus::sensorLink.port < (uint8_t)hal::Port::COUNT) {  // MSP sensor port: [port, bytes, MSP frames, Micolink frames, MAVLink starts]
+    uint32_t sl[5] = {bus::sensorLink.port, bus::sensorLink.bytes, bus::sensorLink.msp, bus::sensorLink.mico, bus::sensorLink.mav};
+    j.key("snsl");
+    j.begin('[');
+    for (int k = 0; k < 5; k++) { j.comma(); j.num(sl[k], 0); }
+    j.end(']');
+  }
   if (bus::gpsLink.port < (uint8_t)hal::Port::COUNT) {  // GPS link: [port, baud, valid frames, protocol 1 UBX / 2 NMEA]
     uint32_t gl[4] = {bus::gpsLink.port, bus::gpsLink.baud, bus::gpsLink.frames, bus::gpsLink.proto};
     j.key("gpsl");

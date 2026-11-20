@@ -160,6 +160,15 @@ async def main():
         await pg.wait_for_timeout(300)
         check(await pg.is_visible("#pinTable") and await pg.evaluate("S.pinFilter") == "motor", "motor tab: 'Xem chân motor' opens the pin map on the motors")
 
+        # flow / range module sending the wrong protocol: the Ports tab traffic table says what to do
+        await pg.click("nav button[data-tab=ports]")
+        await pg.wait_for_timeout(200)
+        await pg.click("#tab-ports > .jump a:text-is('Tất cả')")
+        note = await pg.evaluate("""(() => { PS.last = null; PS.base = null; PS.ref = null;
+            portStatsRender({ ports: [[0, 900, 0, 0, 0, 0, 0]], snsl: [0, 900, 0, 0, 14] }); return $('psNote').textContent; })()""")
+        check("MAVLink" in note and "MicoAssistant" in note, "Ports tab: a flow module sending MAVLink is explained (%s)" % note[:80])
+        await pg.evaluate("PS.last = null; PS.base = null; PS.ref = null; S.status && portStatsRender(S.status)")
+
         check(not errs, "no page errors %s" % errs[:3])
         await ctx.close()
 

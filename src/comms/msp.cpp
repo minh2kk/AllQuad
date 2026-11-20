@@ -296,11 +296,9 @@ void MspLink::handle(const MspFrame& f, uint32_t now) {
     case MSP2_SENSOR_OPTIC_FLOW: {  // quality u8, motionX i32, motionY i32
       if (f.len < 9) return;
       float dt = lastFlowMs_ ? (now - lastFlowMs_) * 0.001f : 0.0f;
-      lastFlowMs_ = now;
-      if (dt <= 0.001f || dt > 0.25f) return;
+      if (dt <= 0.001f || dt > 0.25f) { lastFlowMs_ = now; return; }
       float k = 1.0f / (c.flow_scale * dt);  // iNav convention: raw / opflow_scale / dt = rad/s
-      FlowSample s{rd32(f.payload + 1) * k, rd32(f.payload + 5) * k, f.payload[0], dt};
-      bus::flow.publish(s);
+      flowSample(rd32(f.payload + 1) * k, rd32(f.payload + 5) * k, f.payload[0], now);
       return;
     }
     // ---- AllQuad parameters (radio Lua script over CRSF, or any MSP port): value / min / max x 1000
@@ -342,9 +340,65 @@ void MspLink::handle(const MspFrame& f, uint32_t now) {
 
 void MspLink::update(uint32_t now) {
   MspFrame f;
-  int c, budget = 512;
-  while (budget-- > 0 && (c = hal::portRead(port_)) >= 0)
-    if (parser_.feed((uint8_t)c, f)) handle(f, now);
+  int c, budget = 512, got = 0;
+  while (budget-- > 0 && (c = hal::portRead(port_)) >= 0) {
+    got++;
+    if (parser_.feed((uint8_t)c, f)) { mspFrames_++; handle(f, now); }
+    sniff((uint8_t)c, now);
+  }
+  rxBytes_ += (uint32_t)got;
+  if (rxBytes_ && !displayPort_ && port_ != hal::Port::CONSOLE) {  // diagnostics: selftest, Ports tab
+    bus::sensorLink.port = (uint8_t)port_;
+    bus::sensorLink.bytes = rxBytes_;
+    bus::sensorLink.msp = mspFrames_;
+    bus::sensorLink.mico = micoFrames_;
+    bus::sensorLink.mav = mavHints_;
+  }
+}
+
+// Micolink frame: 0xEF, dev id, sys id, msg id, seq, len (<= 64), payload, sum of all previous bytes (8 bit)
+void MspLink::sniff(uint8_t b, uint32_t now) {
+  if (micoN_ || b == 0xEF) {
+    if (micoN_ < 6 || micoN_ < 6 + mico_[5]) {  // header / payload: kept (first 26 bytes) and summed
+      if (micoN_ < sizeof(mico_)) mico_[micoN_] = b;
+      micoSum_ = micoN_ ? (uint8_t)(micoSum_ + b) : b;
+      micoN_++;
+      if (micoN_ == 6 && mico_[5] > 64) micoN_ = 0;
+    } else {  // checksum byte
+      if (b == micoSum_) { micoFrames_++; micolink(mico_, now); }
+      micoN_ = 0;
+    }
+  }
+  // MAVLink frame starts: v2 FD len 00 00 (no incompat / compat flags); v1 FE len seq sys comp msg with the
+  // sizes of the messages a flow / range module sends (OPTICAL_FLOW 100, DISTANCE_SENSOR 132, HEARTBEAT 0)
+  memmove(win_, win_ + 1, 5);
+  win_[5] = b;
+  if (win_[2] == 0xFD && win_[4] == 0 && win_[5] == 0 && win_[3]) mavHints_++;
+  else if (win_[0] == 0xFE && ((win_[5] == 100 && (win_[1] == 26 || win_[1] == 34)) || (win_[5] == 132 && win_[1] == 14) ||
+                               (win_[5] == 0 && win_[1] == 9)))
+    mavHints_++;
+}
+
+static inline uint32_t le32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
+static inline int16_t le16s(const uint8_t* p) { return (int16_t)(p[0] | (p[1] << 8)); }
+
+void MspLink::micolink(const uint8_t* f, uint32_t now) {
+  if (f[3] != 0x51 || f[5] != 20) return;  // range sensor message (distance + optical flow), 20 bytes
+  const uint8_t* p = f + 6;
+  // time_ms u32, distance mm u32 (0 = none, >= 10 valid), strength, precision, status, reserved,
+  // flow_vel_x / y i16 (cm/s at 1 m = 0.01 rad/s), flow_quality, flow_status, reserved u16
+  uint32_t mm = le32(p + 4);
+  RangeSample r{mm >= 10 ? mm * 0.001f : -1.0f, mm >= 10, p[8]};
+  bus::range.publish(r);
+  flowSample(le16s(p + 12) * 0.01f, le16s(p + 14) * 0.01f, p[16], now);
+}
+
+void MspLink::flowSample(float rx, float ry, uint8_t quality, uint32_t now) {
+  float dt = lastFlowMs_ ? (now - lastFlowMs_) * 0.001f : 0.0f;
+  lastFlowMs_ = now;
+  if (dt <= 0.001f || dt > 0.25f) return;
+  FlowSample s{rx, ry, quality, dt};
+  bus::flow.publish(s);
 }
 
 // ---------------------------------------------------------------- DisplayPort
