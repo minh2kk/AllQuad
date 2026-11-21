@@ -22,7 +22,7 @@ def check(ok, msg):
 
 
 async def demo(b, vp):
-    ctx = await b.new_context(viewport=vp)
+    ctx = await b.new_context(viewport=vp, accept_downloads=True)
     await ctx.add_init_script("try { localStorage.setItem('aq.pages', '1') } catch (e) {}")  # paging on (off for other tests)
     pg = await ctx.new_page()
     errs = []
@@ -168,6 +168,73 @@ async def main():
             portStatsRender({ ports: [[0, 900, 0, 0, 0, 0, 0]], snsl: [0, 900, 0, 0, 14] }); return $('psNote').textContent; })()""")
         check("MAVLink" in note and "MicoAssistant" in note, "Ports tab: a flow module sending MAVLink is explained (%s)" % note[:80])
         await pg.evaluate("PS.last = null; PS.base = null; PS.ref = null; S.status && portStatsRender(S.status)")
+
+        # readiness: being connected is information, not a red blocker
+        await pg.click("nav button[data-tab=overview]")
+        await pg.wait_for_timeout(600)
+        rd = await pg.evaluate("[$('readyTitle').textContent, document.querySelectorAll('#blockerChips .blk.info').length, $('blockers').className]")
+        check(rd[0] == "Sẵn sàng arm" and rd[1] == 1 and "ready" in rd[2], "overview: the configurator link shows as information, not a blocker %s" % rd)
+        todo = await pg.evaluate("[...document.querySelectorAll('#todoPanel .it span')].map(e => e.textContent)")
+        check("Dung lượng pin" in todo and "Bật blackbox" in todo, "overview: 'Cấu hình còn thiếu' lists what is not set up %s" % todo)
+        await pg.evaluate("setEdit('acc_calibrated', 0)")
+        await pg.wait_for_timeout(700)
+        need = await pg.evaluate("[$('todoDet').open, [...document.querySelectorAll('#todoPanel .it.need span')].map(e => e.textContent)]")
+        check(need[0] and "Hiệu chuẩn accel" in need[1], "overview: a missing accel calibration is a must-do item, card open %s" % need)
+        await pg.evaluate("$('discardBtn').click()")
+        alt = await pg.evaluate("document.querySelector('#tl-pos .v').textContent")
+        check(not alt.startswith("-0.0"), "overview: no '-0.0 m' (%s)" % alt)
+
+        # receiver tab: channels, travel check, channel order wizard
+        await pg.click("nav button[data-tab=rx]")
+        await pg.wait_for_timeout(800)
+        n = await pg.evaluate("document.querySelectorAll('#rxChs .rxch').length")
+        check(n == 8, "receiver tab: 4 sticks + 4 AUX shown (%d)" % n)
+        fake = """((rc) => { const st = Object.assign({}, S.status, { rc: rc.concat(Array(16 - rc.length).fill(1000)), rxok: true }); (window.__ts || toolsStatus)(st); })"""
+        await pg.evaluate(fake + "([1000, 1500, 1000, 1500, 1000, 1000, 1000, 1000])")
+        await pg.evaluate(fake + "([2000, 1500, 2000, 1500, 1000, 1000, 1000, 1000])")
+        await pg.evaluate(fake + "([1500, 1100, 1000, 1500, 1000, 1000, 1000, 1000])")
+        trav = await pg.evaluate("$('rxTravel').textContent")
+        check("chỉnh endpoint" in trav or "tốt" in trav, "receiver tab: travel check comments on each stick")
+        # wizard on a TAER receiver: throttle comes on raw channel 1, roll 2, pitch 3, yaw 4
+        await pg.evaluate("window.__ts = toolsStatus; toolsStatus = () => {}")  # the demo drone's own frames paused
+        await pg.evaluate("$('rxWizBtn').click()")
+        steps = [[1000, 1500, 1500, 1500], [2000, 1500, 1500, 1500],  # GA: raw ch1
+                 [1000, 1500, 1500, 1500], [1000, 2000, 1500, 1500],  # ROLL: raw ch2
+                 [1000, 1500, 1500, 1500], [1000, 1500, 2000, 1500],  # PITCH: raw ch3
+                 [1000, 1500, 1500, 1500], [1000, 1500, 1500, 2000]]  # YAW: raw ch4
+        for k in range(0, 8, 2):
+            await pg.evaluate("RX.wiz && (RX.wiz.waitUntil = 0)")
+            await pg.evaluate(fake + "(%s)" % steps[k])
+            await pg.evaluate(fake + "(%s)" % steps[k + 1])
+            await pg.wait_for_timeout(650)
+            await pg.evaluate(fake + "(%s)" % steps[k + 1])
+        wiz = await pg.evaluate("$('rxWiz').textContent")
+        m = await pg.evaluate("[val('rc_ch_roll'), val('rc_ch_pitch'), val('rc_ch_thr'), val('rc_ch_yaw')]")
+        check(m == [2, 3, 1, 4] and "Xong" in wiz, "receiver tab: 'move each stick' finds a TAER order %s (%s)" % (m, wiz[:60]))
+        await pg.screenshot(path=os.path.join(SHOTS, "ux-rx.png"))
+        await pg.evaluate("$('discardBtn').click(); RX.wiz = null; rxWizShow()")
+
+        # modes: pick a switch channel by flipping it
+        await pg.click("nav button[data-tab=modes]")
+        await pg.wait_for_timeout(300)
+        await pg.evaluate("document.querySelector('#modeList .mrow .mr-learn').click()")
+        await pg.evaluate("S.chLearn.base = [1500, 1500, 1000, 1500].concat(Array(12).fill(1000))")
+        await pg.evaluate(fake + "([1500, 1500, 1000, 1500, 1000, 1000, 2000, 1000])")
+        i = await pg.evaluate("+document.querySelector('#modeList .mrow').dataset.i")
+        ch = await pg.evaluate("val('mr%d_ch')" % i)
+        check(ch == 6, "modes: 'Dò' picks the switch that was flipped (AUX3 = channel index 6, got %s)" % ch)
+        await pg.evaluate("$('discardBtn').click(); toolsStatus = window.__ts; window.__ts = null")
+
+        # diagnostic bundle
+        await pg.click("nav button[data-tab=system]")
+        await pg.wait_for_timeout(300)
+        txt = await pg.evaluate("diagBundle()")
+        check(all(h in txt for h in ["## selftest", "## diff", "## pins", "## status", "Board:"]) and "allquad123" not in txt and '"ssid"' not in txt,
+              "system: diagnostic bundle has selftest / diff / pins / status, no password or WiFi name (%d bytes)" % len(txt))
+        async with pg.expect_download() as dl:
+            await pg.evaluate("$('diagSave').click()")
+        d = await dl.value
+        check(d.suggested_filename.startswith("allquad-chan-doan-") and d.suggested_filename.endswith(".txt"), "system: bundle saved as %s" % d.suggested_filename)
 
         check(not errs, "no page errors %s" % errs[:3])
         await ctx.close()

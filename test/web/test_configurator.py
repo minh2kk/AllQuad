@@ -167,7 +167,7 @@ async def main():
             await pg.click("#comPick")
             await pg.wait_for_function("document.querySelectorAll('#pidMatrix input').length === 12", timeout=10000)
             await pg.wait_for_timeout(1000)
-            check("COM" in await pg.inner_text("#sSub") and await pg.evaluate("LINK.kind === 'usb' && LINK.baud === 921600"),
+            check("COM" in await pg.evaluate("$('sSub').textContent") and await pg.evaluate("LINK.kind === 'usb' && LINK.baud === 921600"),
                   "COM port opened at 921600, configurator connected")
             t0 = await pg.evaluate("S.lastStatusMs")
             await pg.wait_for_timeout(1000)

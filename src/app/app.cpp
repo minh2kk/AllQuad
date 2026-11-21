@@ -195,9 +195,9 @@ FAST_CODE void fastTask(void*) {
           rp[a].center = fminf(rp[a].center, mx);
         }
       }
-      rcRate[0] = stickRate(rcStickUs(rc.ch[RC_ROLL]), rp[0]);
-      rcRate[1] = stickRate(-rcStickUs(rc.ch[RC_PITCH]), rp[1]);
-      rcRate[2] = stickRate(rcStickUs(rc.ch[RC_YAW]), rp[2]);
+      rcRate[0] = stickRate(rcStickUs(rc.ch[RC_ROLL], c.rc_deadband), rp[0]);
+      rcRate[1] = stickRate(-rcStickUs(rc.ch[RC_PITCH], c.rc_deadband), rp[1]);
+      rcRate[2] = stickRate(rcStickUs(rc.ch[RC_YAW], c.rc_deadband), rp[2]);
     }
     if ((uint32_t)(now / 1000) - rcMs < 200) {  // stale RC: keep the commander's values (it handles the failsafe)
       if (sp.stickDirect & 1) { sp.rateDps[0] = rcRate[0]; sp.rateDps[1] = rcRate[1]; }
@@ -622,7 +622,11 @@ void ioTask(void*) {
       comms::MspFrame mf;
       if (rx.takeMsp(chunk, cn, origin) && crsfMsp.feed(chunk, cn, origin, mf)) mspCrsf.handle(mf, now);
     }
-    if (got) bus::rc.publish(rx.rc());
+    if (got) {
+      RcInput rc = rx.rc();
+      rcRemap(bus::config, rc.ch, rc.count);  // channel order (AETR / TAER ...) from rc_ch_*
+      bus::rc.publish(rc);
+    }
     {
       const drv::RxParser::Counters& c = rx.counters();
       bus::rxLink.bytes = c.bytes;

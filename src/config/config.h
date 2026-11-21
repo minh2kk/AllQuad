@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 29;
+constexpr uint16_t CONFIG_VERSION = 30;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -114,10 +114,11 @@ inline float stickRate(float s, const RateProfile& r) {
   return s * r.center + (move > 0 ? move : 0) * expof;
 }
 
-// RC pulse (us) -> stick -1..1 with a 1 % centre dead-band (commander and the fast loop share it)
-inline float rcStickUs(uint16_t us) {
+// RC pulse (us) -> stick -1..1 with a centre dead-band (rc_deadband, us; commander and the fast loop share it)
+inline float rcStickUs(uint16_t us, uint8_t deadbandUs = 5) {
   float v = ((float)us - 1500.0f) / 500.0f;
-  if (v > -0.01f && v < 0.01f) v = 0.0f;
+  float db = deadbandUs * (1.0f / 500.0f);
+  if (v > -db && v < db) v = 0.0f;
   return v < -1.0f ? -1.0f : v > 1.0f ? 1.0f : v;
 }
 
@@ -327,6 +328,9 @@ struct Config {
   uint8_t motor_limit_pct;  // motor output range scaled to this % (Betaflight motor_output_limit: strong motors)
   uint8_t beginner;         // 1: first-flight limits (see beginnerLimits)
   uint16_t beg_radius;      // first-flight: RTH (land without GPS) beyond this distance from home (m)
+  // ---- v30: receiver channel map, stick dead-band ----
+  uint8_t rc_map[4];        // receiver channel (1-based) carrying roll, pitch, throttle, yaw (AETR = 1 2 3 4)
+  uint8_t rc_deadband;      // roll / pitch / yaw centre dead-band (us), 5 = the old fixed 1 %
 
   uint32_t crc;
 };
@@ -336,6 +340,19 @@ void configDefaults(Config& c);
 // 25 deg tilt, 250 / 120 deg/s rates, 75 % throttle, 1.5 m/s climb, 3 m/s, a fence of beg_radius and 40 m
 void beginnerLimits(Config& c);
 constexpr float BEGINNER_THR = 0.75f;
+// receiver channels -> roll / pitch / throttle / yaw by rc_map (anything but a permutation of 1-4 within the
+// received channels = as received); AUX channels (5+) stay where they are
+inline void rcRemap(const Config& c, uint16_t* ch, int n) {
+  uint16_t in[4];
+  uint8_t seen = 0;
+  for (int i = 0; i < 4; i++) {
+    int m = c.rc_map[i];
+    if (m < 1 || m > 4 || m > n || (seen & (1 << m))) return;
+    seen |= (uint8_t)(1 << m);
+  }
+  for (int i = 0; i < 4; i++) in[i] = ch[i];
+  for (int i = 0; i < 4; i++) ch[i] = in[c.rc_map[i] - 1];
+}
 // active boxes (bit i = ModeBox i) for the given RC channels
 uint32_t modeBoxes(const Config& c, const uint16_t* ch, int nch);
 const char* modeBoxName(int box);

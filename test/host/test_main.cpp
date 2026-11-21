@@ -1714,7 +1714,7 @@ static void testFlowModuleProtocols() {
     memcpy(p, &t, 4); memcpy(p + 4, &mm, 4);
     p[8] = 200; p[9] = 1; p[10] = 1;
     memcpy(p + 12, &fx, 2); memcpy(p + 14, &fy, 2);
-    p[16] = q; p[17] = 1;
+    p[16] = q; p[17] = q ? 1 : 0;
     uint8_t sum = 0;
     for (int i = 0; i < 26; i++) sum = (uint8_t)(sum + f[i]);
     f[26] = sum;
@@ -1731,6 +1731,18 @@ static void testFlowModuleProtocols() {
   CHECK(bus::range.seq() != r0 && r.valid && fabsf(r.distM - 1.234f) < 1e-4f && bus::flow.seq() != f0 && fabsf(f.rateX - 0.5f) < 1e-4f &&
             fabsf(f.rateY + 0.2f) < 1e-4f && f.quality == 180 && bus::sensorLink.port == 0 && bus::sensorLink.mico == 5,
         "MSP sensor port: Micolink range 1.234 m + flow 0.5 / -0.2 rad/s decoded (MTF-01 factory protocol)");
+  // rangefinder-only module (flow fields zero): range yes, no flow samples
+  {
+    comms::MspLink lr;
+    lr.begin(hal::Port::SERIAL3);
+    uint32_t fs = bus::flow.seq(), rs = bus::range.seq();
+    for (int i = 0; i < 3; i++) {
+      for (uint8_t b : frame((uint8_t)i, 2500, 0, 0, 0)) hal::host::in(hal::Port::SERIAL3).push_back(b);
+      lr.update(3000 + i * 10);
+    }
+    CHECK(bus::range.seq() != rs && fabsf(bus::range.get().distM - 2.5f) < 1e-4f && bus::flow.seq() == fs,
+          "MSP sensor port: rangefinder-only Micolink module gives height, no flow samples");
+  }
   // the same module set to MAVLink (ArduPilot): no data, but the selftest says why
   hal::host::reset();
   comms::MspLink link2;
@@ -1748,6 +1760,37 @@ static void testFlowModuleProtocols() {
             st.find("[FAIL] flow") != std::string::npos && st.find("MicoAssistant") != std::string::npos,
         "MSP sensor port: a module sending MAVLink is reported (selftest: switch it to MSP / Micolink)");
   bus::sensorLink.port = 0xFF;
+}
+static void testConfigMigrationV29() {
+  Config old;
+  configDefaults(old);
+  old.beg_radius = 123;
+  old.pid[0].d = 33;
+  size_t end = offsetof(Config, beg_radius) + sizeof(old.beg_radius);
+  size_t oldSize = ((end + 3) & ~(size_t)3) + 4;  // v29: ... beg_radius, crc
+  memset((uint8_t*)&old + end, 0x5A, oldSize - 4 - end);
+  old.version = 29;
+  old.size = (uint16_t)oldSize;
+  uint32_t crc = crc32(&old, oldSize - 4);
+  memcpy((uint8_t*)&old + oldSize - 4, &crc, 4);
+  memset((uint8_t*)&old + oldSize, 0xEE, sizeof(Config) - oldSize);
+  Config c = old;
+  CHECK(configMigrate(c) && configValid(c) && c.beg_radius == 123 && c.pid[0].d == 33 && c.rc_map[0] == 1 && c.rc_map[1] == 2 &&
+            c.rc_map[2] == 3 && c.rc_map[3] == 4 && c.rc_deadband == 5,
+        "Config v29 -> v30: settings kept, channel map AETR, dead-band 5 us (as before)");
+  // channel map: TAER receiver (throttle on channel 1) -> roll pitch throttle yaw
+  uint16_t ch[8] = {1100, 1600, 1400, 1700, 1000, 2000, 1500, 1500};
+  c.rc_map[0] = 2; c.rc_map[1] = 3; c.rc_map[2] = 1; c.rc_map[3] = 4;
+  rcRemap(c, ch, 8);
+  bool taer = ch[0] == 1600 && ch[1] == 1400 && ch[2] == 1100 && ch[3] == 1700 && ch[4] == 1000 && ch[5] == 2000;
+  uint16_t ch2[4] = {1100, 1600, 1400, 1700};
+  c.rc_map[0] = 1; c.rc_map[1] = 1;  // not a permutation: left as received
+  rcRemap(c, ch2, 4);
+  CHECK(taer && ch2[0] == 1100 && ch2[1] == 1600, "RC channel map: TAER reordered, AUX untouched, a broken map leaves the order alone");
+  CHECK(rcStickUs(1503, 5) == 0.0f && rcStickUs(1503, 0) > 0.0f && rcStickUs(1520, 25) == 0.0f && fabsf(rcStickUs(2000, 5) - 1.0f) < 1e-6f,
+        "Stick dead-band follows rc_deadband");
+  int k = paramFind("rc_ch_thr");
+  CHECK(k >= 0 && paramSet(c, k, 1) && c.rc_map[2] == 1 && !paramSet(c, k, 5) && paramFind("rc_deadband") >= 0, "Parameters rc_ch_* / rc_deadband");
 }
 static void testFeedForward() {
   // stick snap: boost starts FF earlier; slow drift (below the jitter threshold) gets little FF;
@@ -2396,6 +2439,7 @@ int main(int argc, char** argv) {
   testConfigMigrationV26();
   testConfigMigrationV27();
   testConfigMigrationV28();
+  testConfigMigrationV29();
   testBeginnerLimits();
   testMavlinkLowRate();
   testPinMap();

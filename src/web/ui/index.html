@@ -71,7 +71,7 @@ p { margin: 6px 0; max-width: 70ch; }
 }
 .strip canvas { width: 64px; height: 64px; border-radius: 50%; display: block; }
 .strip .mode { font-family: var(--num); font-size: 1.6rem; line-height: 1; }
-.strip .sub { font-size: .85rem; opacity: .8; margin-top: 4px; }
+.strip .sub { font-size: .85rem; opacity: .8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strip .bat { text-align: right; font-family: var(--num); }
 .strip .bat b { font-size: 1.5rem; display: block; line-height: 1; }
 .armed-tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: .8rem; margin-left: 8px; vertical-align: middle; }
@@ -275,7 +275,7 @@ td.r, th.r { text-align: right; font-family: var(--num); }
 #modeList { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 12px; }
 .mrow { padding: 14px 16px; border: 1px solid var(--rule); border-radius: 12px; background: var(--sheet); box-shadow: var(--shadow); }
 .mrow.on { border-color: var(--amber); }
-.mhead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.mhead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
 .mhead select { width: 100%; padding: 8px; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); min-height: 44px; font-weight: 600; }
 .mhint { font-size: .85rem; color: var(--ink-2); margin: 4px 0 0; }
 .mbar { position: relative; height: 30px; background: var(--grid); border-radius: 4px; margin-top: 10px; }
@@ -663,6 +663,7 @@ table.ports th { text-transform: uppercase; letter-spacing: .04em; font-size: .7
 .st-btn kbd { font: 600 .66rem var(--num); padding: 1px 5px; border-radius: 4px; background: rgba(255, 255, 255, .12); opacity: .8; }
 .st-btn[aria-pressed="true"] { background: rgba(110, 162, 245, .3); border-color: rgba(110, 162, 245, .6); }
 @media (max-width: 1100px) { .st-btn span, .st-btn kbd { display: none; } .st-btn { width: 36px; justify-content: center; padding: 0; } }
+@media (max-width: 520px) { .sub-lbl { display: none; } }
 @media (max-width: 520px) { .strip { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 8px; } .strip canvas { width: 48px; height: 48px; } .strip .bat { display: none; } .strip .mode { font-size: 1.25rem; } .strip-tools { gap: 4px; } }
 .rate-pill { display: inline-block; font-size: .7rem; padding: 0 7px; margin-right: 8px; border-radius: 999px; background: rgba(255, 255, 255, .12); vertical-align: 1px; }
 .rate-pill.bad { background: var(--danger); color: #fff; }
@@ -741,6 +742,30 @@ table.ports th { text-transform: uppercase; letter-spacing: .04em; font-size: .7
 .ev.mode { border-color: color-mix(in srgb, var(--yaw) 40%, var(--rule)); }
 .ev:hover { background: var(--soft); }
 #heatChart { background: var(--frame); }
+/* receiver tab */
+.rxch { display: grid; grid-template-columns: 112px minmax(0, 1fr) 64px; gap: 10px; align-items: center; padding: 4px 0; }
+.rxch > span:first-child { font-weight: 600; font-size: .86rem; }
+.rxch > span:first-child small { display: block; font-weight: 400; color: var(--ink-2); font-size: .74rem; }
+.rxbar { position: relative; height: 14px; border-radius: 7px; background: var(--grid); }
+.rxbar .seen { position: absolute; top: 0; bottom: 0; border-radius: 7px; background: color-mix(in srgb, var(--acc) 22%, transparent); }
+.rxbar .now { position: absolute; top: -3px; bottom: -3px; width: 6px; margin-left: -3px; border-radius: 3px; background: var(--acc); }
+.rxbar .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--rule); }
+.rxch.hot .rxbar .now { background: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 35%, transparent); }
+.rxch.rxaux { opacity: .92; }
+.rxwiz { padding: 10px 12px; border-radius: 10px; background: var(--soft); margin: 10px 0; }
+.rxwiz b { font-size: 1.05rem; }
+.mr-learn { min-height: 44px; padding: 4px 10px !important; }
+.mr-learn.on { background: var(--amber) !important; color: var(--amber-ink) !important; border-color: var(--amber) !important; }
+/* setup checklist */
+.todo { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 8px; }
+.todo .it { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--grid); background: var(--soft); }
+.todo .it i { width: 9px; height: 9px; border-radius: 50%; background: var(--amber); }
+.todo .it.need i { background: var(--danger); }
+.todo .it span { font-size: .86rem; font-weight: 600; }
+.todo .it small { grid-column: 2 / 4; color: var(--ink-2); font-size: .76rem; line-height: 1.3; }
+.todo .it .btn { min-height: 28px; padding: 2px 10px; font-size: .78rem; }
+.blk.info { border-color: var(--rule); background: var(--soft); cursor: default; }
+.blk.info b { color: var(--ink-2); background: var(--grid); }
 /* pin map */
 #pinTable .pin-g th { padding-top: 12px; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: .82rem; }
 .pin-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--rule); margin-right: 8px; vertical-align: 1px; }
@@ -1015,6 +1040,20 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
   </section>
 
   <!-- ======================= SENSORS ======================= -->
+  <!-- ======================= RECEIVER ======================= -->
+  <section id="tab-rx" hidden>
+    <h2 data-j="Kênh">Tay điều khiển</h2>
+    <p class="muted">Giá trị từng kênh nhận từ receiver, kiểm tra hành trình cần, thứ tự kênh và độ nhạy quanh tâm cần.</p>
+    <div class="panel" id="rxLive"></div>
+    <h2 data-j="Hành trình">Kiểm tra hành trình</h2>
+    <p class="muted">Gạt hết mỗi cần theo mọi hướng vài lần, rồi buông về giữa. Ga và cần chính nên đi đủ 1000–2000 µs, tâm ở 1500 µs.</p>
+    <div class="panel" id="rxTravel"></div>
+    <h2 data-j="Thứ tự kênh">Thứ tự kênh</h2>
+    <div class="panel" id="rxMap"></div>
+    <h2 data-j="Cảm giác cần">Cảm giác cần</h2>
+    <div class="cards" id="rxParams"></div>
+  </section>
+
   <section id="tab-sensors" hidden>
     <h2 data-j="Tư thế">Cảm biến</h2>
     <div class="grid2">
@@ -1309,6 +1348,7 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
   <button role="tab" data-tab="modes" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="6" rx="3"/><circle cx="15" cy="12" r="1.5"/><path d="M7 5v2M12 5v2M17 5v2"/></svg>Chế độ & an toàn</button>
   <button role="tab" data-tab="nav" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M12 3l7 18-7-4-7 4z"/></svg>Điều hướng</button>
   <div class="tgroup">Phần cứng</div>
+  <button role="tab" data-tab="rx" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="3"/><circle cx="8" cy="14" r="2"/><circle cx="16" cy="14" r="2"/><path d="M12 8V3M9 4h6"/></svg>Tay điều khiển</button>
   <button role="tab" data-tab="sensors" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg>Cảm biến</button>
   <button role="tab" data-tab="motors" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3a4 4 0 0 1 0 6M21 12a4 4 0 0 1-6 0M12 21a4 4 0 0 1 0-6M3 12a4 4 0 0 1 6 0"/></svg>Motor & ESC</button>
   <button role="tab" data-tab="ports" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11h2M11 11h2M15 11h2M7 17v3M17 17v3"/></svg>Cổng & thiết bị</button>
@@ -1777,6 +1817,9 @@ const HINT = {
   osd_tleft_pos: "Vị trí OSD: thời gian bay còn lại", osd_batbar_pos: "Vị trí OSD: thanh pin", osd_cell_pos: "Vị trí OSD: điện áp mỗi cell",
   osd_rssi_pos: "Vị trí OSD: RSSI (dBm)", osd_blink: "OSD: cảnh báo và pin yếu nhấp nháy",
   sd_dma: "Thẻ SD dùng DMA (STM32H7: CPU rảnh hơn khi ghi; tắt = cách cũ, chắc chắn nhất)",
+  rc_ch_roll: "Kênh receiver mang roll", rc_ch_pitch: "Kênh receiver mang pitch",
+  rc_ch_thr: "Kênh receiver mang ga", rc_ch_yaw: "Kênh receiver mang yaw",
+  rc_deadband: "Vùng chết quanh tâm cần roll / pitch / yaw (µs)",
   level_trim_roll: "Cân bằng ANGLE: roll (°)", level_trim_pitch: "Cân bằng ANGLE: pitch (°)", acc_calibrated: "Accel đã hiệu chuẩn",
 };
 for (const x of "xyz") {
@@ -1805,12 +1848,13 @@ const BITS = {
   at_steps: [[1, "P / D"], [2, "Feedforward"], [4, "I"], [8, "Bộ lọc"]],
   flow_flip: [[1, "Lật X"], [2, "Lật Y"]],
 };
+ENUMS.rc_ch_roll = ENUMS.rc_ch_pitch = ENUMS.rc_ch_thr = ENUMS.rc_ch_yaw = [, "Kênh 1", "Kênh 2", "Kênh 3", "Kênh 4"];
 ENUMS.imu_align = ENUMS.mag_align = ["0°", "90°", "180°", "270°", "0° lật", "90° lật", "180° lật", "270° lật"];
 // unit shown inside the box (by name pattern)
 const UNITS = [[/_hz$|^notch\d_cut$|^rpm_min_hz$|^dyn_notch_m/, "Hz"], [/_m$|^rth_alt$|^fence_radius$|^fence_alt_max$|^rf_max_m$|_radius$|^land_slow_alt$/, "m"],
   [/speed|^climb_rate_max$/, "m/s"], [/_ms$/, "ms"], [/_s$/, "s"], [/angle|^board_|_deg$|^mag_declination$|^level_trim/, "°"],
   [/_pct$|^bat_reserve_pct$/, "%"], [/^beg_radius$/, "m"], [/_cell$/, "V"], [/^bat_capacity$/, "mAh"], [/rc_rate$|max_rate$|^iterm_relax$|^yaw_spin_thr$|^at_rate$/, "°/s"],
-  [/^arm_throttle_max$|^mr\d+_(lo|hi)$/, "µs"], [/^pos_max_accel$/, "m/s²"]];
+  [/^arm_throttle_max$|^mr\d+_(lo|hi)$|^rc_deadband$/, "µs"], [/^pos_max_accel$/, "m/s²"]];
 const unitOf = (n) => (UNITS.find(([re]) => re.test(n)) || [])[1] || "";
 // "Title: detail" / "Title (detail)" -> a short title and a grey detail line
 function splitHint(h) {
@@ -2001,7 +2045,7 @@ const GROUPS = [
   ["Độ cao & vị trí", /^alt_|^climb|^hover|^pos_|^gps_min/],
   ["Điều hướng & geofence", /^rth_|^land_|^wp_|^nav_|^fence_|^srtl_/],
   ["Failsafe & pin", /^fs_|^vbat|^cur_|^cell|^bat_|^arm_|^gcs_/],
-  ["Tay điều khiển", /^ch_|^rx_/],
+  ["Tay điều khiển", /^ch_|^rx_|^rc_ch_|^rc_deadband/],
   ["Chế độ (công tắc)", /^mr\d+_/],
   ["Cổng & kết nối", /^serial|^udp_|^wifi|^web_|^mav_/],
   ["Motor & hệ thống", /^motor|^esc_|^dshot|^loop_hz|^imu_sync|^yaw_reversed|^airmode/],
@@ -2056,13 +2100,14 @@ function buildModes() {
     d.innerHTML = `<div class="mhead">
         <select data-p="mr${i}_mode" aria-label="Chế độ">${BOXES.map((b, k) => (k ? `<option value="${k}">${b}</option>` : "")).join("")}</select>
         <select data-p="mr${i}_ch" aria-label="Kênh">${Array.from({ length: 12 }, (_, k) => `<option value="${k + 4}">AUX${k + 1} (CH${k + 5})</option>`).join("")}</select>
-        <button class="btn ghost" type="button">Xoá</button></div>
+        <button class="btn ghost mr-learn" type="button" title="Gạt công tắc trên tay điều khiển để chọn kênh">Dò</button><button class="btn ghost mr-del" type="button">Xoá</button></div>
       <p class="mhint"></p>
       <div class="mbar"><span class="mrange"></span><span class="mlive"></span></div>
       <div class="mscale num"><span>900</span><span>1500</span><span>2100</span></div>
       <div class="mfoot"><div class="seg" role="group" aria-label="Vị trí công tắc">${PRESETS.map(([t, lo, hi]) => `<button type="button" data-lo="${lo}" data-hi="${hi}">${t}</button>`).join("")}</div></div>`;
     d.querySelectorAll("select").forEach((sel) => { sel.value = String(val(sel.dataset.p)); sel.onchange = () => setEdit(sel.dataset.p, sel.value); });
-    d.querySelector(".mhead .btn").onclick = () => setEdit(`mr${i}_mode`, 0);
+    d.querySelector(".mhead .mr-del").onclick = () => setEdit(`mr${i}_mode`, 0);
+    d.querySelector(".mhead .mr-learn").onclick = (ev) => { if (typeof modeLearnStart === "function") modeLearnStart(i, ev.currentTarget); };
     d.querySelectorAll(".mfoot .seg button").forEach((b) => b.onclick = () => { setEdit(`mr${i}_lo`, +b.dataset.lo); setEdit(`mr${i}_hi`, +b.dataset.hi); });
     const foot = d.querySelector(".mfoot");
     foot.appendChild(stepper(`mr${i}_lo`, 25, "Từ (µs)"));
@@ -2442,15 +2487,19 @@ const BLOCK_HELP = {
 function gotoTab(t) { const b = document.querySelector(`nav.tabs button[data-tab="${t}"]`); if (b) b.click(); }
 function renderReady(st) {
   const box = $("blockers");
-  const bl = st.blockers || [];
+  const all = st.blockers || [];
+  // "CLI" = this page is connected (USB / bridge / demo): it goes away by itself after disconnecting
+  const linkOnly = (b) => b === "CLI" && (LINK.open || S.linkOk);
+  const bl = all.filter((b) => !linkOnly(b)), info = all.filter(linkOnly);
   const state = st.armed ? "armed" : bl.length ? "blocked" : "ready";
   box.className = "panel ready " + state;
   $("readyTitle").textContent = st.armed ? "Đang ARM — motor có thể quay" : bl.length ? `Chưa thể arm · ${bl.length} điều kiện` : "Sẵn sàng arm";
-  $("readySub").textContent = st.armed ? "Disarm trước khi chỉnh cấu hình." : bl.length ? "Bấm vào từng mục để tới chỗ cần sửa." : "Mọi kiểm tra an toàn đều đạt.";
+  $("readySub").textContent = st.armed ? "Disarm trước khi chỉnh cấu hình." : bl.length ? "Bấm vào từng mục để tới chỗ cần sửa." :
+    info.length ? "Mọi kiểm tra an toàn đều đạt. Arm được sau khi ngắt trang cấu hình (an toàn khi đang chỉnh)." : "Mọi kiểm tra an toàn đều đạt.";
   setHtml($("blockerChips"), st.armed ? "" : bl.map((b) => {
     const h = BLOCK_HELP[b] || [b, "", null];
     return `<button type="button" class="blk"${h[2] ? ` data-go="${h[2]}"` : ""}><b>${b}</b><span>${h[0]}</span><small>${h[1]}</small></button>`;
-  }).join(""));
+  }).join("") + info.map(() => `<div class="blk info"><b>USB</b><span>Đang nối trang cấu hình</span><small>Không arm được khi đang nối: tự hết vài giây sau khi ngắt.</small></div>`).join(""));
 }
 document.addEventListener("click", (e) => { const t = e.target.closest && e.target.closest(".blk[data-go]"); if (t) gotoTab(t.dataset.go); });
 function hrow(state, name, value) { return `<div class="hrow ${state}"><i></i><span>${name}</span><b>${value}</b></div>`; }
@@ -2549,7 +2598,8 @@ function renderStatus(st) {
   const atStep = st.at && st.at.step != null ? ["P/D", "feedforward", "I"][st.at.step] : "";
   const atTxt = st.at && st.at.state === 1 ? `Autotune ${["roll", "pitch", "yaw"][st.at.axis]}${atStep ? " " + atStep : ""} vòng ${st.at.round + 1}${st.at.round ? (st.at.step === 1 ? `, trễ ${(+st.at.lag || 0).toFixed(0)} ms` : st.at.step === 2 ? `, sai lệch ${((st.at.ss || 0) * 100).toFixed(0)}%` : `, vọt lố ${(st.at.ov * 100).toFixed(0)}%`) : ""} · `
     : st.at && st.at.state === 2 ? "Autotune xong: hạ cánh, disarm để lưu · " : "";
-  $("sSub").textContent = `${LINK.open ? LINK.label + " · " : ""}${atTxt}${st.nav !== "IDLE" ? st.nav + " · " : ""}${st.rxok ? "RX " + (st.lq ? st.lq + "%" : "ok") : "Mất sóng RX"}`;
+  // the link label goes first on a phone's narrow strip: RX / autotune / navigation matter more there
+  setHtml($("sSub"), `${LINK.open ? `<span class="sub-lbl">${esc(LINK.label)} · </span>` : ""}${esc(atTxt)}${st.nav !== "IDLE" ? esc(st.nav) + " · " : ""}${st.rxok ? "RX " + (st.lq ? st.lq + "%" : "ok") : "Mất sóng RX"}`);
   $("sVolt").textContent = st.bat.v ? st.bat.v.toFixed(1) + " V" : "—";
   $("sBat").textContent = st.bat.cells ? `${st.bat.cells}S ${st.bat.pct}%` : "";
   renderReady(st);
@@ -2590,6 +2640,7 @@ function renderStatus(st) {
   }
   if (st.ssid && document.activeElement !== $("secSsid") && !$("secSsid").dataset.touched) $("secSsid").value = st.ssid;
   if (typeof extrasStatus === "function") extrasStatus(st);
+  if (typeof toolsStatus === "function") toolsStatus(st);
   if (st.log) $("logUse").textContent = st.log.cap ? `Log trên drone: ${(st.log.size / 1024).toFixed(0)} kB / ${(st.log.cap / 1048576).toFixed(1)} MB, ghi ${st.log.rate} Hz` : "Board này không có bộ nhớ log riêng.";
 }
 // ---- live status: WebSocket push (one connection, 10 Hz), HTTP polling as the fallback ----
@@ -2978,7 +3029,7 @@ document.querySelectorAll("nav.tabs button").forEach((b) => b.onclick = () => {
   wsRate();
 });
 // tabs with live graphs / sticks / motors get 10 Hz from the drone, the rest 2 Hz (less WiFi, less CPU)
-const FAST_TABS = ["overview", "setup", "nav", "motors", "sensors", "modes"];
+const FAST_TABS = ["overview", "setup", "nav", "motors", "sensors", "modes", "rx"];
 function wsRate() {
   const cur = document.querySelector('nav.tabs [aria-selected="true"]');
   const fast = !cur || FAST_TABS.includes(cur.dataset.tab);

@@ -340,9 +340,12 @@ void Cli::cmdSelftest() {
       uint32_t by = bus::sensorLink.bytes, ms = bus::sensorLink.msp, mi = bus::sensorLink.mico, mv = bus::sensorLink.mav;
       RangeSample r = bus::range.get();
       FlowSample f = bus::flow.get();
-      if (ms || mi)
+      if ((ms || mi) && !bus::flow.seq())  // rangefinder only: height above ground, no optical flow position hold
+        line(0, "flow", "%s: %s, range %s%.2f m, no optical flow (rangefinder only)", pn[sp], mi > ms ? "Micolink" : "MSP",
+             r.valid ? "" : "invalid ", (double)(r.valid ? r.distM : 0.0f));
+      else if (ms || mi)
         line(0, "flow", "%s: %s, range %s%.2f m, flow quality %u", pn[sp], mi > ms ? "Micolink" : "MSP", r.valid ? "" : "invalid ",
-             (double)(r.valid ? r.distM : 0.0f), bus::flow.seq() ? f.quality : 0);
+             (double)(r.valid ? r.distM : 0.0f), f.quality);
       else if (mv)
         line(2, "flow", "%s: %lu bytes of MAVLink - set the module to MSP (iNav) or Micolink with MicoAssistant", pn[sp],
              (unsigned long)by);

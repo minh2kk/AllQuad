@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 375 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 380 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -204,6 +204,11 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | Tham số | Mặc định | Giới hạn | Mô tả |
 |---|---|---|---|
 | `rx_protocol` (KĐL) | 0 | 0 … 2 | Giao thức receiver. 0 = CRSF / ELRS, 1 = SBUS, 2 = iBUS |
+| `rc_ch_roll` | 1 | 1 … 4 | Kênh receiver của roll (AETR: 1) |
+| `rc_ch_pitch` | 2 | 1 … 4 | Kênh receiver của pitch (AETR: 2) |
+| `rc_ch_thr` | 3 | 1 … 4 | Kênh receiver của ga (AETR: 3, TAER: 1) |
+| `rc_ch_yaw` | 4 | 1 … 4 | Kênh receiver của yaw (AETR: 4) |
+| `rc_deadband` | 5 µs | 0 … 50 | Vùng chết quanh tâm cần roll / pitch / yaw (µs) |
 
 ## Chế độ (công tắc)
 

@@ -845,6 +845,8 @@ const SEARCH_ACTIONS = [
   ["Bản đồ & nhiệm vụ waypoint", "nav", "mission waypoint map ban do"],
   ["Cổng serial, VTX, LED", "ports", "uart serial vtx led"],
   ["Sơ đồ chân GPIO (đấu dây)", "pins", "gpio pin chan dau day wiring pinout so do"],
+  ["Tay điều khiển: kênh, thứ tự kênh, hành trình cần", "rx", "receiver tay dieu khien kenh channel aetr taer endpoint hanh trinh deadband"],
+  ["Gói chẩn đoán (gửi khi nhờ hỗ trợ)", "system", "chan doan diagnostic support log ho tro bao loi"],
   ["Bố cục OSD", "osd", "osd"],
   ["Phân tích blackbox", "blackbox", "blackbox log pid tune"],
   ["Lưu vào flash, sao lưu, nạp firmware", "system", "save backup restore firmware flash ota"],

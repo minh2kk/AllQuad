@@ -390,7 +390,9 @@ void MspLink::micolink(const uint8_t* f, uint32_t now) {
   uint32_t mm = le32(p + 4);
   RangeSample r{mm >= 10 ? mm * 0.001f : -1.0f, mm >= 10, p[8]};
   bus::range.publish(r);
-  flowSample(le16s(p + 12) * 0.01f, le16s(p + 14) * 0.01f, p[16], now);
+  int16_t vx = le16s(p + 12), vy = le16s(p + 14);
+  // rangefinder-only modules send the flow fields as zeros: no flow sample then (no "flow 0 quality" shown)
+  if (vx || vy || p[16] || p[17]) flowSample(vx * 0.01f, vy * 0.01f, p[16], now);
 }
 
 void MspLink::flowSample(float rx, float ry, uint8_t quality, uint32_t now) {

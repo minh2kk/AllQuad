@@ -12,6 +12,8 @@ function onParamsLoaded() {
   buildPorts();
   buildPinMap();
   pinLinks();
+  buildRx();
+  diagPanel();
   buildVtx();
   buildLed();
   buildOsd();
@@ -22,6 +24,10 @@ function onParamsLoaded() {
 function onParamEdit(n) {
   if (/^serial\d_fn|^udp_fn|^rx_protocol/.test(n)) buildPorts();
   if (PIN_PARAMS.test(n)) buildPinMap();
+  if (/^rc_ch_/.test(n) && $("rxMapNow")) {
+    const nm = (RX_MAPS.find(([, v]) => v.join() === rxMapNow().join()) || ["tuỳ chỉnh"])[0];
+    $("rxMapNow").textContent = "Thứ tự mới: " + nm + (new Set(rxMapNow()).size < 4 ? " – hai trục cùng một kênh: firmware sẽ giữ nguyên thứ tự receiver" : "");
+  }
   if (n === "vtxt_powers" || /^vtxt_mw/.test(n)) buildVtx();
   else if (/^vtx_|^vtxt_|^serial\d_fn/.test(n)) updateVtx();
   if (/^led_/.test(n)) updateLed();
@@ -40,6 +46,7 @@ function onTabShown(t) {
   if (t === "ports") updateLed();
   if (t === "cli") setTimeout(() => $("cliIn").focus(), 50);
   if (t === "blackbox") sdRefresh();
+  if (t === "rx") { buildRx(); rxReset(); }
 }
 
 // ---------------------------------------------------------------- sensors + 3D model
@@ -1747,3 +1754,284 @@ function pwaInit() {
   PWA.last = Date.now();
 }
 pwaInit();
+
+// ---------------------------------------------------------------- receiver tab
+// Live channels (after the channel map, as the flight code sees them), the travel seen since the tab opened,
+// channel order (rc_ch_*: preset or a guided "move this stick" detection), stick dead-band and smoothing.
+const RX = { min: [], max: [], hot: -1, hotT: 0, prev: null, wiz: null };
+const RX_MAIN = ["Roll", "Pitch", "Ga", "Yaw"];
+const RX_MAPS = [["AETR", [1, 2, 3, 4]], ["TAER", [2, 3, 1, 4]], ["AERT", [1, 2, 4, 3]], ["RETA", [4, 2, 3, 1]]];
+const rxMapNow = () => ["rc_ch_roll", "rc_ch_pitch", "rc_ch_thr", "rc_ch_yaw"].map((n, i) => (has(n) ? val(n) : i + 1));
+function rxReset() { RX.min = []; RX.max = []; }
+function buildRx() {
+  if (!$("rxLive")) return;
+  $("rxLive").innerHTML = `<div class="row" style="justify-content:space-between"><span class="muted" id="rxHead"></span>
+    <button class="btn ghost" id="rxResetBtn" type="button">Đặt lại min / max</button></div><div id="rxChs" style="margin-top:6px"></div>`;
+  $("rxResetBtn").onclick = () => { rxReset(); toast("Đã đặt lại: gạt hết các cần lần nữa."); };
+  const m = $("rxMap");
+  const mapName = () => (RX_MAPS.find(([, v]) => v.join() === rxMapNow().join()) || ["tuỳ chỉnh"])[0];
+  m.innerHTML = `<p class="muted" style="margin-top:0">Receiver gửi kênh theo thứ tự đặt trên tay điều khiển. Mặc định AETR (kênh 1 roll, 2 pitch, 3 ga, 4 yaw) như ExpressLRS / EdgeTX. Sai thứ tự thì cần ga sẽ điều khiển trục khác: <b>kiểm tra trước khi lắp cánh</b>.</p>
+    <div class="row" id="rxPresets"><span class="muted">Thứ tự:</span>${RX_MAPS.map(([n]) => `<button class="btn ghost" type="button" data-m="${n}">${n}</button>`).join("")}
+      <button class="btn primary" type="button" id="rxWizBtn">Tự dò bằng cách gạt cần</button></div>
+    <div class="rxwiz" id="rxWiz" hidden></div><div id="rxMapRows"></div><p class="muted num" id="rxMapNow"></p>`;
+  m.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => {
+    const v = RX_MAPS.find(([n]) => n === b.dataset.m)[1];
+    ["rc_ch_roll", "rc_ch_pitch", "rc_ch_thr", "rc_ch_yaw"].forEach((n, i) => setEdit(n, v[i]));
+  }));
+  $("rxWizBtn").onclick = rxWizStart;
+  const rows = $("rxMapRows");
+  ["rc_ch_roll", "rc_ch_pitch", "rc_ch_thr", "rc_ch_yaw"].forEach((n) => { if (has(n)) rows.appendChild(prow(n)); });
+  $("rxMapNow").textContent = has("rc_ch_roll") ? "Đang dùng: " + mapName() : "Firmware này chưa có thứ tự kênh: nạp bản mới.";
+  const p = $("rxParams");
+  p.innerHTML = "";
+  pcard(p, "Quanh tâm cần", ["rc_deadband", "rc_smooth_hz"], "Vùng chết nhỏ giúp drone không trôi khi cần không về đúng 1500 µs; lớn quá thì cần bị \"ì\" quanh tâm.");
+  pcard(p, "Receiver & arm", ["rx_protocol", "arm_throttle_max", "fs_delay_ms"]);
+  rxDraw(S.status);
+}
+function rxWizStart() {
+  const st = S.status;
+  if (!st || !st.rc || st.rxok === false) return toast("Chưa nhận được tay điều khiển: bật tay điều khiển và kiểm tra receiver.");
+  RX.wiz = { step: 0, base: null, got: [], since: 0, rev: [] };
+  rxWizShow();
+}
+const RX_WIZ = [["GA", "Đẩy cần GA lên hết và giữ", 2], ["ROLL", "Đẩy cần ROLL sang PHẢI hết và giữ", 0], ["PITCH", "Đẩy cần PITCH lên (về phía trước) hết và giữ", 1], ["YAW", "Đẩy cần YAW sang PHẢI hết và giữ", 3]];
+function rxWizShow(msg) {
+  const w = $("rxWiz"), z = RX.wiz;
+  if (!w) return;
+  w.hidden = !z;
+  if (!z) return;
+  if (z.step >= 4) {
+    const map = [0, 1, 2, 3].map((i) => z.got[i] + 1);
+    const ok = new Set(map).size === 4;
+    w.innerHTML = ok ? `<b>Xong:</b> roll = kênh ${map[0]}, pitch = ${map[1]}, ga = ${map[2]}, yaw = ${map[3]}. Đã đưa vào hàng chờ: bấm Lưu.${z.rev.length ? `<p class="note bad" style="margin:8px 0 0">Kênh bị đảo chiều: ${z.rev.join(", ")}. Đảo lại trên tay điều khiển (EdgeTX: MODEL → OUTPUTS → kênh đó → Direction INV).</p>` : ""}`
+      : `<b>Không dò được</b>: hai bước cùng ra một kênh. Thử lại, mỗi bước chỉ đẩy một cần.`;
+    if (ok) ["rc_ch_roll", "rc_ch_pitch", "rc_ch_thr", "rc_ch_yaw"].forEach((n, i) => setEdit(n, map[i]));
+    w.insertAdjacentHTML("beforeend", ` <button class="btn ghost" type="button" id="rxWizEnd">Đóng</button>`);
+    $("rxWizEnd").onclick = () => { RX.wiz = null; rxWizShow(); };
+    return;
+  }
+  const s = RX_WIZ[z.step];
+  w.innerHTML = `<span class="muted">Bước ${z.step + 1} / 4${z.step ? "" : " · bắt đầu với mọi cần ở giữa, ga thấp nhất"}</span><br><b>${s[1]}</b>${msg ? `<br><span class="muted">${msg}</span>` : ""}
+    <div class="row" style="margin-top:6px"><button class="btn ghost" type="button" id="rxWizCancel">Huỷ</button></div>`;
+  $("rxWizCancel").onclick = () => { RX.wiz = null; rxWizShow(); };
+}
+// raw receiver channel (0-based) of each value the FC shows: the first four come through the channel map
+function rxRaw(st) {  // the FC applies the stored map (S.params), not the pending edits
+  const raw = st.rc.slice();
+  const stored = ["rc_ch_roll", "rc_ch_pitch", "rc_ch_thr", "rc_ch_yaw"].map((n, i) => (S.params[n] ? S.params[n].v : i + 1));
+  if (new Set(stored).size === 4 && stored.every((v) => v >= 1 && v <= 4)) stored.forEach((r, i) => { raw[r - 1] = st.rc[i]; });
+  return raw;
+}
+function rxWizTick(st) {
+  const z = RX.wiz;
+  if (!z || z.step >= 4 || !st.rc) return;
+  const raw = rxRaw(st).slice(0, 4);
+  if (z.waitUntil && Date.now() < z.waitUntil) return;  // time to let the stick go back
+  if (!z.base) { z.base = raw.slice(); return; }
+  let best = -1, dev = 0;
+  for (let k = 0; k < 4; k++) {
+    if (z.got.includes(k)) continue;
+    const d = Math.abs(raw[k] - z.base[k]);
+    if (d > dev) { dev = d; best = k; }
+  }
+  const want = RX_WIZ[z.step][2];
+  if (dev > 300 && best >= 0) {
+    if (!z.since || z.cand !== best) { z.since = Date.now(); z.cand = best; return; }
+    if (Date.now() - z.since < 600) return;
+    z.got[want] = best;
+    if (raw[best] < z.base[best]) z.rev.push(`${RX_WIZ[z.step][0]} (kênh ${best + 1})`);
+    z.step++; z.since = 0; z.base = null;
+    rxWizShow(z.step < 4 ? "Đã nhận. Buông cần về giữa (ga về thấp nhất)." : "");
+    if (z.step < 4) z.waitUntil = Date.now() + 1500;
+  }
+}
+function rxDraw(st) {
+  if (!st || !st.rc || !$("rxChs")) return;
+  const rc = st.rc, n = Math.min(rc.length, 16);
+  for (let i = 0; i < n; i++) {
+    if (!rc[i]) continue;
+    RX.min[i] = Math.min(RX.min[i] ?? rc[i], rc[i]);
+    RX.max[i] = Math.max(RX.max[i] ?? rc[i], rc[i]);
+  }
+  // the AUX channel that moved last (handy to find a switch)
+  if (RX.prev) for (let i = 4; i < n; i++) if (Math.abs(rc[i] - RX.prev[i]) > 150) { RX.hot = i; RX.hotT = Date.now(); }
+  RX.prev = rc.slice();
+  const hot = RX.hot >= 0 && Date.now() - RX.hotT < 4000 ? RX.hot : -1;
+  const pct = (v) => Math.max(0, Math.min(100, (v - 900) / 12));
+  const lq = st.rxok === false ? "MẤT SÓNG" : st.lq ? `LQ ${st.lq} %` : "đang nhận";
+  const pr = has("rx_protocol") ? ["CRSF / ELRS", "SBUS", "iBUS"][val("rx_protocol")] : "";
+  setHtml($("rxHead"), `${pr} · ${lq}${hot >= 0 ? ` · <b>vừa gạt: AUX${hot - 3} (CH${hot + 1})</b>` : ""}`);
+  let h = "";
+  for (let i = 0; i < n; i++) {
+    const v = rc[i];
+    const name = i < 4 ? RX_MAIN[i] : `AUX${i - 3}`;
+    const sub = i < 4 ? `kênh ${rxMapNow()[i]}` : `CH${i + 1}`;
+    const lo = RX.min[i] ?? v, hi = RX.max[i] ?? v;
+    if (i >= 8 && !RX.all && i !== hot) continue;  // AUX5-12 on request
+    h += `<div class="rxch${i >= 4 ? " rxaux" : ""}${i === hot ? " hot" : ""}"><span>${name}<small>${sub}</small></span>
+      <div class="rxbar"><i class="mid"></i><i class="seen" style="left:${pct(lo)}%;width:${Math.max(0, pct(hi) - pct(lo))}%"></i><i class="now" style="left:${pct(v)}%"></i></div>
+      <span class="num">${v || "—"}</span></div>`;
+  }
+  h += `<button class="btn ghost" type="button" id="rxAll" style="margin-top:6px">${RX.all ? "Chỉ hiện 8 kênh" : "Hiện cả 16 kênh"}</button>`;
+  setHtml($("rxChs"), h);
+  $("rxAll").onclick = () => { RX.all = !RX.all; rxDraw(S.status); };
+  // travel check of the four sticks
+  const rows = [0, 1, 2, 3].map((i) => {
+    const lo = RX.min[i], hi = RX.max[i], v = rc[i];
+    if (lo == null) return `<tr><td>${RX_MAIN[i]}</td><td colspan="3" class="muted">chưa có dữ liệu</td></tr>`;
+    const full = lo <= 1015 && hi >= 1985, moved = hi - lo > 300;
+    const ctr = i === 2 ? null : v;
+    const ctrOk = ctr == null || Math.abs(ctr - 1500) <= 8;
+    const note = !moved ? "gạt hết cần theo cả hai hướng" : !full ? `chỉ đi ${lo}–${hi} µs: chỉnh endpoint (EdgeTX: OUTPUTS → Min / Max) hoặc hiệu chuẩn cần trên tay` :
+      !ctrOk ? `tâm đang ${ctr} µs: buông cần; lệch thì chỉnh Subtrim / Trim về 1500` : "tốt";
+    const cls = !moved ? "muted" : full && ctrOk ? "" : "bad";
+    return `<tr><td><b>${RX_MAIN[i]}</b></td><td class="num">${lo}–${hi} µs</td><td class="num">${ctr == null ? "—" : ctr + " µs"}</td><td class="${cls}">${note}</td></tr>`;
+  }).join("");
+  setHtml($("rxTravel"), `<table class="ports"><tr><th>Cần</th><th>Đã đi</th><th>Tâm</th><th>Nhận xét</th></tr>${rows}</table>`);
+  rxWizTick(st);
+}
+function toolsStatus(st) {
+  if (shown("rx")) rxDraw(st);
+  if (S.chLearn) modeLearnTick(st);
+  setupTodo(st);
+}
+
+// ---------------------------------------------------------------- mode switches: pick the channel by flipping it
+S.chLearn = null;
+function modeLearnStart(i, btn) {
+  const st = S.status;
+  if (!st || !st.rc || st.rxok === false) return toast("Chưa nhận được tay điều khiển.");
+  S.chLearn = { i, base: st.rc.slice(), until: Date.now() + 10000 };
+  document.querySelectorAll(".mr-learn").forEach((b) => b.classList.toggle("on", b === btn));
+  toast("Gạt công tắc muốn dùng cho chế độ này (10 giây)…");
+}
+function modeLearnTick(st) {
+  const L = S.chLearn;
+  if (!st.rc) return;
+  if (Date.now() > L.until) { S.chLearn = null; document.querySelectorAll(".mr-learn").forEach((b) => b.classList.remove("on")); return toast("Không thấy công tắc nào được gạt."); }
+  for (let k = 4; k < Math.min(16, st.rc.length); k++)
+    if (Math.abs(st.rc[k] - L.base[k]) > 300) {
+      S.chLearn = null;
+      setEdit(`mr${L.i}_ch`, k);
+      buildModes();
+      toast(`Chế độ ${L.i}: dùng AUX${k - 3} (CH${k + 1}). Chọn vị trí Thấp / Giữa / Cao bên dưới.`);
+      return;
+    }
+}
+
+// ---------------------------------------------------------------- what is still to set up (overview)
+const TODO_HIDE_KEY = "aq-todo-hide";
+function setupTodo(st) {
+  const sec = $("tab-overview");
+  if (!sec || !S.params || !S.params.acc_calibrated) return;
+  let host = $("todoPanel");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "todoPanel";
+    host.className = "panel";
+    const b = $("blockers");
+    if (b) b.after(host); else sec.prepend(host);
+  }
+  const items = [];
+  const add = (need, title, why, tab, btn) => items.push({ need, title, why, tab, btn });
+  const sn = st && st.sensors || {};
+  if (!val("acc_calibrated")) add(true, "Hiệu chuẩn accel", "Chưa hiệu chuẩn: ANGLE và tự cân bằng sẽ nghiêng.", "setup", "Thiết lập");
+  if (sn.mag && !["mag_bias_x", "mag_bias_y", "mag_bias_z"].some((n) => val(n))) add(true, "Hiệu chuẩn compass", "Có compass nhưng chưa hiệu chuẩn: GPS / RTH sẽ sai hướng.", "sensors", "Cảm biến");
+  let arm = false;
+  for (let i = 1; i <= 12; i++) if (has(`mr${i}_mode`) && val(`mr${i}_mode`) === 1) arm = true;
+  if (!arm) add(true, "Gán công tắc ARM", "Chưa có công tắc ARM: không arm được.", "modes", "Chế độ");
+  if (st && st.rxok === false) add(true, "Tay điều khiển", "Chưa nhận được receiver: kiểm tra bind, cổng và giao thức.", "rx", "Tay điều khiển");
+  const gpsPort = PORTS.some((p) => has(p[0] + "_fn") && val(p[0] + "_fn") === 2);
+  if ((val("fs_action") === 2 || val("fs_action") === 3) && !gpsPort) add(false, "Failsafe cần GPS", "Mất sóng sẽ bay về (RTH) nhưng không có cổng GPS: drone sẽ hạ cánh tại chỗ.", "modes", "Failsafe");
+  if (has("bat_capacity") && !val("bat_capacity")) add(false, "Dung lượng pin", "Đặt mAh để có thời gian bay còn lại và failsafe theo dung lượng.", "modes", "Pin");
+  if (gpsPort && has("mag_declination") && !val("mag_declination") && sn.mag) add(false, "Độ lệch từ", "Đặt mag_declination theo nơi bay (Việt Nam khoảng −1°).", "nav", "Điều hướng");
+  if (has("bb_rate_hz") && !val("bb_rate_hz")) add(false, "Bật blackbox", "Ghi log để phân tích và chỉnh PID sau mỗi chuyến.", "system", "Hệ thống");
+  if (has("beginner") && val("beginner")) add(false, "Đang bật chế độ bay lần đầu", "Góc nghiêng, ga và vùng bay đang bị giới hạn (beginner 1).", "pid", "Tắt ở PID");
+  let hidden = [];
+  try { hidden = JSON.parse(localStorage.getItem(TODO_HIDE_KEY) || "[]"); } catch (e) {}
+  const show = items.filter((x) => x.need || !hidden.includes(x.title));
+  host.hidden = !show.length;
+  const nNeed = show.filter((x) => x.need).length;
+  // only suggestions left: folded to one line (open state kept while the page runs)
+  const open = nNeed || S.todoOpen;
+  setHtml(host, `<details id="todoDet"${open ? " open" : ""}><summary class="card-h" style="cursor:pointer;list-style:none"><span class="dot"></span><h3>Cấu hình còn thiếu</h3><span class="card-x">${nNeed ? `<b>${nNeed}</b> việc cần làm` : `${show.length} gợi ý · bấm để xem`}</span></summary>
+    <div class="todo" style="margin-top:8px">${show.map((x) => `<div class="it${x.need ? " need" : ""}"><i></i><span>${esc(x.title)}</span>
+      <button class="btn ghost" type="button" data-todo-go="${x.tab}">${esc(x.btn)}</button><small>${esc(x.why)}${x.need ? "" : ` · <a href="#" data-todo-hide="${esc(x.title)}">ẩn</a>`}</small></div>`).join("")}</div></details>`);
+  const det = $("todoDet");
+  if (det && !det._t) { det._t = true; det.addEventListener("toggle", () => { S.todoOpen = det.open; }); }
+}
+document.addEventListener("click", (e) => {
+  const g = e.target.closest && e.target.closest("[data-todo-go]");
+  if (g) { gotoTab(g.dataset.todoGo); return; }
+  const h = e.target.closest && e.target.closest("[data-todo-hide]");
+  if (h) {
+    e.preventDefault();
+    try { const a = JSON.parse(localStorage.getItem(TODO_HIDE_KEY) || "[]"); a.push(h.dataset.todoHide); localStorage.setItem(TODO_HIDE_KEY, JSON.stringify(a)); } catch (er) {}
+    if (S.status) setupTodo(S.status);
+  }
+});
+
+// ---------------------------------------------------------------- diagnostic bundle
+// One text file with what is needed to help remotely: board / firmware, selftest, status, the changed settings
+// (diff: no passwords), pin map, port traffic, tasks / loop timing. Sent nowhere: saved or copied by the user.
+async function diagBundle(onStep) {
+  const now = new Date(), st = S.status || {};
+  const out = [`# AllQuad – gói chẩn đoán`, `Thời gian: ${now.toLocaleString("vi-VN")}`,
+    `Kết nối: ${LINK.open ? `${LINK.kind} ${LINK.label}` : "WiFi"} · trang ${typeof PWA !== "undefined" && PWA.build ? PWA.build.slice(0, 12) : "file / drone"}`,
+    `Board: ${(S.lastHello && S.lastHello.board) || "?"} · firmware ${st.fw ? st.fw.version : (S.lastHello && S.lastHello.version) || "?"}`,
+    `Trình duyệt: ${navigator.userAgent}`, ""];
+  const cmds = ["version", "selftest", "status", "diff", "pins", "tasks", "perf", "esc", "sd"];
+  for (let i = 0; i < cmds.length; i++) {
+    if (onStep) onStep(i, cmds.length, cmds[i]);
+    let txt;
+    try { txt = await api("/api/cli", { method: "POST", body: cmds[i], text: true, timeout: 9000 }); }
+    catch (e) { txt = `(lỗi: ${e.message})`; }
+    out.push(`## ${cmds[i]}`, String(txt).replace(/\r/g, "").trimEnd(), "");
+  }
+  if (Object.keys(S.edits || {}).length) out.push("## Thay đổi chưa áp dụng", ...Object.entries(S.edits).map(([k, v]) => `${k} = ${v} (đang ${S.params[k] ? S.params[k].v : "?"})`), "");
+  const ports = st.ports || [];
+  if (ports.length) {
+    out.push("## Lưu lượng cổng [cổng, byte nhận, byte gửi, tràn, lỗi khung, nhiễu, …]");
+    ports.forEach((p) => out.push(JSON.stringify(p)));
+    if (st.rxc) out.push(`receiver: ${st.rxc[0]} byte, ${st.rxc[1]} khung, ${st.rxc[2]} lỗi checksum`);
+    if (st.snsl) out.push(`cổng cảm biến MSP: ${JSON.stringify(st.snsl)}`);
+    if (st.gpsl) out.push(`GPS: ${JSON.stringify(st.gpsl)}`);
+    out.push("");
+  }
+  const snap = Object.assign({}, st);
+  delete snap.ssid; delete snap.tasks; delete snap.ports;
+  out.push("## Trạng thái (JSON)", JSON.stringify(snap), "");
+  return out.join("\n");
+}
+function diagPanel() {
+  const host = $("tab-system") && $("tab-system").querySelector(".cards");
+  if (!host || $("diagPanel")) return;
+  const p = document.createElement("div");
+  p.className = "panel";
+  p.id = "diagPanel";
+  p.innerHTML = `<div class="card-h"><span class="dot"></span><h3>Gói chẩn đoán</h3></div>
+    <p class="card-d">Gom selftest, trạng thái, cấu hình đã đổi (không có mật khẩu), sơ đồ chân, lưu lượng cổng, hiệu năng vào một file. Gửi file này khi nhờ hỗ trợ thay vì chép từng lệnh CLI. Trang không tự gửi đi đâu.</p>
+    <div class="row"><button class="btn primary" id="diagSave" type="button">Tạo và lưu file</button><button class="btn" id="diagCopy" type="button">Sao chép</button><span class="muted num" id="diagState"></span></div>`;
+  host.prepend(p);
+  const run = async (copy) => {
+    const s = $("diagState");
+    ["diagSave", "diagCopy"].forEach((id) => { $(id).disabled = true; });
+    try {
+      const txt = await diagBundle((i, n, c) => { s.textContent = `${i + 1}/${n}: ${c}…`; });
+      if (copy) { await navigator.clipboard.writeText(txt); toast("Đã sao chép gói chẩn đoán."); }
+      else {
+        const d = new Date(), pad = (x) => String(x).padStart(2, "0");
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" }));
+        a.download = `allquad-chan-doan-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      }
+      S.diagLast = txt;
+      s.textContent = `${(txt.length / 1024).toFixed(1)} kB`;
+    } catch (e) { s.textContent = ""; toast("Không tạo được: " + e.message); }
+    ["diagSave", "diagCopy"].forEach((id) => { $(id).disabled = false; });
+  };
+  $("diagSave").onclick = () => run(false);
+  $("diagCopy").onclick = () => run(true);
+}

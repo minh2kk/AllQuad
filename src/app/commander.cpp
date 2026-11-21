@@ -11,7 +11,7 @@ namespace app {
 using namespace fc;
 
 // ---------------------------------------------------------------- stick helpers
-static float stick(uint16_t us) { return rcStickUs(us); }
+static float stick(uint16_t us) { return rcStickUs(us, bus::config.rc_deadband); }
 static float thrStick(uint16_t us) { return constrainf(((float)us - 1000.0f) / 1000.0f, 0.0f, 1.0f); }
 // throttle stick -> climb rate with a center dead-band (alt-hold style)
 static float climbFromStick(float thr, float maxRate) {

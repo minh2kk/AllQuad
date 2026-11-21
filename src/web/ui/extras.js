@@ -1502,8 +1502,9 @@ function perfCard(st) {
   tileSet("fly", st.failsafe ? "bad" : st.armed ? "warn" : "ok", st.mode || "—",
     st.failsafe ? "FAILSAFE" : st.armed ? `ARMED · ${Math.floor(ft / 60)}:${String(ft % 60).padStart(2, "0")}` : `Disarmed${st.nav && st.nav !== "IDLE" ? " · " + st.nav : ""}`);
   // altitude / home
-  if (typeof e.alt === "number") tileSet("pos", "ok", `${e.alt.toFixed(1)} m`,
-    `${typeof e.vz === "number" ? (e.vz >= 0 ? "+" : "") + e.vz.toFixed(1) + " m/s" : ""}${e.home && typeof e.dist === "number" ? ` · cách nhà ${e.dist.toFixed(0)} m` : ""}`);
+  const f1 = (v) => (Math.abs(v) < 0.05 ? 0 : v).toFixed(1);  // no "-0.0"
+  if (typeof e.alt === "number") tileSet("pos", "ok", `${f1(e.alt)} m`,
+    `${typeof e.vz === "number" ? (e.vz >= 0.05 ? "+" : "") + f1(e.vz) + " m/s" : ""}${e.home && typeof e.dist === "number" ? ` · cách nhà ${e.dist.toFixed(0)} m` : ""}`);
   // loop load (perf comes with the full status, about once a second)
   if (st.perf) {
     const [, , , , , total, worst, period, load] = st.perf;

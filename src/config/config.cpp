@@ -79,6 +79,10 @@ static void v29Defaults(Config& c) {
   c.beginner = 0;
   c.beg_radius = 60;
 }
+static void v30Defaults(Config& c) {
+  for (int i = 0; i < 4; i++) c.rc_map[i] = (uint8_t)(i + 1);  // AETR
+  c.rc_deadband = 5;
+}
 
 void beginnerLimits(Config& c) {
   if (!c.beginner) return;
@@ -314,6 +318,7 @@ void configDefaults(Config& c) {
   v27Defaults(c);
   v28Defaults(c);
   v29Defaults(c);
+  v30Defaults(c);
   configSeal(c);
 }
 
@@ -344,6 +349,7 @@ bool configMigrate(Config& c) {
   if (c.version < 27) v27Defaults(d);
   if (c.version < 28) v28Defaults(d);
   if (c.version < 29) v29Defaults(d);
+  if (c.version < 30) v30Defaults(d);
   configSeal(d);
   c = d;
   return true;
