@@ -1,10 +1,14 @@
 # AllQuad CI: every push / pull request runs the host tests, the simulator, the log analyser and
 # builds the firmware for all boards, boots the STM32 (STM32Cube) firmware in QEMU and runs the configurator
 # UI tests (Playwright) on the WebAssembly demo drone. Firmware files are kept as artifacts for 14 days.
+# The robustness job fuzzes the protocol parsers (ASan + UBSan), runs cppcheck and a randomized soak
+# (every run a new seed); the nightly schedule runs a long fuzz + soak.
 name: ci
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "17 3 * * *"
 jobs:
   host:
     runs-on: ubuntu-24.04
@@ -34,6 +38,25 @@ jobs:
           npm install --no-audit --no-fund
           python3 tools/embed_web.py
           node test/web/test_analysis.js
+  robustness:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Static analysis (cppcheck, reviewed suppressions in tools/cppcheck.supp)
+        run: sh tools/static_check.sh
+      - name: Fuzz protocol parsers (RX, MSP, MAVLink, GPS, sensors, AqLink, CLI, 4-way, config)
+        run: |
+          N=200000; [ "${{ github.event_name }}" = schedule ] && N=3000000
+          sh tools/fuzz.sh $N ${{ github.run_number }}
+      - name: Soak (random flights with sensor faults, radio loss, wind)
+        run: |
+          bash tools/build_host.sh
+          N=24; [ "${{ github.event_name }}" = schedule ] && N=300
+          ./build/sim soak $N ${{ github.run_number }} | tee soak.txt
+          { echo "### Soak: seed ${{ github.run_number }}"; echo; grep -E "FAIL|soak flights failed" soak.txt; } >> "$GITHUB_STEP_SUMMARY"
+          ! grep -q "FAIL" soak.txt
   web:
     runs-on: ubuntu-24.04
     steps:
@@ -96,7 +119,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y qemu-system-arm
           pip install platformio
-      - name: STM32F405 boot test (CLI answers in QEMU)
+      - name: STM32F405 boot test (CLI answers in QEMU) + stack free per task
         run: |
           pio run -e stm32f405_qemu
           sh tools/qemu_f405.sh
