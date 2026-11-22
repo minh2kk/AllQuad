@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 30;
+constexpr uint16_t CONFIG_VERSION = 31;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -331,6 +331,8 @@ struct Config {
   // ---- v30: receiver channel map, stick dead-band ----
   uint8_t rc_map[4];        // receiver channel (1-based) carrying roll, pitch, throttle, yaw (AETR = 1 2 3 4)
   uint8_t rc_deadband;      // roll / pitch / yaw centre dead-band (us), 5 = the old fixed 1 %
+  // ---- v31: high-rate gyro capture ----
+  uint8_t bb_gyro_s;        // seconds of every gyro sample (<= 4 kHz) after take-off, SD-card blackbox only, 0 off
 
   uint32_t crc;
 };

@@ -51,6 +51,7 @@ bool takeRequest(Request& r, uint32_t& arg);
 
 // cross-task flags
 extern volatile uint32_t cliActiveUntilMs;   // CLI in use -> arming blocked
+extern volatile uint8_t gyroCapReq;          // CLI / web: start a high-rate gyro capture of this many s (logger task)
 extern volatile uint32_t magCalUntilMs;      // sensors task collects compass extremes until then
 extern volatile bool magCalDone;
 extern volatile bool gyroCalRequest;         // fast task re-runs gyro calibration
@@ -74,7 +75,10 @@ extern volatile GpsLink gpsLink;
 // MSP sensor port (optical flow / rangefinder modules, e.g. MicoAir MTF-01): what arrives on it. port 0xFF = none;
 // msp / mico = valid MSP / Micolink frames, mav = MAVLink frame starts seen (module set to the wrong protocol)
 struct SensorLink { uint8_t port; uint32_t bytes, msp, mico, mav; };
-extern volatile SensorLink sensorLink;          // flight-loop iterations since boot (watchdog progress check)
+extern volatile SensorLink sensorLink;
+// voltage on the battery / current ADC pins (V, before vbat_scale / cur_scale; current -1 = no pin): wiring checks
+// in the configurator (divider saturating the pin, current zero offset)
+extern volatile float adcVbatV, adcCurV;
 extern volatile int8_t escTelemMotor;        // motor whose ESC telemetry was last requested
 // Motor test from the configurator (disarmed, props off): 0..1 per motor, stops by itself when no
 // new value arrives for MOTOR_TEST_TIMEOUT_MS. Arming is blocked while it runs.
@@ -111,7 +115,8 @@ extern volatile bool logicBeep;
 extern volatile uint8_t logicVtxPower;
 extern volatile uint8_t logicResults;      // bit i = rule i true
 // IMU failover: 0 first chip, 1 second chip (IMU2 chip select)
-extern volatile uint8_t imuActive;
+extern volatile uint8_t imuActive;      // 2: second chip chosen on the ground as the better one (ImuVote)
+extern volatile bool imuMismatch;     // the two IMUs disagree (arming blocked)
 extern volatile bool imuSecondPresent;
 // 6-point accelerometer calibration progress (bit per side), 0x3F = done
 extern volatile uint8_t acc6Mask;

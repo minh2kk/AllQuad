@@ -12,7 +12,7 @@
 
 namespace app {
 
-constexpr const char* VERSION = "2.1.0";
+constexpr const char* VERSION = "2.2.0";
 
 struct Drivers {
   drv::ImuDriver* imu;

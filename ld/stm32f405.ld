@@ -1,12 +1,14 @@
 /* AllQuad - linker script for the STM32F405RG (STM32Cube build, no Arduino).
    Sectors 10 and 11 (last 256 kB) hold the two copies of the settings: the firmware stays below 768 kB.
-   CCM RAM is not used (no DMA access). */
+   CCM RAM (64 kB, no DMA access) holds the FreeRTOS heap: task stacks and new / malloc only, never a DMA
+   buffer (DShot, LED strip and SD card DMA buffers are static in RAM). */
 ENTRY(Reset_Handler)
 
 MEMORY
 {
   FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 768K
   RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 128K
+  CCMRAM (rw) : ORIGIN = 0x10000000, LENGTH = 64K
 }
 
 _estack = ORIGIN(RAM) + LENGTH(RAM);
@@ -106,6 +108,15 @@ SECTIONS
     *(.noinit*)
     . = ALIGN(32);
   } >RAM
+
+  /* FreeRTOS heap (ucHeap, system_stm32.cpp): zeroed by a constructor before any allocation */
+  .ccmram (NOLOAD) :
+  {
+    . = ALIGN(8);
+    *(.ccmram)
+    *(.ccmram*)
+    . = ALIGN(8);
+  } >CCMRAM
 
   ._stack_check :
   {

@@ -951,11 +951,15 @@ static float adcRead(uint32_t channel) {
   c.SamplingTime = ADC_SAMPLETIME_84CYCLES;
 #endif
   if (HAL_ADC_ConfigChannel(&hadc, &c) != HAL_OK) return 0;
-  HAL_ADC_Start(&hadc);
-  float v = 0;
-  if (HAL_ADC_PollForConversion(&hadc, 2) == HAL_OK) v = HAL_ADC_GetValue(&hadc) * (3.3f / 4095.0f);
-  HAL_ADC_Stop(&hadc);
-  return v;
+  // 8 conversions averaged (~40 us): motor / ESC noise on the analog lines, single samples jump by 50 mV
+  uint32_t sum = 0;
+  int n = 0;
+  for (int k = 0; k < 8; k++) {
+    HAL_ADC_Start(&hadc);
+    if (HAL_ADC_PollForConversion(&hadc, 2) == HAL_OK) { sum += HAL_ADC_GetValue(&hadc); n++; }
+    HAL_ADC_Stop(&hadc);
+  }
+  return n ? (float)sum / n * (3.3f / 4095.0f) : 0.0f;
 }
 float adcVbatPin() { return adcRead(AQ_ADC_VBAT_CH); }
 float adcCurrentPin() { return PIN_CURRENT >= 0 ? adcRead(AQ_ADC_CUR_CH) : -1.0f; }

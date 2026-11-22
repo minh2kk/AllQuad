@@ -119,6 +119,15 @@ def decode(data, esc_out=None):
                     esc_out.append((len(flights), _esc_row(struct.unpack(ESC_FMT, rec))))
                 i += ESC_SIZE
                 continue
+        if data[i] == 0xA8 and rows is not None and data[i + 1:i + 2] and i + 9 + data[i + 1] * 12 <= len(data):
+            # high-rate gyro frame (bb_gyro_s): skipped here, analysed in the configurator
+            n = 9 + data[i + 1] * 12
+            x = 0
+            for b in data[i:i + n - 1]:
+                x ^= b
+            if x == data[i + n - 1]:
+                i += n
+                continue
         if data[i] == 0xA6 and rows is not None and prev is not None:
             r = expand_delta(data, i, prev, prev_crc)
             if r:

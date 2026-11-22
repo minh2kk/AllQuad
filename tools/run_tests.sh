@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 python3 tools/check_pins.py
 tools/build_host.sh "$@"
 ./build/tests
+if python3 -c "import cryptography" 2>/dev/null; then python3 tools/test_ota_sign.py; else echo "(cryptography not installed: OTA signing check skipped)"; fi
 if python3 -c "import pymavlink" 2>/dev/null; then python3 tools/test_mavlink.py; else echo "(pymavlink not installed: MAVLink check skipped)"; fi
 ./build/sim all
 if [ -n "$WASI_SDK" ] || ls -d /opt/wasi/wasi-sdk-* >/dev/null 2>&1; then tools/build_wasm.sh; else echo "(wasi-sdk missing: demo build skipped)"; fi

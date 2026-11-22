@@ -92,6 +92,8 @@ struct Options {
   bool adc = true;                      // battery divider / current sensor wired to the FC
   bool held = false;                    // craft strapped down (compassmot)
   bool imuDead = false;                 // first IMU stops answering (failover test)
+  float imuNoise = 0;                   // extra gyro noise on the first IMU (rad/s RMS): IMU vote test
+  float imuAccScale = 1.0f;             // first IMU accelerometer scale error: IMU vote test
   float magCmot = 0;                    // compass interference (G per A, body x)
   bool edtEsc = false;                  // ESCs answer DShot command 13 with extended telemetry (AM32)
   int bidirDead = -1;                   // bidirectional DShot: this output stops answering (-1 none)
@@ -133,6 +135,7 @@ class SimImu : public drv::ImuDriver {
     lastVib = vib;
     if (opt.imuDead) return false;
     g = quad.w + gyroBias + vib + Vec3(gauss(0.004f), gauss(0.004f), gauss(0.004f));
+    if (opt.imuNoise > 0) g += Vec3(gauss(opt.imuNoise), gauss(opt.imuNoise), gauss(opt.imuNoise));
     for (int i = 0; i < 3; i++) g[i] = constrainf(g[i], -2000 * DEG2RAD, 2000 * DEG2RAD);  // gyro range
     a = quad.specificForceBody() + Vec3(gauss(0.4f), gauss(0.4f), gauss(0.6f));
     if (opt.accVib > 0) {
@@ -140,6 +143,7 @@ class SimImu : public drv::ImuDriver {
       ph += 2.0f * PI_F * 180.0f / 1000.0f;
       a += Vec3(opt.accVib * sinf(ph), opt.accVib * cosf(ph * 1.1f), opt.accVib * sinf(ph * 0.9f));
     }
+    a = a * opt.imuAccScale;
     for (int i = 0; i < 3; i++) a[i] = constrainf(a[i], -16.0f * GRAVITY, 16.0f * GRAVITY);  // accel range
     return true;
   }
@@ -1382,6 +1386,36 @@ void scenarioPolyFence() {
         "RTH at %.1f m", breachDist);
 }
 
+void scenarioImuVote() {
+  printf("\n== imuvote: two IMUs compared on the ground: a noisy first chip -> fly on the second; disagreeing chips -> no arming ==\n");
+  useImu2 = true;
+  opt.imuNoise = 0.15f;  // ~9 deg/s RMS: a vibration-damaged chip
+  setup([](Config&) {});
+  bool armed = false, blocked = false;
+  run(16, [&](float t) { takeoffScript(t - 4.0f); }, [&](float) {  // the comparison needs ~3 s on the ground
+    if (status().armed) armed = true;
+    if (status().armBlockers & ARM_IMU_FAIL) blocked = true;
+  });
+  float a1 = alt();
+  check("Noisy IMU 1: IMU 2 chosen before arming, armed and flying", bus::imuActive == 2 && armed && !blocked && a1 > 2.0f,
+        "alt %.1f m", a1);
+  opt.imuNoise = 0;
+  bus::imuActive = 0;
+  opt.imuAccScale = 1.2f;  // first chip reads 11.8 m/s^2 at rest, the second 9.8: which one is right?
+  setup([](Config&) {});
+  bool mis = false;
+  armed = false;
+  run(12, [&](float t) { takeoffScript(t - 4.0f); }, [&](float t) {
+    if (status().armBlockers & ARM_IMU_MISMATCH) mis = true;
+    if (t > 1.0f && status().armed) armed = true;  // (the first status is still the previous run's)
+  });
+  opt.imuAccScale = 1.0f;
+  bus::imuMismatch = false;
+  bus::imuActive = 0;
+  useImu2 = false;
+  check("Accelerometers disagree: arming blocked (IMU_MISMATCH)", mis && !armed, "armed %.0f", armed ? 1.0 : 0.0);
+}
+
 void scenarioImuFail() {
   printf("\n== imufail: the first IMU stops answering in flight -> second IMU takes over ==\n");
   useImu2 = true;
@@ -1731,7 +1765,7 @@ int main(int argc, char** argv) {
       {"autotune_abort", scenarioAutotuneAbort}, {"motortest", scenarioMotorTest}, {"motormap", scenarioMotorMap}, {"bidir", scenarioBidir}, {"rpmloss", scenarioRpmLoss}, {"console", scenarioConsole}, {"edt", scenarioEdt},
       {"guided", scenarioGuided}, {"smartrtl", scenarioSmartRtl}, {"crash", scenarioCrash}, {"gcsfs", scenarioGcsFailsafe},
       {"spin", scenarioSpin}, {"logic", scenarioLogic}, {"profiles", scenarioProfiles}, {"polyfence", scenarioPolyFence},
-      {"imufail", scenarioImuFail}, {"acc6", scenarioAcc6}, {"compassmot", scenarioCompassMot}, {"feel", scenarioFeel},
+      {"imufail", scenarioImuFail}, {"imuvote", scenarioImuVote}, {"acc6", scenarioAcc6}, {"compassmot", scenarioCompassMot}, {"feel", scenarioFeel},
       {"ekf_faults", scenarioEkfFaults}, {"rescue", scenarioRescue}, {"rescue_sanity", scenarioRescueSanity},
       {"launch", scenarioLaunch}, {"vibe", scenarioVibeWarn}, {"clip", scenarioAccClip}, {"beginner", scenarioBeginner}};
   if (!strcmp(which, "all")) {  // every scenario in a fresh process (clean firmware state)

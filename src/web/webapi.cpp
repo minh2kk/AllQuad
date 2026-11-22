@@ -238,6 +238,7 @@ static void slowStatus(JsonOut& j) {
     j.key("version"); j.str(sys ? sys->version : "?");
     j.key("slot"); j.str(fw.running);
     j.key("ota"); j.raw(fw.otaSupported ? "true" : "false");
+    if (fw.otaSigned) { j.key("sig"); j.raw("true"); }
     j.key("pending"); j.raw(fw.pendingVerify ? "true" : "false");
     j.end('}');
   }
@@ -334,6 +335,8 @@ void statusJson(Sink s, void* ctx, bool full) {
   vec(j, "acc", acc, 3, 2);
   j.key("bat");
   j.begin('{');
+  j.key("pin"); j.num(bus::adcVbatV, 3);      // V on the ADC pins (wiring / calibration helpers)
+  j.key("cpin"); j.num(bus::adcCurV, 3);
   j.key("v"); j.num(b.voltage, 2);
   j.key("a"); j.num(b.current, 1);
   j.key("mah"); j.num(b.mahDrawn, 0);

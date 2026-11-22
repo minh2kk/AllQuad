@@ -164,8 +164,9 @@ enum ArmCheck : uint32_t {
   ARM_NAV_MODE = 1u << 15,    // armed directly into an autonomous mode
   ARM_LOGIC = 1u << 16,       // a logic condition blocks arming
   ARM_IMU_FAIL = 1u << 17,    // IMU failed over to the second chip (check the wiring before flying)
+  ARM_IMU_MISMATCH = 1u << 18,  // the two IMUs disagree on gravity and neither is clearly wrong
 };
-constexpr int ARM_COUNT_BITS = 18;
+constexpr int ARM_COUNT_BITS = 19;
 const char* armCheckName(int bit);
 
 enum Warning : uint32_t {

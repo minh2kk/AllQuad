@@ -105,6 +105,17 @@ else {
     const ext = normal.res;
     check(ext.motorMean && ext.motorMean.length === 4 && normal.res.axes[0].lagMs != null,
           `flight facts: motor balance ${ext.motorMean ? ext.motorMean.map((m) => (m * 100).toFixed(0)).join("/") : "?"} %, roll lag ${normal.res.axes[0].lagMs} ms`);
+    // flight summary of the simulator flight: battery, hover throttle, vibration, notes
+    const rep = AQ.report(normal.fl, normal.res);
+    check(rep.armedSec > 10 && rep.arms >= 1 && rep.cells >= 3 && rep.vMin > 0 && rep.vMin <= rep.vRest && rep.hover > 0.1 && rep.hover < 0.8 &&
+          rep.notes.length && rep.notes.every((x) => ["ok", "info", "warn", "bad"].includes(x.level)),
+          `flight summary: ${rep.armedSec.toFixed(0)} s armed, ${rep.cells}S ${rep.vRest.toFixed(2)} -> ${rep.vMin.toFixed(2)} V, hover ${(rep.hover * 100).toFixed(0)}%, ` +
+          `${rep.mah != null ? rep.mah.toFixed(0) + " mAh" : "no current"}, vibration ${rep.vib.toFixed(1)}, ${rep.notes.length} notes`);
+    {  // a weak pack: every voltage scaled down -> a battery warning comes first
+      const w = Object.assign({}, normal.fl, { vbat: normal.fl.vbat.map((v) => v * 0.83) });
+      const rw = AQ.report(w, normal.res);
+      check(rw.notes[0].level === "bad" || rw.notes[0].level === "warn" && /V\/cell|Sụt áp/.test(rw.notes[0].text), `weak pack: "${rw.notes[0].text.slice(0, 60)}…"`);
+    }
     // apply the plan round by round, as a pilot would: fly, analyse, take the plan, fly again
     const scale = { P: 0.5, I: 1, D: 1, F: 1 }, base = { P: 45, I: 80, D: 30, F: 60 };
     const ov0 = low.res.axes[0].step.overshoot;
@@ -133,6 +144,34 @@ else {
     check(after < before - 0.05, `autotune from P x${p}: roll ${rp.toFixed(0)}/${rd.toFixed(0)}, analyser overshoot ${(before * 100).toFixed(0)}% -> ${(after * 100).toFixed(0)}%`);
   }
 }
+// ---- 2b. high-rate gyro frames (0xA8, bb_gyro_s): 2 s of a 610 Hz motor line at 4 kHz inside a sim log
+{
+  const out = path.join(root, "build", "web");
+  const base = fs.readFileSync(path.join(out, "normal.bin"));
+  const end = base.indexOf("H end\n") + 6;
+  const rate = 4000, N = 16, frames = [];
+  for (let f = 0; f < (2 * rate) / N; f++) {
+    const b = Buffer.alloc(9 + N * 12);
+    b[0] = 0xA8; b[1] = N; b.writeUInt32LE(5000000 + Math.round(f * N * 1e6 / rate), 2); b.writeUInt16LE(rate, 6);
+    for (let k = 0; k < N; k++) {
+      const t = (f * N + k) / rate, raw = 40 * Math.sin(2 * Math.PI * 610 * t) + 5 * Math.sin(2 * Math.PI * 30 * t);
+      b.writeInt16LE(Math.round(raw * 10), 8 + k * 12);
+      b.writeInt16LE(Math.round(5 * Math.sin(2 * Math.PI * 30 * t) * 10), 8 + k * 12 + 6);
+    }
+    let x = 0;
+    for (let i = 0; i < b.length - 1; i++) x ^= b[i];
+    b[b.length - 1] = x;
+    frames.push(b);
+  }
+  const fl = AQ.decode(Buffer.concat([base.subarray(0, end), ...frames, base.subarray(end)]).buffer)[0];
+  const hf = fl.hf && fl.hf[0];
+  const sp = hf && AQ.spectrum(hf.raw[0], hf.rate, 1024);
+  const pk = sp && AQ.bandPeak(sp, 100, hf.rate / 2 - 10);
+  const plain = AQ.decode(base.buffer.slice(base.byteOffset, base.byteOffset + base.length))[0];
+  check(hf && hf.rate === 4000 && Math.abs(hf.duration - 2) < 0.01 && Math.abs(pk.hz - 610) < 8 && fl.n === plain.n,
+    `high-rate gyro: ${hf ? hf.duration.toFixed(2) + " s at " + hf.rate + " Hz" : "none"}, peak ${pk ? pk.hz.toFixed(0) : "?"} Hz (true 610, above the 250 Hz of the regular log), records untouched`);
+}
+
 // ---- 3. exports: .bbl read back with a minimal Betaflight-format decoder (I frames, variable-byte)
 {
   const n = 300, t0 = 1000.5;

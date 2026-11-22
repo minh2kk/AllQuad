@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 380 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 381 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -204,10 +204,10 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | Tham số | Mặc định | Giới hạn | Mô tả |
 |---|---|---|---|
 | `rx_protocol` (KĐL) | 0 | 0 … 2 | Giao thức receiver. 0 = CRSF / ELRS, 1 = SBUS, 2 = iBUS |
-| `rc_ch_roll` | 1 | 1 … 4 | Kênh receiver của roll (AETR: 1) |
-| `rc_ch_pitch` | 2 | 1 … 4 | Kênh receiver của pitch (AETR: 2) |
-| `rc_ch_thr` | 3 | 1 … 4 | Kênh receiver của ga (AETR: 3, TAER: 1) |
-| `rc_ch_yaw` | 4 | 1 … 4 | Kênh receiver của yaw (AETR: 4) |
+| `rc_ch_roll` | 1 | 1 … 4 | Kênh receiver mang roll |
+| `rc_ch_pitch` | 2 | 1 … 4 | Kênh receiver mang pitch |
+| `rc_ch_thr` | 3 | 1 … 4 | Kênh receiver mang ga |
+| `rc_ch_yaw` | 4 | 1 … 4 | Kênh receiver mang yaw |
 | `rc_deadband` | 5 µs | 0 … 50 | Vùng chết quanh tâm cần roll / pitch / yaw (µs) |
 
 ## Chế độ (công tắc)
@@ -382,6 +382,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `osd_warn_pos` | 33097 | 0 … 65535 | Vị trí phần tử OSD "warn" (cột + 32 × hàng trên lưới 30×16; bit 15 = hiện). Kéo thả trong tab OSD |
 | `osd_coord_pos` | 481 | 0 … 65535 | Vị trí phần tử OSD "coord" (cột + 32 × hàng trên lưới 30×16; bit 15 = hiện). Kéo thả trong tab OSD |
 | `bb_rate_hz` (KĐL) | 0 Hz | 0 … 1000 | Tần số ghi blackbox (0 = tắt, khuyên 500) |
+| `bb_gyro_s` | 0 s | 0 … 30 | Ghi gyro tần số cao sau cất cánh (s, thẻ SD; 0 = tắt): thấy nhiễu motor trên 250 Hz |
 | `bb_backend` (KĐL) | 1 | 1 … 3 | Nơi ghi: 1 cổng serial, 2 flash trên board, 3 thẻ SD. 1 = Cổng serial, 2 = Flash trên board, 3 = Thẻ SD |
 
 ## Hiệu chuẩn & cảm biến
@@ -424,7 +425,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `mag_cmot_x` | 0 | -0.05 … 0.05 | Nhiễu la bàn theo dòng điện, trục X (compassmot) |
 | `mag_cmot_y` | 0 | -0.05 … 0.05 | compassmot: nhiễu la bàn theo dòng điện, trục y (G/A, tự ghi) |
 | `mag_cmot_z` | 0 | -0.05 … 0.05 | compassmot: nhiễu la bàn theo dòng điện, trục z (G/A, tự ghi) |
-| `imu_dual` (KĐL) | 1 | 0 … 1 | IMU thứ hai (chân CS IMU2) thay khi IMU chính hỏng |
+| `imu_dual` (KĐL) | 1 | 0 … 1 | IMU thứ hai (chân CS IMU2): thay khi IMU chính hỏng, và trước khi arm chọn chip tốt hơn |
 
 ## Khác
 

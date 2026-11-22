@@ -218,6 +218,7 @@ static const ParamInfo PARAMS[] = {
     P("osd_warn_pos", U16, osd_pos[OSD_WARNINGS], 0, 65535),
     P("osd_coord_pos", U16, osd_pos[OSD_COORDS], 0, 65535),
     PR("bb_rate_hz", U16, bb_rate_hz, 0, 1000),
+    P("bb_gyro_s", U8, bb_gyro_s, 0, 30),
     PR("bb_backend", U8, bb_backend, 1, 3),
     PR("sd_mode", U8, sd_mode, 0, 3), PR("sd_mhz", U8, sd_mhz, 0, 40),
     PR("sd_clk", U8, sd_pin[SD_CLK], 0, 255), PR("sd_cmd", U8, sd_pin[SD_CMD], 0, 255),

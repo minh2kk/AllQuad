@@ -70,6 +70,7 @@ class Blackbox {
   Record prev_;
   uint32_t count_ = 0;
   uint16_t escEvery_ = 10, escN_ = 0;  // records between ESC frames (~50 Hz)
+  bool burstDone_ = false;             // the bb_gyro_s capture of this flight has run
 };
 
 }  // namespace logging

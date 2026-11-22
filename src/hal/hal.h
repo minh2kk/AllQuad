@@ -206,6 +206,7 @@ struct FirmwareInfo {
   const char* running;   // partition label, e.g. "ota_0"
   bool otaSupported;     // a second slot exists
   bool pendingVerify;    // new image on its first boot: rolled back if it does not confirm itself
+  bool otaSigned = false;  // WiFi updates must be signed (public key built in, tools/ota_sign.py)
 };
 FirmwareInfo firmwareInfo();
 void firmwareConfirm();  // self-test passed: keep this image

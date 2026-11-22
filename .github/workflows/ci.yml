@@ -1,5 +1,6 @@
 # AllQuad CI: every push / pull request runs the host tests, the simulator, the log analyser and
-# builds the firmware for all boards and boots the STM32 (STM32Cube) firmware in QEMU. Firmware files are kept as artifacts for 14 days.
+# builds the firmware for all boards, boots the STM32 (STM32Cube) firmware in QEMU and runs the configurator
+# UI tests (Playwright) on the WebAssembly demo drone. Firmware files are kept as artifacts for 14 days.
 name: ci
 on:
   push:
@@ -14,7 +15,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - name: Python packages
-        run: pip install pymavlink
+        run: pip install pymavlink cryptography
+      - name: Board pin maps (no pin used twice, UART pins / alternate functions)
+        run: python3 tools/check_pins.py
       - name: Unit tests (sanitizers)
         run: |
           bash tools/build_host.sh -fsanitize=address,undefined
@@ -24,12 +27,38 @@ jobs:
           bash tools/build_host.sh
           ./build/tests
           python3 tools/test_mavlink.py
+          python3 tools/test_ota_sign.py
           ./build/sim all
       - name: Web page + log analyser
         run: |
           npm install --no-audit --no-fund
           python3 tools/embed_web.py
           node test/web/test_analysis.js
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: wasi-sdk (demo drone as WebAssembly)
+        run: |
+          curl -sSL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-x86_64-linux.tar.gz | tar xz -C /tmp
+          WASI_SDK=/tmp/wasi-sdk-25.0-x86_64-linux sh tools/build_wasm.sh
+      - name: Page bundle + Playwright
+        run: |
+          npm install --no-audit --no-fund
+          pip install playwright zopfli
+          python3 -m playwright install --with-deps chromium
+          python3 tools/embed_web.py
+          node test/web/test_wasm.js
+      - name: Configurator UI tests
+        run: |
+          bash tools/build_host.sh && node test/web/test_analysis.js >/dev/null   # simulator logs (build/web/normal.bin) for the blackbox tests
+          for t in test_ui test_configurator test_tools test_pro test_extras test_pwa test_ux test_guide test_flasher; do
+            echo "== $t"; python3 test/web/$t.py /tmp/shots || exit 1
+          done
   firmware:
     runs-on: ubuntu-24.04
     strategy:

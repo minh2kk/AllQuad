@@ -225,6 +225,24 @@ async def main():
         check(ch == 6, "modes: 'Dò' picks the switch that was flipped (AUX3 = channel index 6, got %s)" % ch)
         await pg.evaluate("$('discardBtn').click(); toolsStatus = window.__ts; window.__ts = null")
 
+        # battery / current sensing helper: divider calculator, Betaflight current scale, calibration
+        await pg.click("nav button[data-tab=modes]")
+        await pg.wait_for_timeout(500)
+        ok = await pg.evaluate("""(() => { BAT.how = 'div'; buildBatHelper();
+            $('batR1').value = '10'; $('batR2').value = '1'; $('batCells').value = '6'; $('batR1').oninput();
+            const a = $('batDivOut').textContent;
+            $('batR1').value = '3'; $('batR1').oninput();
+            const b = $('batDivOut').textContent;
+            $('batCurT').value = 'bf'; $('batCurV').value = '400'; $('batCurO').value = '0'; $('batCurV').oninput();
+            $('batCurOut').querySelector('button').click();
+            return [a.includes('11.00') && a.includes('✓'), b.includes('quá'), val('cur_scale')]; })()""")
+        check(ok[0] and ok[1] and abs(ok[2] - 25) < 1e-6, "battery helper: 10k/1k = 11 fits 6S, 3k/1k flagged, Betaflight 400 -> 25 A/V %s" % ok)
+        cal = await pg.evaluate("""(() => { const pin = S.status.bat.pin; $('batMeter').value = (pin * 11.2).toFixed(3); $('batMeterGo').click();
+            BAT.cbuf = [0.10, 0.11, 0.12]; $('batZero').click();
+            return [Math.abs(val('vbat_scale') - 11.2) < 0.01, Math.abs(val('cur_offset') - 0.11) < 1e-6]; })()""")
+        check(cal == [True, True], "battery helper: multimeter calibration sets vbat_scale, zero sets cur_offset %s" % cal)
+        await pg.evaluate("$('discardBtn').click()")
+
         # diagnostic bundle
         await pg.click("nav button[data-tab=system]")
         await pg.wait_for_timeout(300)

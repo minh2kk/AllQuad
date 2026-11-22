@@ -18,6 +18,8 @@
 #include <esp_app_desc.h>
 #include <esp_image_format.h>
 #include <esp_ota_ops.h>
+#include <mbedtls/ecdsa.h>
+#include <mbedtls/sha256.h>
 
 #include "../bus/bus.h"
 #include "../hal/hal.h"
@@ -25,6 +27,7 @@
 #include "web.h"
 #include "webapi.h"
 #include "../logging/sdlog.h"
+#include "ota_pubkey.h"
 #include "web_ui_data.h"
 #include "webapi.h"
 #include "../logging/sdlog.h"
@@ -177,20 +180,45 @@ static esp_err_t onRestore(httpd_req_t* req) {
 }
 
 // ---- firmware update: streamed into the inactive slot, verified, then booted once with rollback
+// Signed updates (tools/ota_sign.py): the image may end in a 72-byte trailer "AQSIG1\0\0" + r + s (ECDSA P-256
+// over SHA-256 of the image). The last 72 bytes are held back while streaming; a trailer is never written to
+// flash. With a public key built in (src/web/ota_pubkey.h) only images signed with its private key are taken.
+constexpr size_t SIG_TRAILER = 72;
+static const uint8_t SIG_MAGIC[8] = {'A', 'Q', 'S', 'I', 'G', '1', 0, 0};
+
+static bool sigValid(const uint8_t hash[32], const uint8_t* rs) {
+  if (!OTA_PUBKEY_LEN) return false;
+  mbedtls_ecp_group grp;
+  mbedtls_ecp_point q;
+  mbedtls_mpi r, s;
+  mbedtls_ecp_group_init(&grp); mbedtls_ecp_point_init(&q); mbedtls_mpi_init(&r); mbedtls_mpi_init(&s);
+  bool ok = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1) == 0 &&
+            mbedtls_ecp_point_read_binary(&grp, &q, OTA_PUBKEY, OTA_PUBKEY_LEN) == 0 &&
+            mbedtls_mpi_read_binary(&r, rs, 32) == 0 && mbedtls_mpi_read_binary(&s, rs + 32, 32) == 0 &&
+            mbedtls_ecdsa_verify(&grp, hash, 32, &q, &r, &s) == 0;
+  mbedtls_mpi_free(&r); mbedtls_mpi_free(&s); mbedtls_ecp_point_free(&q); mbedtls_ecp_group_free(&grp);
+  return ok;
+}
+
 static esp_err_t onOta(httpd_req_t* req) {
   REQUIRE_AUTH(req);
   if (armed()) return reply(req, 423, "disarm first");
   const esp_partition_t* slot = esp_ota_get_next_update_partition(nullptr);
   if (!slot) return reply(req, 400, "no update slot (flash the OTA partition table over USB once)");
   if (req->content_len < 64 * 1024) return reply(req, 400, "not a firmware image");
-  if (req->content_len > slot->size)  // older, smaller partition table on this board
+  if (req->content_len > slot->size + SIG_TRAILER)  // older, smaller partition table on this board
     return reply(req, 400, "firmware larger than the update slot: flash it over USB once (new partition table)");
   bus::otaActive = true;  // arming blocked while the flash is being written
   esp_ota_handle_t h = 0;
   esp_err_t err = esp_ota_begin(slot, OTA_WITH_SEQUENTIAL_WRITES, &h);
   char* buf = (char*)malloc(4096);
   if (!buf) { bus::otaActive = false; esp_ota_abort(h); return reply(req, 400, "out of memory"); }
-  const size_t bufSize = 4096;
+  const size_t bufSize = 4096, direct = req->content_len - SIG_TRAILER;  // bytes surely of the image
+  uint8_t tail[SIG_TRAILER];
+  size_t tailN = 0;
+  mbedtls_sha256_context sha;
+  mbedtls_sha256_init(&sha);
+  mbedtls_sha256_starts(&sha, 0);
   size_t got = 0;
   bool headerOk = false;
   int timeouts = 0;
@@ -211,16 +239,30 @@ static esp_err_t onOta(httpd_req_t* req) {
       headerOk = (uint8_t)buf[0] == ESP_IMAGE_HEADER_MAGIC && d->magic_word == ESP_APP_DESC_MAGIC_WORD;
       if (!headerOk) { err = ESP_ERR_INVALID_ARG; break; }
     }
-    err = esp_ota_write(h, buf, have);
+    size_t w = got >= direct ? 0 : (direct - got < have ? direct - got : have);  // part before the last 72 bytes
+    if (w) { err = esp_ota_write(h, buf, w); mbedtls_sha256_update(&sha, (const uint8_t*)buf, w); }
+    memcpy(tail + tailN, buf + w, have - w);
+    tailN += have - w;
     got += have;
   }
   free(buf);
+  uint8_t hash[32];
+  mbedtls_sha256_finish(&sha, hash);
+  mbedtls_sha256_free(&sha);
+  const bool signedImg = err == ESP_OK && tailN == SIG_TRAILER && !memcmp(tail, SIG_MAGIC, 8);
+  const char* why = nullptr;
+  if (err == ESP_OK && OTA_PUBKEY_LEN) {
+    if (!signedImg) why = "unsigned firmware refused: this drone only takes images signed with its key (tools/ota_sign.py)";
+    else if (!sigValid(hash, tail + 8)) why = "signature does not match this drone's key: refused";
+    if (why) err = ESP_ERR_INVALID_ARG;
+  }
+  if (err == ESP_OK && !signedImg && tailN) err = esp_ota_write(h, tail, tailN);  // unsigned: the end of the image
   if (err == ESP_OK) err = esp_ota_end(h);  // checks the image (checksum, SHA, chip)
   else if (h) esp_ota_abort(h);
   if (err == ESP_OK) err = esp_ota_set_boot_partition(slot);
   bus::otaActive = false;
-  if (err != ESP_OK) return reply(req, 400, headerOk ? "update failed, the current firmware stays" : "not an ESP32 firmware image");
-  esp_err_t e = reply(req, 200, "update written, rebooting");
+  if (err != ESP_OK) return reply(req, 400, why ? why : headerOk ? "update failed, the current firmware stays" : "not an ESP32 firmware image");
+  esp_err_t e = reply(req, 200, signedImg ? "signed update written, rebooting" : "update written, rebooting");
   xTaskCreatePinnedToCore(rebootLater, "reboot", 2048, nullptr, 1, nullptr, 0);
   return e;
 }

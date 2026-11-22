@@ -14,6 +14,7 @@ function onParamsLoaded() {
   pinLinks();
   buildRx();
   diagPanel();
+  buildBatHelper();
   buildVtx();
   buildLed();
   buildOsd();
@@ -1893,6 +1894,7 @@ function rxDraw(st) {
 function toolsStatus(st) {
   if (shown("rx")) rxDraw(st);
   if (S.chLearn) modeLearnTick(st);
+  if (shown("modes")) batLive(st);
   setupTodo(st);
 }
 
@@ -1947,6 +1949,7 @@ function setupTodo(st) {
   if (gpsPort && has("mag_declination") && !val("mag_declination") && sn.mag) add(false, "Độ lệch từ", "Đặt mag_declination theo nơi bay (Việt Nam khoảng −1°).", "nav", "Điều hướng");
   if (has("bb_rate_hz") && !val("bb_rate_hz")) add(false, "Bật blackbox", "Ghi log để phân tích và chỉnh PID sau mỗi chuyến.", "system", "Hệ thống");
   if (has("beginner") && val("beginner")) add(false, "Đang bật chế độ bay lần đầu", "Góc nghiêng, ga và vùng bay đang bị giới hạn (beginner 1).", "pid", "Tắt ở PID");
+  if (typeof ffDoneAll === "function" && !ffDoneAll()) add(false, "Hướng dẫn bay lần đầu", "9 bước theo thứ tự: đấu dây, hướng lắp FC, tay điều khiển, motor, thử failsafe… trước chuyến bay đầu.", "preflight#ffPanel", "Mở hướng dẫn");
   let hidden = [];
   try { hidden = JSON.parse(localStorage.getItem(TODO_HIDE_KEY) || "[]"); } catch (e) {}
   const show = items.filter((x) => x.need || !hidden.includes(x.title));
@@ -2034,4 +2037,155 @@ function diagPanel() {
   };
   $("diagSave").onclick = () => run(false);
   $("diagCopy").onclick = () => run(true);
+}
+
+// ---------------------------------------------------------------- battery voltage / current sensing helper
+// How to wire the VBAT / CURRENT ADC pins for the setup in use, the scale from resistor values or a datasheet /
+// Betaflight value, live pin voltages, and calibration against a multimeter / the charger.
+const BAT = { cbuf: [], how: null };
+const BAT_HOW = [
+  ["div", "Board phát triển + mạch chia tự làm", "DevEBox, WeAct, BlackPill, ESP32 DevKit: board không có cầu chia, phải tự hàn 2 điện trở"],
+  ["fc", "FC thương mại có sẵn cầu chia (pad VBAT)", "F405 / F722 / H743 bán sẵn: chỉ cần nối pad VBAT của FC với pin (hoặc chân VBAT của ESC)"],
+  ["pm", "Power module / PDB có chân V và I", "Module nguồn analog (APM, Matek FCHUB…): chân V đã chia sẵn, hệ số theo datasheet"],
+  ["esc", "Không nối chân: lấy từ ESC (EDT / telemetry)", "ESC AM32 / Bluejay / BLHeli_32 gửi áp, dòng qua dây tín hiệu (dshot_edt) hoặc dây telemetry"],
+];
+const batDev = () => /devebox|weact|blackpill|devkit|esp32|drone ảo/i.test((S.pinMap && S.pinMap.board) || (S.lastHello && S.lastHello.board) || "");
+const batPin = (w) => { const r = S.pinMap && S.pinMap.pins && S.pinMap.pins.find((p) => p[1] === "adc" && p[3] === w); return r ? r[0] : "?"; };
+function buildBatHelper() {
+  const sp = $("safetyParams");
+  if (!sp || !has("vbat_scale")) return;
+  let p = $("batHelp");
+  if (!p) {
+    p = document.createElement("div");
+    p.className = "panel";
+    p.id = "batHelp";
+    sp.appendChild(p);
+  }
+  if (!BAT.how) BAT.how = !val("vbat_scale") ? "esc" : batDev() ? "div" : "fc";
+  const esp = S.pinMap && S.pinMap.pins && S.pinMap.pins.some((r) => /^GPIO/.test(r[0]));
+  const vmax = esp ? 2.5 : 3.0;  // keep head-room under the 3.3 V full scale (ESP32 ADC is not linear above ~2.5 V)
+  const cells = has("cell_count") && val("cell_count") ? val("cell_count") : 6;
+  const vb = batPin("VBAT"), cb = batPin("CURRENT");
+  p.innerHTML = `<div class="card-h"><span class="dot"></span><h3>Đo điện áp & dòng: cách nối, hiệu chuẩn</h3></div>
+    <p class="card-d">Chân đo điện áp: <b class="num">${vb}</b>${cb !== "?" ? `, chân đo dòng: <b class="num">${cb}</b>` : ""}. Chân ADC chỉ chịu tối đa 3,3 V: <b>không bao giờ nối pin thẳng vào chân</b>.</p>
+    <div class="seg" id="batHow" role="group" aria-label="Cách nối" style="flex-wrap:wrap;margin-bottom:6px">${BAT_HOW.map(([k, t]) => `<button type="button" data-h="${k}" aria-pressed="${k === BAT.how}">${t}</button>`).join("")}</div>
+    <p class="muted" id="batHowD" style="margin:4px 0 8px"></p>
+    <div id="batCalc"></div>
+    <dl class="kv" id="batLive" style="margin-top:10px"></dl>
+    <p class="note bad" id="batWarn" hidden></p>
+    <div id="batCal"></div>`;
+  p.querySelectorAll("#batHow button").forEach((b) => (b.onclick = () => { BAT.how = b.dataset.h; buildBatHelper(); }));
+  $("batHowD").textContent = BAT_HOW.find((x) => x[0] === BAT.how)[2];
+  const f = (id, label, v, unit) => `<div class="field"><label for="${id}">${label}</label><input id="${id}" inputmode="decimal" value="${v}"${unit ? ` placeholder="${unit}"` : ""}></div>`;
+  let h = "";
+  if (BAT.how === "div") {
+    h = `<p style="margin:0 0 6px"><b>Đấu dây:</b> pin (+) → <b>R1</b> → điểm giữa → chân <b class="num">${vb}</b>; điểm giữa → <b>R2</b> → GND. Thêm tụ 100 nF từ chân ${vb} xuống GND để lọc nhiễu motor. Muốn chắc chắn hơn: điện trở 1 kΩ nối tiếp vào chân và diode zener 3,3 V xuống GND.</p>
+      <div class="fields">${f("batR1", "R1 phía pin (kΩ)", 10)}${f("batR2", "R2 phía GND (kΩ)", 1)}${f("batCells", "Pin tối đa (số cell)", cells)}</div>
+      <p class="num" id="batDivOut"></p>
+      <p class="muted" style="font-size:.82rem">Gợi ý: 10 kΩ / 1 kΩ (hệ số 11) cho đến 6S trên STM32; ESP32 hoặc 7–8S: 20 kΩ / 1,5 kΩ (hệ số 14,3). Dùng điện trở sai số 1 % rồi hiệu chỉnh bằng đồng hồ đo ở dưới.</p>`;
+  } else if (BAT.how === "fc") {
+    h = `<p style="margin:0 0 6px"><b>Đấu dây:</b> pad VBAT của FC ← dây (+) pin (hoặc chân VBAT của ESC 4-in-1, cùng mức với pin). Cầu chia nằm sẵn trên FC.</p>
+      <div class="fields">${f("batBf", "vbat_scale của Betaflight / INAV (vd 110)", 110)}</div><p class="num" id="batFcOut"></p>
+      <p class="muted" style="font-size:.82rem">Betaflight ghi hệ số ×10 (110 = chia 11). Không biết thì để 110 rồi hiệu chỉnh bằng đồng hồ đo.</p>`;
+  } else if (BAT.how === "pm") {
+    h = `<p style="margin:0 0 6px"><b>Đấu dây:</b> chân V của module → <b class="num">${vb}</b>, chân I → <b class="num">${cb}</b>, GND chung. Module phải là loại <b>analog</b> (I2C / CAN như PM02D, PM06 không dùng được).</p>
+      <div class="fields">${f("batPmV", "Hệ số điện áp (V pin / V chân)", 11)}</div><p class="num" id="batPmOut"></p>`;
+  } else {
+    h = `<p style="margin:0 0 6px">Không cần chân nào. Bật <b>dshot_bidir</b> + <b>dshot_edt</b> (ESC AM32 / Bluejay / BLHeli_32) ở tab Motor & ESC, hoặc dây telemetry ESC vào một cổng (chức năng 6). FC dùng áp / dòng ESC báo khi chân ${vb} không có điện áp.</p>
+      <button class="btn" type="button" id="batEscGo">Tắt đo bằng chân (vbat_scale giữ, cur_scale 0)</button>`;
+  }
+  if (BAT.how !== "esc") {
+    h += `<h4 style="margin:12px 0 4px">Dòng điện ${cb === "?" ? "(board này không có chân đo dòng)" : `(chân ${cb})`}</h4>`;
+    if (cb !== "?") h += `<p style="margin:0 0 6px">Chân <b>CURR</b> của ESC 4-in-1 / power module → <b class="num">${cb}</b>, GND chung (tín hiệu đã là 0–3,3 V, nối thẳng).</p>
+      <div class="fields"><div class="field"><label for="batCurT">Datasheet ghi</label><select id="batCurT"><option value="bf">Betaflight ibata_scale</option><option value="mva">mV / A</option><option value="av">A / V</option><option value="none">Không dùng</option></select></div>
+      ${f("batCurV", "Giá trị (vd 400)", 400)}${f("batCurO", "Offset (Betaflight: mA, khác: V)", 0)}</div><p class="num" id="batCurOut"></p>`;
+  }
+  $("batCalc").innerHTML = h;
+  const num = (id) => parseFloat(String(($(id) || {}).value || "").replace(",", "."));
+  const useBtn = (host, label, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = label; b.onclick = fn; host.appendChild(b); };
+  const calc = () => {
+    if (BAT.how === "div" && $("batDivOut")) {
+      const r1 = num("batR1"), r2 = num("batR2"), n = num("batCells");
+      const k = r2 > 0 ? (r1 + r2) / r2 : NaN, vp = n * 4.35 / k;
+      const ok = isFinite(k) && vp <= vmax;
+      $("batDivOut").innerHTML = isFinite(k) ? `Hệ số <b>${k.toFixed(2)}</b> · pin đầy ${n}S (${(n * 4.35).toFixed(1)} V) → chân ${vp.toFixed(2)} V ${ok ? "✓" : `<b style="color:var(--danger)">quá ${vmax} V: tăng R1 hoặc giảm R2</b>`} · độ phân giải ${(3300 / 4095 * k).toFixed(0)} mV / bước ` : "Nhập R1, R2.";
+      if (ok) useBtn($("batDivOut"), `Dùng vbat_scale = ${k.toFixed(2)}`, () => { setEdit("vbat_scale", +k.toFixed(2)); toast("Đã đưa vào hàng chờ: bấm Lưu, rồi hiệu chỉnh bằng đồng hồ đo."); });
+    }
+    if (BAT.how === "fc" && $("batFcOut")) {
+      const k = num("batBf") / 10;
+      $("batFcOut").innerHTML = isFinite(k) && k > 1 ? `AllQuad: vbat_scale = <b>${k.toFixed(1)}</b> ` : "Nhập hệ số Betaflight.";
+      if (isFinite(k) && k > 1) useBtn($("batFcOut"), "Dùng", () => setEdit("vbat_scale", +k.toFixed(2)));
+    }
+    if (BAT.how === "pm" && $("batPmOut")) {
+      const k = num("batPmV");
+      $("batPmOut").innerHTML = isFinite(k) && k >= 1 ? `vbat_scale = <b>${k.toFixed(2)}</b> ` : "Nhập hệ số.";
+      if (isFinite(k) && k >= 1) useBtn($("batPmOut"), "Dùng", () => setEdit("vbat_scale", +k.toFixed(3)));
+    }
+    if ($("batCurOut")) {
+      const t = $("batCurT").value, v = num("batCurV"), o = num("batCurO") || 0;
+      let sc = NaN, off = 0;
+      if (t === "bf") { sc = 10000 / v; off = -o / 1000 / sc; }  // Betaflight: A = mV * 10 / scale + offset_mA / 1000
+      else if (t === "mva") { sc = 1000 / v; off = o; }
+      else if (t === "av") { sc = v; off = o; }
+      else sc = 0;
+      const ok = t === "none" || (isFinite(sc) && sc > 0 && sc <= 500);
+      $("batCurOut").innerHTML = t === "none" ? "cur_scale = 0: không đo dòng bằng chân. " :
+        ok ? `cur_scale = <b>${sc.toFixed(2)}</b> A/V, cur_offset = <b>${off.toFixed(3)}</b> V · đo được tối đa ~${((3.3 - off) * sc).toFixed(0)} A ` :
+        `Hệ số ngoài 0–500 A/V${v < 0 ? " (hệ số âm: đảo chiều cảm biến, chưa hỗ trợ)" : ""}.`;
+      if (ok) useBtn($("batCurOut"), "Dùng", () => { setEdit("cur_scale", t === "none" ? 0 : +sc.toFixed(3)); if (t !== "none") setEdit("cur_offset", +off.toFixed(3)); });
+    }
+  };
+  $("batCalc").querySelectorAll("input, select").forEach((e) => (e.oninput = e.onchange = calc));
+  calc();
+  if ($("batEscGo")) $("batEscGo").onclick = () => { setEdit("cur_scale", 0); toast("cur_scale 0: dòng lấy từ ESC. Bấm Lưu."); };
+  // calibration against real measurements
+  $("batCal").innerHTML = BAT.how === "esc" ? "" : `<h4 style="margin:12px 0 4px">Hiệu chỉnh cho chuẩn</h4>
+    <div class="row">${f("batMeter", "Điện áp đo bằng đồng hồ ở cọc pin (V)", "")}<button class="btn" type="button" id="batMeterGo" style="align-self:end">Hiệu chỉnh điện áp</button></div>
+    ${cb !== "?" ? `<div class="row" style="margin-top:6px"><button class="btn" type="button" id="batZero">Đặt điểm 0 dòng (pin cắm, motor dừng)</button></div>
+    <div class="row" style="margin-top:6px">${f("batChg", "Sau chuyến bay: sạc vào (mAh)", "")}${f("batRep", "FC báo đã dùng (mAh)", "")}<button class="btn" type="button" id="batChgGo" style="align-self:end">Hiệu chỉnh dòng</button></div>` : ""}
+    <p class="muted" style="font-size:.82rem;margin-bottom:0">Điện áp: đo ở cọc pin khi pin cắm, motor dừng. Dòng: bay hết một pin, ghi mAh FC báo (OSD / tab Tổng quan) trước khi rút pin, rồi lấy số mAh bộ sạc nạp vào; làm 2–3 lần cho chuẩn. Kết quả vào hàng chờ: bấm Lưu.</p>`;
+  if ($("batMeterGo")) $("batMeterGo").onclick = () => {
+    const m = num("batMeter"), vp = S.status && S.status.bat ? S.status.bat.pin : 0;
+    if (!(m > 1)) return toast("Nhập điện áp đồng hồ đo.");
+    if (!(vp > 0.05)) return toast("Chân điện áp đang ~0 V: chưa cắm pin hoặc chưa nối dây.");
+    if (vp > 3.2) return toast("Chân đang bão hoà (gần 3,3 V): sửa mạch chia trước.");
+    setEdit("vbat_scale", +(m / vp).toFixed(3));
+    toast(`vbat_scale = ${(m / vp).toFixed(3)}. Bấm Lưu.`);
+  };
+  if ($("batZero")) $("batZero").onclick = () => {
+    const st = S.status;
+    if (st && st.armed) return toast("Disarm trước.");
+    const b = BAT.cbuf.filter((x) => x >= 0);
+    if (b.length < 3) return toast("Chưa có số đo chân dòng: chờ vài giây.");
+    const avg = b.reduce((a, x) => a + x, 0) / b.length;
+    setEdit("cur_offset", +avg.toFixed(3));
+    toast(`cur_offset = ${avg.toFixed(3)} V (trung bình ${b.length} lần đo). Bấm Lưu.`);
+  };
+  if ($("batChgGo")) $("batChgGo").onclick = () => {
+    const c = num("batChg"), r = num("batRep");
+    if (!(c > 0 && r > 0)) return toast("Nhập cả hai số mAh.");
+    if (!(val("cur_scale") > 0)) return toast("Đặt cur_scale trước (phần Dòng điện ở trên).");
+    const k = val("cur_scale") * c / r;
+    if (k > 500) return toast("Kết quả quá lớn: kiểm tra lại số mAh.");
+    setEdit("cur_scale", +k.toFixed(3));
+    toast(`cur_scale ${val("cur_scale")} → ${k.toFixed(3)} (×${(c / r).toFixed(3)}). Bấm Lưu.`);
+  };
+  batLive(S.status);
+}
+function batLive(st) {
+  if (!st || !st.bat || !$("batLive")) return;
+  const b = st.bat;
+  if (typeof b.cpin === "number") { BAT.cbuf.push(b.cpin); if (BAT.cbuf.length > 10) BAT.cbuf.shift(); }
+  const rows = [["Điện áp pin", `${(b.v || 0).toFixed(2)} V${b.cells ? ` · ${b.cells}S · ${(b.v / b.cells).toFixed(2)} V/cell` : ""}`]];
+  if (typeof b.pin === "number") rows.push(["Ở chân đo áp", `${b.pin.toFixed(3)} V × ${val("vbat_scale")}`]);
+  if (typeof b.cpin === "number" && b.cpin >= 0) rows.push(["Ở chân đo dòng", `${b.cpin.toFixed(3)} V → ${(b.a || 0).toFixed(1)} A`]);
+  setHtml($("batLive"), rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join(""));
+  const w = [];
+  if (b.pin > 3.2) w.push("Chân đo áp đang gần 3,3 V (bão hoà): mạch chia quá yếu, điện áp hiển thị sai và có thể hỏng chân. Dùng tỉ lệ lớn hơn (R1 lớn hơn / R2 nhỏ hơn).");
+  if (b.cpin > 3.2) w.push("Chân đo dòng bão hoà: kiểm tra cảm biến (đầu ra phải 0–3,3 V).");
+  if (b.pin > 0.05 && b.pin < 0.3 && b.v > 6) w.push("Chân đo áp rất thấp so với điện áp: tỉ lệ chia quá lớn, độ phân giải kém. Có thể giảm R1.");
+  if (!st.armed && b.a > 1.5 && val("cur_scale") > 0) w.push(`Đang disarm mà báo ${b.a.toFixed(1)} A: bấm "Đặt điểm 0 dòng".`);
+  const el = $("batWarn");
+  el.hidden = !w.length;
+  setHtml(el, w.map(esc).join("<br>"));
 }

@@ -38,11 +38,16 @@ extern uint32_t SystemCoreClock;
 #elif defined(STM32F722xx)
 #define configTOTAL_HEAP_SIZE (112 * 1024)
 #elif defined(STM32F405xx)
-#define configTOTAL_HEAP_SIZE (64 * 1024)
+#define configTOTAL_HEAP_SIZE (64 * 1024)  // the whole 64 kB CCM RAM (ucHeap in system_stm32.cpp)
+#define AQ_HEAP_IN_CCM 1
 #else  // F411: 128 kB RAM
 #define configTOTAL_HEAP_SIZE (66 * 1024)
 #endif
+#if defined(AQ_HEAP_IN_CCM)
+#define configAPPLICATION_ALLOCATED_HEAP 1
+#else
 #define configAPPLICATION_ALLOCATED_HEAP 0
+#endif
 
 // hooks
 #define configUSE_IDLE_HOOK 0

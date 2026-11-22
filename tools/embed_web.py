@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bundle the web configurator into firmware.
 
-src/web/ui/index.html + analysis.js + tools.js + extras.js + pro.js + ux.js
+src/web/ui/index.html + analysis.js + tools.js + extras.js + pro.js + ux.js + guide.js + i18n.js
   -> build/web/index.html            (single file, minified, open in a browser for preview)
   -> build/web/index.dev.html        (same, not minified)
   -> build/web/AllQuad-Configurator.html  (same page for a laptop: open in Chrome/Edge, connect USB;
@@ -24,6 +24,8 @@ OUT_HTML = os.path.join(ROOT, "build", "web", "index.html")
 
 
 def bundle():
+    import subprocess
+    subprocess.check_call([sys.executable, os.path.join(ROOT, "tools", "i18n", "make_i18n.py")])  # i18n.js
     with open(os.path.join(UI, "index.html"), encoding="utf-8") as f:
         html = f.read()
     with open(os.path.join(UI, "analysis.js"), encoding="utf-8") as f:
@@ -36,14 +38,20 @@ def bundle():
         pro = f.read()
     with open(os.path.join(UI, "ux.js"), encoding="utf-8") as f:
         ux = f.read()
-    for ph in ("/*ANALYSIS_JS*/", "/*TOOLS_JS*/", "/*EXTRAS_JS*/", "/*PRO_JS*/", "/*UX_JS*/"):
+    with open(os.path.join(UI, "guide.js"), encoding="utf-8") as f:
+        guide = f.read()
+    with open(os.path.join(UI, "i18n.js"), encoding="utf-8") as f:
+        i18n = f.read()
+    for ph in ("/*ANALYSIS_JS*/", "/*TOOLS_JS*/", "/*EXTRAS_JS*/", "/*PRO_JS*/", "/*UX_JS*/", "/*GUIDE_JS*/", "/*I18N_JS*/"):
         if ph not in html:
             sys.exit("index.html: placeholder %s missing" % ph)
     html = html.replace("/*ANALYSIS_JS*/", js.replace("</script", "<\\/script"))
     html = html.replace("/*TOOLS_JS*/", tools.replace("</script", "<\\/script"))
     html = html.replace("/*EXTRAS_JS*/", extras.replace("</script", "<\\/script"))
     html = html.replace("/*PRO_JS*/", pro.replace("</script", "<\\/script"))
-    return html.replace("/*UX_JS*/", ux.replace("</script", "<\\/script"))
+    html = html.replace("/*UX_JS*/", ux.replace("</script", "<\\/script"))
+    html = html.replace("/*GUIDE_JS*/", guide.replace("</script", "<\\/script"))
+    return html.replace("/*I18N_JS*/", i18n.replace("</script", "<\\/script"))
 
 
 WASM = os.path.join(ROOT, "build", "web", "allquad.wasm")
@@ -117,6 +125,18 @@ def minify(html):
                    "\n".join(l.strip() for l in p.split("\n") if l.strip()) for p in parts)
 
 
+def _gzip(data):
+    """zopfli when installed (pip install zopfli): plain gzip format, ~4 % smaller than gzip -9, so more room
+    in the 1.625 MB ESP32 firmware slot (4 MB modules). gzip -9 otherwise (same page, a few kB larger)."""
+    try:
+        import zopfli.gzip
+        out = zopfli.gzip.compress(data, numiterations=15)
+        print("embed_web: zopfli")
+        return out
+    except ImportError:
+        return gzip.compress(data, compresslevel=9, mtime=0)
+
+
 def main():
     src = bundle()
     os.makedirs(os.path.dirname(OUT_HTML), exist_ok=True)
@@ -128,7 +148,7 @@ def main():
         f.write(html)
     with open(os.path.join(os.path.dirname(OUT_HTML), "AllQuad-Configurator.html"), "w", encoding="utf-8") as f:
         f.write(with_demo(html))  # for the laptop (open, connect USB, or try the demo)
-    gz = gzip.compress(html.encode("utf-8"), compresslevel=9, mtime=0)
+    gz = _gzip(html.encode("utf-8"))
     lines = []
     for i in range(0, len(gz), 20):
         lines.append("  " + ", ".join("0x%02x" % b for b in gz[i:i + 20]) + ",")

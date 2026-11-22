@@ -756,6 +756,8 @@ table.ports th { text-transform: uppercase; letter-spacing: .04em; font-size: .7
 .rxwiz b { font-size: 1.05rem; }
 .mr-learn { min-height: 44px; padding: 4px 10px !important; }
 .mr-learn.on { background: var(--amber) !important; color: var(--amber-ink) !important; border-color: var(--amber) !important; }
+#batHelp { column-span: all; }
+#batHow button { flex: 1 1 auto; }
 /* setup checklist */
 .todo { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 8px; }
 .todo .it { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--grid); background: var(--soft); }
@@ -803,6 +805,55 @@ body.simple .prow.adv, body.simple .adv-only { display: none; }
 :root[data-theme="sun"] .strip { background: #000; }
 :root[data-theme="sun"] .btn { border-width: 2px; font-weight: 700; }
 :root[data-theme="sun"] .hrow b, :root[data-theme="sun"] .kv dd { font-weight: 700; }
+/* ---------- guidance layer (guide.js) ---------- */
+ol.ff { list-style: none; margin: 6px 0 0; padding: 0; }
+.ff .pf-row.ff-now { background: color-mix(in srgb, var(--acc) 7%, transparent); border-radius: 8px; padding-left: 8px; padding-right: 8px; }
+.ff .pf-row div small { display: block; }
+.ff .ff-why { color: var(--ink); margin-top: 3px; }
+.ff-act { gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.ff-act .btn { padding: 6px 10px; font-size: .84rem; }
+@media (max-width: 640px) {
+  .ff .pf-row { grid-template-columns: 12px minmax(0, 1fr); }
+  .ff .ff-act { grid-column: 2; justify-content: flex-start; }
+  .ff-live { grid-template-columns: minmax(0, 1fr) auto; }
+  .ff-live small { grid-column: 1; }
+  .ff-live .btn { grid-row: 1 / span 3; grid-column: 2; }
+}
+.ff-bar { height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; margin: 2px 0 8px; }
+.ff-bar i { display: block; height: 100%; background: var(--ok); transition: width .3s; }
+.ff-live { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 12px 14px; margin: 8px 0;
+  border-radius: 10px; border: 2px solid var(--acc); background: color-mix(in srgb, var(--acc) 8%, var(--sheet)); }
+.ff-live.bad { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--sheet)); }
+.ff-live span { font-size: 1.02rem; font-weight: 600; }
+.ff-live small { grid-column: 2; color: var(--ink-2); font-family: var(--num); }
+.ff-live .btn { grid-row: 1 / span 2; grid-column: 3; }
+.ff-fin { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--ok) 10%, var(--sheet)); }
+.ff-fin .row { margin-top: 8px; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--acc); cursor: pointer; font: inherit; text-decoration: underline; }
+.panel.flash { animation: flash 1.8s ease-out; }
+.note.rpm-st.ok { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--sheet)); }
+.note.rpm-st.info, .note.rpm-st.off { border-left-color: var(--rule); background: var(--soft); }
+.rep-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; margin: 4px 0 10px; }
+.rep-tiles div { padding: 8px 10px; border-radius: 8px; background: var(--soft); min-width: 0; }
+.rep-tiles small { display: block; color: var(--ink-2); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep-tiles b { display: block; font-size: 1.08rem; margin: 2px 0; }
+.rep-n { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; align-items: baseline; margin: 4px 0; }
+.rep-n i { width: 9px; height: 9px; border-radius: 50%; background: var(--rule); }
+.rep-n.ok i { background: var(--ok); } .rep-n.warn i { background: var(--amber); } .rep-n.bad i { background: var(--danger); } .rep-n.info i { background: var(--acc); }
+.gl-q { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 6px; padding: 0; vertical-align: 2px; border-radius: 50%;
+  border: 1px solid var(--rule); background: var(--sheet); color: var(--ink-2); cursor: help; font: 700 .7rem var(--body); }
+.gl-q::after { content: "?"; }
+.gl-q:hover { color: var(--acc); border-color: var(--acc); }
+.gl-list { max-height: 60vh; overflow-y: auto; margin: 10px 0 0; }
+.gl-list dt { font-weight: 700; margin-top: 10px; }
+.gl-list dt.on { color: var(--acc); }
+.gl-list dd { margin: 2px 0 0; color: var(--ink-2); font-size: .9rem; }
+.prow .fx { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: .76rem; color: var(--ink-2); margin-top: 2px; }
+@media (min-width: 900px) {
+  body.simple:not(.tabs-open) nav.tabs button.tab-x:not([aria-selected="true"]) { display: none; }
+  body.simple nav.tabs .tgroup.tg-x { cursor: pointer; }
+  body.simple:not(.tabs-open) nav.tabs .tgroup.tg-x::after { content: " +2"; letter-spacing: 0; }
+}
 </style>
 </head>
 <body>
@@ -1757,10 +1808,10 @@ const HINT = {
   thrust_expo: "Tuyến tính hoá lực đẩy (0 = tắt, thường 0,6)", vbat_sag_comp: "Bù sụt áp pin (%): phản ứng như pin đầy",
   pid_profile: "Profile PID / rates đang dùng khi không gán công tắc (0-2 = 1-3)", prof_ch: "Kênh chọn profile (thấp / giữa / cao = 1 / 2 / 3), 0 = không",
   gcs_fs: "Mất kết nối trạm mặt đất khi GUIDED / MISSION: 0 tắt, 1 RTH, 2 hạ cánh, 3 SmartRTL", gcs_fs_s: "Số giây mất heartbeat GCS",
-  srtl_point_m: "SmartRTL: khoảng cách giữa các điểm ghi đường bay (m), 0 = tắt", imu_dual: "IMU thứ hai (chân CS IMU2) thay khi IMU chính hỏng",
+  srtl_point_m: "SmartRTL: khoảng cách giữa các điểm ghi đường bay (m), 0 = tắt", imu_dual: "IMU thứ hai (chân CS IMU2): thay khi IMU chính hỏng, và trước khi arm chọn chip tốt hơn",
   fence_poly: "Dùng geofence đa giác tải lên từ GCS", acc_scale_x: "Hệ số gia tốc trục X (hiệu chuẩn 6 mặt)",
   mag_cmot_x: "Nhiễu la bàn theo dòng điện, trục X (compassmot)",
-  bb_rate_hz: "Tần số ghi blackbox (0 = tắt, khuyên 500)", bb_backend: "Nơi ghi: 1 cổng serial, 2 flash trên board, 3 thẻ SD",
+  bb_rate_hz: "Tần số ghi blackbox (0 = tắt, khuyên 500)", bb_gyro_s: "Ghi gyro tần số cao sau cất cánh (s, thẻ SD; 0 = tắt): thấy nhiễu motor trên 250 Hz", bb_backend: "Nơi ghi: 1 cổng serial, 2 flash trên board, 3 thẻ SD",
   sd_mode: "Kiểu nối thẻ SD: 0 tắt, 1 SPI, 2 SD bus 1-bit, 3 SD bus 4-bit", sd_mhz: "Xung nhịp thẻ (0 = mặc định 20 MHz; hạ xuống 10 nếu dây dài / lỗi ghi)",
   sd_keep: "Thẻ gần đầy: tự xoá log cũ nhất (tắt = ngừng ghi)",
   sd_clk: "Chân CLK / SCK (255 = mặc định của board)", sd_cmd: "Chân CMD / MOSI (255 = mặc định)", sd_d0: "Chân D0 / MISO (255 = mặc định)",
@@ -1991,7 +2042,7 @@ function buildPid() {
   const snp = $("sensorParams");
   if (snp) {
     snp.innerHTML = "";
-    pcard(snp, "IMU dự phòng", ["imu_dual"], "Có IMU thứ hai: tự chuyển khi IMU chính đứng hình hoặc lỗi.");
+    pcard(snp, "IMU dự phòng", ["imu_dual"], "Có IMU thứ hai: tự chuyển khi IMU chính đứng hình hoặc lỗi. Khi chưa arm, hai chip được so độ nhiễu và trọng lực đo được: chip chính nhiễu gấp 3 hoặc đo sai trọng lực thì bay bằng chip thứ hai; hai chip lệch nhau mà không rõ chip nào sai thì chặn arm (IMU_MISMATCH).");
     pcard(snp, "Cảm biến khoảng cách & optical flow", ["rf_max_m", "flow_scale", "flow_align", "flow_flip"]);
     const cal = pcard(snp, "Kết quả hiệu chuẩn (chỉ xem)", ["acc_calibrated", "acc_bias_x", "acc_bias_y", "acc_bias_z", "acc_scale_x", "acc_scale_y", "acc_scale_z",
       "mag_bias_x", "mag_bias_y", "mag_bias_z", "mag_scale_x", "mag_scale_y", "mag_scale_z", "mag_odiag_xy", "mag_odiag_xz", "mag_odiag_yz", "mag_cmot_x", "mag_cmot_y", "mag_cmot_z"],
@@ -2029,7 +2080,7 @@ function buildPid() {
   for (const [title, names] of navGroups) pcard(np, title, names);
   const b = $("bbParams");
   b.innerHTML = "";
-  ["bb_rate_hz", "bb_backend"].forEach((n) => S.params[n] && b.appendChild(prow(n)));
+  ["bb_rate_hz", "bb_backend", "bb_gyro_s"].forEach((n) => S.params[n] && b.appendChild(prow(n)));
   if (typeof buildSdParams === "function") buildSdParams();
   buildParamGroups();
   buildModes();
@@ -2465,26 +2516,35 @@ function drawHorizonOn(cv, roll, pitch, big) {
 function drawHorizon(roll, pitch) { drawHorizonOn($("horizon"), roll, pitch, false); }
 // what blocks arming, in words, and where to fix it
 const BLOCK_HELP = {
-  NO_RX: ["Chưa nhận tín hiệu tay điều khiển", "Bật tay điều khiển, kiểm tra bind và cổng RX (tab Cổng)", "ports"],
+  NO_RX: ["Chưa nhận tín hiệu tay điều khiển", "Bật tay điều khiển, kiểm tra bind, cổng và giao thức (tab Tay điều khiển)", "rx"],
   THROTTLE: ["Ga chưa ở mức thấp nhất", "Kéo cần ga xuống hết", null],
-  ANGLE: ["Drone đang nghiêng", "Đặt drone nằm phẳng (giới hạn arm_max_angle)", "modes"],
+  ANGLE: ["Drone đang nghiêng", "Đặt drone nằm phẳng (giới hạn arm_max_angle)", "modes:arm_max_angle"],
   ARM_SWITCH: ["Công tắc ARM đang bật từ lúc cấp nguồn", "Gạt công tắc ARM về tắt rồi bật lại", "modes"],
   CALIBRATING: ["Đang hiệu chỉnh cảm biến", "Để drone đứng yên vài giây", "sensors"],
-  BATTERY: ["Pin yếu hoặc đọc điện áp sai", "Xem điện áp ở phía trên; kiểm tra vbat_scale, cell_count (Chế độ & an toàn → Pin)", "modes"],
+  BATTERY: ["Pin yếu hoặc đọc điện áp sai", "Xem điện áp ở phía trên; kiểm tra vbat_scale, cell_count (Chế độ & an toàn → Pin)", "modes#batHelp"],
   NO_IMU: ["Không có dữ liệu IMU", "Kiểm tra dây SPI/I2C của IMU (tab Cảm biến)", "sensors"],
   CLI: ["Đang kết nối cấu hình / CLI / thử motor", "Ngắt kết nối trang cấu hình hoặc rút USB, chờ vài giây", null],
   FAILSAFE: ["Đang failsafe", "Khôi phục tín hiệu tay điều khiển", "modes"],
   ACC_NOT_CALIBRATED: ["Accel chưa hiệu chỉnh", "Đặt drone phẳng, bấm Accel ở tab Cảm biến", "sensors"],
   BARO: ["Baro chưa sẵn sàng", "Chờ baro ổn định hoặc kiểm tra dây I2C", "sensors"],
   MAG: ["Compass chưa hiệu chỉnh hoặc lỗi", "Bấm Compass ở tab Cảm biến rồi xoay drone mọi hướng", "sensors"],
-  GPS: ["Chưa có GPS fix / chưa đặt nhà", "Chờ đủ vệ tinh ngoài trời (arm_require_gps)", "nav"],
+  GPS: ["Chưa có GPS fix / chưa đặt nhà", "Chờ đủ vệ tinh ngoài trời (arm_require_gps)", "nav:arm_require_gps"],
   FENCE: ["Đang ở ngoài hàng rào ảo", "Đưa drone vào trong vùng cho phép", "nav"],
-  CPU_LOAD: ["CPU quá tải", "Giảm loop_hz hoặc tắt bớt tính năng (tab Hệ thống → Hiệu năng)", "system"],
+  CPU_LOAD: ["CPU quá tải", "Giảm loop_hz hoặc tắt bớt tính năng (tab Hệ thống → Hiệu năng)", "system:loop_hz"],
   NAV_MODE: ["Công tắc chế độ đang ở RTH / LAND", "Chuyển về ANGLE / HORIZON / ACRO rồi mới arm", "modes"],
   LOGIC: ["Một điều kiện logic đang chặn arm", "Xem Logic điều kiện ở tab Cổng & thiết bị", "ports"],
   IMU_FAILOVER: ["Đã chuyển sang IMU dự phòng", "IMU chính lỗi: kiểm tra dây trước khi bay", "sensors"],
+  IMU_MISMATCH: ["Hai IMU đo trọng lực khác nhau", "Một chip đang sai (lắp lỏng, hỏng, sai thang đo): xem Cảm biến; khởi động lại khi đã sửa", "sensors"],
 };
-function gotoTab(t) { const b = document.querySelector(`nav.tabs button[data-tab="${t}"]`); if (b) b.click(); }
+// "tab", "tab#elementId" (scroll to a panel) or "tab:param" (the parameter row, highlighted)
+function gotoTab(t) {
+  const m = /^([a-z]+)(?:([#:])(.+))?$/.exec(t || "");
+  if (!m) return;
+  if (m[2] === ":" && typeof searchGo === "function") return searchGo(m[3]);
+  const b = document.querySelector(`nav.tabs button[data-tab="${m[1]}"]`);
+  if (b) b.click();
+  if (m[2] === "#") setTimeout(() => { const el = $(m[3]); if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } }, 80);
+}
 function renderReady(st) {
   const box = $("blockers");
   const all = st.blockers || [];
@@ -2637,6 +2697,7 @@ function renderStatus(st) {
     $("fwVer").textContent = `${st.fw.version} (ô nhớ ${st.fw.slot})${st.fw.pending ? ", đang tự kiểm tra sau cập nhật" : ""}`;
     $("otaPick").hidden = !st.fw.ota || LINK.open;
     if (!st.fw.ota && !LINK.open) $("otaNote").textContent = "Board này không hỗ trợ cập nhật qua WiFi: nạp firmware bằng USB.";
+    else if (st.fw.sig && !LINK.open) $("otaNote").textContent = "Drone này chỉ nhận firmware đã ký bằng khoá của bạn: chọn firmware.signed.bin (PlatformIO tạo cạnh firmware.bin khi có khoá, xem tools/ota_sign.py). Bản không ký hoặc ký khoá khác bị từ chối, firmware cũ giữ nguyên.";
   }
   if (st.ssid && document.activeElement !== $("secSsid") && !$("secSsid").dataset.touched) $("secSsid").value = st.ssid;
   if (typeof extrasStatus === "function") extrasStatus(st);
@@ -3098,6 +3159,8 @@ $("secSsid").oninput = () => { $("secSsid").dataset.touched = "1"; };
 /*EXTRAS_JS*/
 /*PRO_JS*/
 /*UX_JS*/
+/*GUIDE_JS*/
+/*I18N_JS*/
 // opened from a file or the laptop launcher (?usb): connect over USB; served by the drone: WiFi
 // the laptop / phone copy (AllQuad-Configurator.html carries the demo firmware) also when hosted on https
 if (/[?&]bridge\b/.test(location.search)) bridgeConnect();

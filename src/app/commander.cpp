@@ -312,7 +312,8 @@ uint32_t Commander::computeArmBlockers(bool rcOk) {
   FlightMode want = pilotMode(rcOk);
   if (want == FlightMode::RTH || want == FlightMode::LAND || want == FlightMode::SMART_RTL) b |= ARM_NAV_MODE;
   if (logicNoArm_) b |= ARM_LOGIC;
-  if (bus::imuActive) b |= ARM_IMU_FAIL;
+  if (bus::imuActive == 1) b |= ARM_IMU_FAIL;  // 2 = picked on the ground (ImuVote): no block
+  if (bus::imuMismatch) b |= ARM_IMU_MISMATCH;
   return b;
 }
 

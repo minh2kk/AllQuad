@@ -12,7 +12,7 @@ const char* flightModeName(FlightMode m) {
 const char* armCheckName(int bit) {
   static const char* n[] = {"NO_RX", "THROTTLE", "ANGLE", "ARM_SWITCH", "CALIBRATING", "BATTERY",
                             "NO_IMU", "CLI", "FAILSAFE", "ACC_NOT_CALIBRATED", "BARO", "MAG",
-                            "GPS", "FENCE", "CPU_LOAD", "NAV_MODE", "LOGIC", "IMU_FAILOVER"};
+                            "GPS", "FENCE", "CPU_LOAD", "NAV_MODE", "LOGIC", "IMU_FAILOVER", "IMU_MISMATCH"};
   return bit >= 0 && bit < ARM_COUNT_BITS ? n[bit] : "?";
 }
 
@@ -53,12 +53,14 @@ void configChanged() {
 }
 
 volatile uint32_t cliActiveUntilMs = 0;
+volatile uint8_t gyroCapReq = 0;
 volatile uint32_t magCalUntilMs = 0;
 volatile bool magCalDone = false;
 volatile LoopPerf loopPerf;
 volatile uint32_t fastLoops = 0;
 volatile GpsLink gpsLink = {0xFF, 0, 0, 0};
-volatile SensorLink sensorLink = {0xFF, 0, 0, 0, 0};  // port 0xFF: no GPS port (>= hal::Port::COUNT)
+volatile SensorLink sensorLink = {0xFF, 0, 0, 0, 0};
+volatile float adcVbatV = 0, adcCurV = -1;  // port 0xFF: no GPS port (>= hal::Port::COUNT)
 volatile RxLinkStats rxLink;
 volatile bool otaActive = false;
 volatile bool gyroCalRequest = false;
@@ -73,6 +75,7 @@ volatile bool logicBeep = false;
 volatile uint8_t logicVtxPower = 0;
 volatile uint8_t logicResults = 0;
 volatile uint8_t imuActive = 0;
+volatile bool imuMismatch = false;
 volatile bool imuSecondPresent = false;
 volatile uint8_t acc6Mask = 0;
 volatile bool acc6Active = false;

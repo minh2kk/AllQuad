@@ -1,29 +1,29 @@
 {
- "version": "2.1.0",
- "date": "2026-11-21",
+ "version": "2.2.0",
+ "date": "2026-11-22",
  "files": [
   {
    "file": "AllQuad-esp32s3-n16r8-app.bin",
    "name": "ESP32-S3 N16R8 (giữ cấu hình)",
    "target": "esp",
-   "size": 1487664,
-   "sha256": "b9c6fabc2f482003e3019c1c16fe3dbc88959b9263a75b65a404b4bf88ba6168",
+   "size": 1543728,
+   "sha256": "6274eccd968b3c86f20b6ae0946e7809f82ac55b138a013c37b48b9669506f4f",
    "match": "ESP32-S3-N16R8"
   },
   {
    "file": "AllQuad-esp32s3-n16r8-full.bin",
    "name": "ESP32-S3 N16R8, file gộp (board trống / đổi phân vùng)",
    "target": "esp",
-   "size": 1553200,
-   "sha256": "791863b04a6ccc0f244626761955d6554833ce427ff79c9a13f5d26fabb7f563",
+   "size": 1609264,
+   "sha256": "a52ceb10aabef40f4ab9be0e9beec4f82a7d9e6cd938fbc9fa48af5e06b74047",
    "note": "File gộp ghi cả bảng phân vùng: cấu hình về mặc định (nhớ sao lưu)."
   },
   {
    "file": "AllQuad-esp32dev-full.bin",
    "name": "ESP32 DevKit (WROOM-32), file gộp",
    "target": "esp",
-   "size": 1578800,
-   "sha256": "f938374e1903c0bcc24702204bae6e6801b6002b7d80c4c86c5c8a63751c2995",
+   "size": 1635008,
+   "sha256": "3736f65fbc73379707a1bc43acfecb6698b3e129379fd2174db4dd4beb76b794",
    "match": "ESP32-DevKit",
    "note": "Từ v2.1 ô firmware 4 MB lớn hơn: phải nạp file gộp này một lần, cấu hình về mặc định (nhớ sao lưu)."
   },
@@ -31,71 +31,71 @@
    "file": "AllQuad-esp32s3-app.bin",
    "name": "ESP32-S3 DevKitC (giữ cấu hình)",
    "target": "esp",
-   "size": 1482336,
-   "sha256": "b2a572318ab091e6c87245613c31a05ba71bb993652d23baba014adf30e4cca3",
+   "size": 1538496,
+   "sha256": "0188fe4bfe6f5c2e7305b02ff015a80f8d45cee409ba2e37111776fc4cc856bc",
    "match": "ESP32-S3-DevKitC"
   },
   {
    "file": "AllQuad-esp32c6-app.bin",
    "name": "ESP32-C6 DevKitC (giữ cấu hình)",
    "target": "esp",
-   "size": 1610608,
-   "sha256": "5dd9aeb87e15cf64228b61df6bfd0430da9e184b2fddcd1c639807506e4a3d35",
+   "size": 1668032,
+   "sha256": "960cf6f851c0e1f66835b5ed2ce86ea612c2802d2a5aeb87e181e9566caff87f",
    "match": "ESP32-C6"
   },
   {
    "file": "AllQuad-esp32p4-app.bin",
    "name": "ESP32-P4 (giữ cấu hình)",
    "target": "esp",
-   "size": 1561392,
-   "sha256": "661c85f20415b5c17ef6ac30a6bddb54edc8769679793ef9f03c17d9c0ee61a6",
+   "size": 1617952,
+   "sha256": "989d550bc02ab359da03cd478d7d489630b86539a20e07650988eea357fbdf23",
    "match": "ESP32-P4"
   },
   {
    "file": "AllQuad-bridge-esp32c3-full.bin",
    "name": "Cầu WiFi ESP32-C3 (không phải FC)",
    "target": "esp",
-   "size": 1233424,
-   "sha256": "7b56b7a3917f0147ca9735d5786e718301f1347677a0e8ab5b5ce628bc6a4d58"
+   "size": 1285392,
+   "sha256": "a0a7e9e45861ad07d384ad6f87dd5c73b51ceac81b9d6b75bbebf207b8418176"
   },
   {
    "file": "AllQuad-stm32h743_devebox.bin",
    "name": "STM32H743 DevEBox",
    "target": "stm",
-   "size": 344132,
-   "sha256": "cfa6c29643dbf4e00f11c77aaded9c1458df89229b005104f3cf78ad2fcd908d",
+   "size": 348044,
+   "sha256": "ebba6bf660b3afb24bd8a24e64709f8f9d0dd54ac6d3951a7453afea27d3bb1d",
    "match": "DevEBox"
   },
   {
    "file": "AllQuad-stm32h743_weact.bin",
    "name": "STM32H743 WeAct",
    "target": "stm",
-   "size": 344244,
-   "sha256": "a82227881cc3cae99bc57ba257faceee804106394319fedd60d935d4e4426392",
+   "size": 348148,
+   "sha256": "3c299373ed7748b3bba5ef9c0f0757ab721dfd69ea59e29999eeb70161016710",
    "match": "STM32H743-WeAct"
   },
   {
    "file": "AllQuad-stm32f405.bin",
    "name": "STM32F405",
    "target": "stm",
-   "size": 316856,
-   "sha256": "d31c1ed5ecff7b9c4199786c5a62e22f70cba2d4d1ac9fc974aa797a52c80cc7",
+   "size": 321188,
+   "sha256": "0bc4c4596b3b83c25126dffdc5f034b577e3d8738b48064ed859de726e149b02",
    "match": "STM32F405"
   },
   {
    "file": "AllQuad-stm32f722.bin",
    "name": "STM32F722",
    "target": "stm",
-   "size": 315592,
-   "sha256": "34f993b11fb34cceb38ef3ce986fdd0c6d450795cf48fb54a4c1024da6c2bc75",
+   "size": 319680,
+   "sha256": "a224b8cb8c367b9e847cb3037531fb9fdbc82c07f0a0aa44ea2bfe1ab81f8022",
    "match": "STM32F722"
   },
   {
    "file": "AllQuad-blackpill_f411ce.bin",
    "name": "STM32F411 Black Pill",
    "target": "stm",
-   "size": 315616,
-   "sha256": "4d519ec5ddac1e233050287dd4a53baf35d6108c7eae0029ab728a5a16d5fa0e",
+   "size": 318904,
+   "sha256": "c9e1907cb6db306a6a48564904d5293fa904cf0576ab01280c9d2c7078bb9b8d",
    "match": "F411"
   }
  ]

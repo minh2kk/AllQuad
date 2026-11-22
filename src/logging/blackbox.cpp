@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "../bus/bus.h"
+#include "gyro_tap.h"
 #include "sdlog.h"
 
 namespace logging {
@@ -32,14 +33,15 @@ bool Blackbox::write(const uint8_t* d, size_t n) {
 
 void Blackbox::writeHeader() {
   const Config& c = bus::config;
-  char h[400];
+  char h[440];
   int n = snprintf(h, sizeof(h),
                    "H AllQuad blackbox v1\nH record_size %u\nH encoding delta1\nH loop_hz %u\n"
                    "H pid_roll %.0f %.0f %.0f %.0f\nH pid_pitch %.0f %.0f %.0f %.0f\nH pid_yaw %.0f %.0f %.0f %.0f\n"
-                   "H gyro_lpf %.0f %.0f dterm_lpf %.0f dyn_notch %u rpm %u\nH esc_frame %u\nH end\n",
+                   "H gyro_lpf %.0f %.0f dterm_lpf %.0f dyn_notch %u rpm %u\nH esc_frame %u\nH gyro_frame %u %u\nH end\n",
                    (unsigned)sizeof(Record), c.loop_hz, c.pid[0].p, c.pid[0].i, c.pid[0].d, c.pid[0].f, c.pid[1].p,
                    c.pid[1].i, c.pid[1].d, c.pid[1].f, c.pid[2].p, c.pid[2].i, c.pid[2].d, c.pid[2].f, c.gyro_lpf_hz,
-                   c.gyro_lpf2_hz, c.dterm_lpf_hz, c.dyn_notch_count, c.rpm_harmonics, (unsigned)sizeof(EscRecord));
+                   c.gyro_lpf2_hz, c.dterm_lpf_hz, c.dyn_notch_count, c.rpm_harmonics, (unsigned)sizeof(EscRecord),
+                   (unsigned)sizeof(GyroFrame), (unsigned)gyroTapRate());
   write((const uint8_t*)h, n > 0 ? (size_t)n : 0);
 }
 
@@ -185,9 +187,11 @@ void Blackbox::update(uint32_t nowUs) {
     writeHeader();
     active_ = true;
     count_ = 0;
+    burstDone_ = false;
   }
   if (!armed && wasArmed_) {
     active_ = false;
+    gyroTapStop();
     if (backend_ == 2) hal::logFlush();
     if (backend_ == 3) sdlog::endFile();
   }
@@ -207,6 +211,16 @@ void Blackbox::update(uint32_t nowUs) {
     escN_ = 0;  // ESC frame between two records (does not touch the delta chain)
     EscRecord er;
     if (fillEsc(er, nowUs)) write((const uint8_t*)&er, sizeof(er));
+  }
+  // high-rate gyro capture (SD card only): bb_gyro_s once per flight when the throttle first passes 25 %
+  // (in the air, not on the ground), or on request (CLI gyrocap / configurator)
+  if (backend_ == 3 && gyroTapAvailable()) {
+    const Config& c = bus::config;
+    uint8_t req = bus::gyroCapReq;
+    if (req) { bus::gyroCapReq = 0; gyroTapStart(nowUs, req * 1000u); }
+    else if (!burstDone_ && c.bb_gyro_s && r.throttle > 250) { burstDone_ = true; gyroTapStart(nowUs, c.bb_gyro_s * 1000u); }
+    GyroFrame gf;
+    for (int k = 0; k < 8 && gyroTapFrame(gf); k++) write((const uint8_t*)&gf, sizeof(gf));  // <= 128 samples per call
   }
   // a frame was lost or cut: the deltas after it cannot be decoded -> send a full record next
   if (!ok) count_ = 0;

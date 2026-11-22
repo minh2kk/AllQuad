@@ -4,6 +4,7 @@
 //   stepResponse(sp, gyro, rateHz) -> {t, y, overshoot, riseMs, ss, windows}
 //   analyze(flight)                -> per-axis metrics
 //   suggest(analysis, params)      -> [{axis, level, title, detail, changes}]
+//   report(flight, analysis)       -> flight summary (time, battery, current, height, vibration) + notes
 "use strict";
 (function (root) {
   const AXES = ["roll", "pitch", "yaw"];
@@ -75,7 +76,7 @@
         while (e < u8.length && u8[e] !== 10) e++;
         const line = text(i + 2, e);
         if (line.startsWith("AllQuad blackbox")) {
-          cur = { header: {}, recs: [], esc: [] };
+          cur = { header: {}, recs: [], esc: [], gyro: [] };
           prev = null;
           flights.push(cur);
         }
@@ -105,6 +106,16 @@
           continue;
         }
       }
+      if (u8[i] === 0xA8 && cur && i + 9 + u8[i + 1] * 12 <= u8.length && u8[i + 1]) {  // high-rate gyro (bb_gyro_s)
+        const n = 9 + u8[i + 1] * 12;
+        let x = 0;
+        for (let k = 0; k < n - 1; k++) x ^= u8[i + k];
+        if (x === u8[i + n - 1]) {
+          cur.gyro.push(u8.slice(i, i + n));
+          i += n;
+          continue;
+        }
+      }
       if (u8[i] === 0xA6 && cur && prev) {
         const r = expandDelta(u8, i, prev);
         if (r) {
@@ -125,6 +136,7 @@
       delete f.recs;
       const c = columns(new DataView(all.buffer), f);
       c.esc = escColumns(f.esc);
+      c.hf = gyroColumns(f.gyro);
       return c;
     });
   }
@@ -148,6 +160,32 @@
       e.cur[k] = a === -32768 ? NaN : a / 10;
     });
     return e;
+  }
+
+  // high-rate gyro frames -> one series per capture: {rate, t0, raw[3], filt[3], n}; a gap of more than two
+  // frames starts a new capture
+  function gyroColumns(frames) {
+    if (!frames || !frames.length) return null;
+    const caps = [];
+    let cur = null, lastT = 0;
+    for (const b of frames) {
+      const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+      const n = b[1], t = dv.getUint32(2, true) / 1e6, rate = dv.getUint16(6, true);
+      if (!rate) continue;
+      if (!cur || cur.rate !== rate || t - lastT > 3 * n / rate || t < lastT) { cur = { rate, t0: t, s: [] }; caps.push(cur); }
+      lastT = t;
+      for (let k = 0; k < n; k++) {
+        const v = [];
+        for (let a = 0; a < 6; a++) v.push(dv.getInt16(8 + (k * 6 + a) * 2, true) / 10);
+        cur.s.push(v);
+      }
+    }
+    return caps.filter((c) => c.s.length >= 256).map((c) => {
+      const n = c.s.length, mk = () => [0, 1, 2].map(() => new Float32Array(n));
+      const raw = mk(), filt = mk();
+      c.s.forEach((v, k) => { for (let a = 0; a < 3; a++) { raw[a][k] = v[a]; filt[a][k] = v[a + 3]; } });
+      return { rate: c.rate, t0: c.t0, n, duration: n / c.rate, raw, filt };
+    });
   }
 
   // per motor: RPM per unit of command in steady flight (a weak motor / damaged prop needs more command
@@ -766,7 +804,85 @@
     return Uint8Array.from(bytes);
   }
 
-  const api = { decode, fft, spectrum, stepResponse, analyze, suggest, plan, bandPeak, toCsv, toBbl, REC, ESC, AXES };
+
+  // ------------------------------------------------------------------ flight summary
+  // What a pilot asks after landing: how long, how much battery, how hard the pack was pushed, how high /
+  // far, how much vibration. notes: [{level: ok|info|warn|bad, text}] in plain words, worst first.
+  function report(fl, res) {
+    const n = fl.n, armed = fl.armed, t = fl.t;
+    let armedSec = 0, arms = 0, thrSum = 0, thrN = 0, thrMax = 0, vMax = 0, vMin = Infinity, vRest = 0, vEnd = 0;
+    let iMax = 0, iSum = 0, iN = 0, mah = 0, altMax = -Infinity, alt0 = null, far = 0, posOk = false;
+    const rateMax = [0, 0, 0], angMax = [0, 0];
+    const modes = [];
+    const thrs = [];
+    for (let k = 0; k < n; k++) {
+      const dt = k ? Math.min(0.1, Math.max(0, t[k] - t[k - 1])) : 0;
+      if (armed[k] && (!k || !armed[k - 1])) {
+        arms++;
+        if (!vRest && fl.vbat[k] > 1) vRest = fl.vbat[Math.max(0, k - 1)] > 1 ? fl.vbat[Math.max(0, k - 1)] : fl.vbat[k];
+      }
+      if (fl.vbat[k] > 1) { vMax = Math.max(vMax, fl.vbat[k]); vEnd = fl.vbat[k]; }
+      if (!armed[k]) continue;
+      armedSec += dt;
+      thrSum += fl.thr[k]; thrN++; thrMax = Math.max(thrMax, fl.thr[k]);
+      if (!(k % 5)) thrs.push(fl.thr[k]);
+      if (fl.vbat[k] > 1) vMin = Math.min(vMin, fl.vbat[k]);
+      if (fl.cur[k] > 0) { iMax = Math.max(iMax, fl.cur[k]); iSum += fl.cur[k]; iN++; mah += fl.cur[k] * dt / 3.6; }
+      if (alt0 === null) alt0 = fl.alt[k];
+      altMax = Math.max(altMax, fl.alt[k] - alt0);
+      if (fl.posN[k] || fl.posE[k]) { posOk = true; far = Math.max(far, Math.hypot(fl.posN[k], fl.posE[k])); }
+      for (let a = 0; a < 3; a++) rateMax[a] = Math.max(rateMax[a], Math.abs(fl.gyro[a][k]));
+      for (let a = 0; a < 2; a++) angMax[a] = Math.max(angMax[a], Math.abs(fl.att[a][k]));
+      if (!modes.includes(fl.mode[k])) modes.push(fl.mode[k]);
+    }
+    thrs.sort((a, b) => a - b);
+    const hover = thrs.length > 20 ? thrs[thrs.length >> 1] : null;
+    if (!vRest) vRest = vMax;
+    // cells: a charged LiPo cell sits at 3.7-4.35 V
+    let cells = 0;
+    for (let c = 1; c <= 8 && !cells; c++) if (vRest / c <= 4.4) cells = c;
+    if (vRest < 2.5) cells = 0;
+    const out = {
+      armedSec, arms, thrMean: thrN ? thrSum / thrN : 0, thrMax, hover,
+      vRest: vRest || null, vMin: vMin < Infinity ? vMin : null, vEnd: vEnd || null, cells,
+      sag: vRest && vMin < Infinity ? vRest - vMin : null,
+      iMax: iN ? iMax : null, iMean: iN ? iSum / iN : null, mah: iN ? mah : null,
+      altMax: altMax > -Infinity ? altMax : null, far: posOk ? far : null, rateMax, angMax, modes,
+      vib: res ? res.axes.slice(0, 2).reduce((m, a) => Math.max(m, a.noiseRaw || 0), 0) : null,
+      vibFilt: res ? res.axes.slice(0, 2).reduce((m, a) => Math.max(m, a.noiseFilt || 0), 0) : null,
+      tempMax: res && res.esc && res.esc.haveTemp && Math.max(...res.esc.tempMax.filter((x) => x != null)) > 0 ? Math.max(...res.esc.tempMax.filter((x) => x != null)) : null,
+      saturation: res ? res.saturation : null, notes: [],
+    };
+    const note = (level, text) => out.notes.push({ level, text });
+    const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
+    if (!thrN) note("info", "Log không có đoạn nào đang arm: chỉ có dữ liệu khi drone đứng yên.");
+    if (cells && out.vMin) {
+      const pc = out.vMin / cells, ec = (out.vEnd || out.vMin) / cells;
+      if (pc < 3.3) note("bad", `Điện áp sụt xuống ${f1(out.vMin)} V (${pc.toFixed(2)} V/cell): pin bị ép quá sức, hạ cánh sớm hơn hoặc dùng pin xả mạnh hơn.`);
+      else if (pc < 3.5) note("warn", `Điện áp thấp nhất ${pc.toFixed(2)} V/cell khi bay: gần ngưỡng hại pin (3.3–3.5 V/cell).`);
+      if (ec < 3.6) note("warn", `Kết thúc ở ${ec.toFixed(2)} V/cell: lần sau hạ cánh sớm hơn để pin bền (khoảng 3.7 V/cell khi nghỉ).`);
+    }
+    if (out.sag != null && cells && out.sag / cells > 0.5) note("warn", `Sụt áp ${f1(out.sag)} V khi tăng ga: pin yếu / già, nội trở cao, hoặc dây và giắc nguồn kém.`);
+    if (hover != null) {
+      if (hover > 0.6) note("warn", `Ga lơ lửng khoảng ${Math.round(hover * 100)}%: drone nặng so với lực đẩy, còn ít dư để cơ động và chống gió.`);
+      else if (hover < 0.18 && thrMax > 0.3) note("info", `Ga lơ lửng thấp (~${Math.round(hover * 100)}%): rất dư lực, có thể giảm thr_limit_pct cho dễ điều khiển.`);
+    }
+    if (out.saturation != null && out.saturation > 0.02) note("warn", `Motor chạm 100% trong ${(out.saturation * 100).toFixed(1)}% thời gian bay: mất kiểm soát tư thế lúc đó (thiếu lực đẩy hoặc PID quá mạnh).`);
+    if (out.vib != null) {
+      if (out.vib > 25) note("bad", `Rung rất mạnh (gyro thô ${f1(out.vib)} °/s RMS): kiểm tra cánh mẻ / cong, ốc motor, ổ bi, đệm cao su của FC trước khi bay tiếp.`);
+      else if (out.vib > 10) note("warn", `Rung khá mạnh (gyro thô ${f1(out.vib)} °/s RMS): cân lại cánh, siết ốc; bộ lọc đang phải làm việc nhiều (thêm trễ).`);
+      else note("ok", `Rung thấp (gyro thô ${f1(out.vib)} °/s RMS).`);
+    }
+    if (out.tempMax != null && out.tempMax > 85) note("warn", `ESC nóng tới ${out.tempMax} °C: giảm ga tối đa, thông gió hoặc dùng ESC lớn hơn.`);
+    if (out.iMax != null && out.iMax < 0.5) note("info", "Không đo được dòng: không có mAh. Xem Chế độ & an toàn → Pin để nối và hiệu chỉnh cảm biến dòng.");
+    if (res && res.rpmFilter === 0 && res.esc && res.esc.haveRpm) note("info", "ESC có báo RPM nhưng RPM filter đang tắt: bật rpm_harmonics để lọc nhiễu motor tốt hơn.");
+    if (!out.notes.some((x) => x.level === "bad" || x.level === "warn") && thrN) note("ok", "Không thấy vấn đề lớn về pin, lực đẩy và rung trong chuyến này.");
+    const rank = { bad: 0, warn: 1, info: 2, ok: 3 };
+    out.notes.sort((a, b) => rank[a.level] - rank[b.level]);
+    return out;
+  }
+
+  const api = { decode, fft, spectrum, stepResponse, analyze, suggest, plan, report, bandPeak, toCsv, toBbl, REC, ESC, AXES };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AQ = api;
 })(typeof window !== "undefined" ? window : globalThis);

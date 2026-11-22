@@ -34,6 +34,7 @@
 #include "../../src/filter/dynamic_notch.h"
 #include "../../src/gps/gps_driver.h"
 #include "../../src/logging/blackbox.h"
+#include "../../src/logging/gyro_tap.h"
 #include "../../src/logging/sdlog.h"
 #include "../../src/navigation/mission.h"
 #include "../../src/osd/osd.h"
@@ -1778,6 +1779,7 @@ static void testConfigMigrationV29() {
   CHECK(configMigrate(c) && configValid(c) && c.beg_radius == 123 && c.pid[0].d == 33 && c.rc_map[0] == 1 && c.rc_map[1] == 2 &&
             c.rc_map[2] == 3 && c.rc_map[3] == 4 && c.rc_deadband == 5,
         "Config v29 -> v30: settings kept, channel map AETR, dead-band 5 us (as before)");
+  CHECK(c.bb_gyro_s == 0 && paramFind("bb_gyro_s") >= 0, "Config v31: high-rate gyro capture off after the update");
   // channel map: TAER receiver (throttle on channel 1) -> roll pitch throttle yaw
   uint16_t ch[8] = {1100, 1600, 1400, 1700, 1000, 2000, 1500, 1500};
   c.rc_map[0] = 2; c.rc_map[1] = 3; c.rc_map[2] = 1; c.rc_map[3] = 4;
@@ -1791,6 +1793,59 @@ static void testConfigMigrationV29() {
         "Stick dead-band follows rc_deadband");
   int k = paramFind("rc_ch_thr");
   CHECK(k >= 0 && paramSet(c, k, 1) && c.rc_map[2] == 1 && !paramSet(c, k, 5) && paramFind("rc_deadband") >= 0, "Parameters rc_ch_* / rc_deadband");
+}
+static void testGyroTap() {
+  using namespace logging;
+  // 8 kHz loop -> captured at 4 kHz; 50 ms of samples -> 12 full frames, in order, 4 ms apart
+  gyroTapConfigure(8000);
+  CHECK(gyroTapAvailable() && gyroTapRate() == 4000, "Gyro capture: 8 kHz loop captured at 4 kHz");
+  gyroTapStart(1000000, 100);
+  for (int k = 0; k < 400; k++) gyroTapPush(Vec3((float)k, -(float)k, 1.5f), Vec3(0.25f, 0, 0), 1000000 + k * 125);
+  GyroFrame f;
+  int frames = 0;
+  bool order = true, times = true;
+  uint32_t t0 = 0;
+  while (gyroTapFrame(f)) {
+    uint8_t x = 0;
+    for (size_t i = 0; i < sizeof(f) - 1; i++) x ^= ((const uint8_t*)&f)[i];
+    for (int i = 0; i < GYRO_FRAME_N; i++) {
+      int want = 2 * (frames * GYRO_FRAME_N + i) + 1;  // every 2nd loop sample (the 2nd of each pair)
+      order &= f.s[i][0] == want * 10 && f.s[i][1] == -want * 10 && f.s[i][2] == 15 && f.s[i][3] == 2 && x == f.crc;
+    }
+    if (frames == 0) t0 = f.timeUs;
+    else times &= f.timeUs - t0 == (uint32_t)frames * 4000u;
+    frames++;
+  }
+  CHECK(frames == 12 && order && times && f.sync == 0xA8 && f.rateHz == 4000, "Gyro capture: 12 frames of 16 samples, raw + filtered, 4 ms apart");
+  // the capture ends by itself; nothing is taken afterwards
+  for (int k = 0; k < 64; k++) gyroTapPush(Vec3(), Vec3(), 1000000 + 100000 + k * 125);
+  CHECK(!gyroTapActive() && !gyroTapFrame(f), "Gyro capture: stops after its duration");
+  // the logger falls behind: the ring fills, samples are counted as dropped, the frames left stay whole
+  gyroTapStart(2000000, 1000);
+  uint32_t d0 = gyroTapDropped();
+  for (int k = 0; k < 4000; k++) gyroTapPush(Vec3(1, 2, 3), Vec3(), 2000000 + k * 125);
+  int n = 0;
+  while (gyroTapFrame(f)) n++;
+  CHECK(gyroTapDropped() > d0 && n > 0 && n <= 64, "Gyro capture: full ring drops samples, never half frames");
+  gyroTapStop();
+}
+static void testBatteryPins() {
+  // the selftest checks the wiring of the battery / current pins (ADC full scale 3.3 V)
+  configDefaults(bus::config);
+  bus::adcVbatV = 3.29f;
+  bus::adcCurV = 0.5f;
+  bus::config.cur_scale = 40;
+  std::string st;
+  web::cliExec("selftest", sinkString, &st, true);
+  bool clip = st.find("[FAIL] battery") != std::string::npos && st.find("divider too weak") != std::string::npos;
+  bus::adcVbatV = 1.40f;
+  st.clear();
+  web::cliExec("selftest", sinkString, &st, true);
+  bool ok = st.find("divider too weak") == std::string::npos && st.find("pin 1.400 V") != std::string::npos;
+  CHECK(clip && ok, "Selftest: a battery divider that saturates the ADC pin is reported, a normal one shows the pin voltage");
+  configDefaults(bus::config);
+  bus::adcVbatV = 0;
+  bus::adcCurV = -1;
 }
 static void testFeedForward() {
   // stick snap: boost starts FF earlier; slow drift (below the jitter threshold) gets little FF;
@@ -2440,9 +2495,11 @@ int main(int argc, char** argv) {
   testConfigMigrationV27();
   testConfigMigrationV28();
   testConfigMigrationV29();
+  testGyroTap();
   testBeginnerLimits();
   testMavlinkLowRate();
   testPinMap();
+  testBatteryPins();
   testFlowModuleProtocols();
   testFeedForward();
   testFlightFeel();

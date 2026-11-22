@@ -18,10 +18,12 @@
 #include "../comms/mavlink.h"
 #include "../comms/msp.h"
 #include "../control/fast_loop.h"
+#include "../estimation/imu_vote.h"
 #include "../estimation/mag_fit.h"
 #include "../gps/gps_driver.h"
 #include "../hal/hal.h"
 #include "../logging/blackbox.h"
+#include "../logging/gyro_tap.h"
 #include "../logging/sdlog.h"
 #include "../navigation/mission.h"
 #include "../osd/osd.h"
@@ -138,7 +140,7 @@ FAST_CODE void fastTask(void*) {
   static drv::ImuDriver* active = nullptr;
   static uint32_t frozen = 0;
   static Vec3 lastRaw;
-  if (!active) active = drv_.imu;
+  if (!active || (bus::imuActive == 0 && active != drv_.imu)) active = drv_.imu;  // flag cleared (restart / simulator)
   bool ok = active && active->read(gn, an);
   if (ok && active == drv_.imu && drv_.imu2) {
     frozen = (gn.x == lastRaw.x && gn.y == lastRaw.y && gn.z == lastRaw.z) ? frozen + 1 : 0;
@@ -154,6 +156,22 @@ FAST_CODE void fastTask(void*) {
       gn = g2; an = a2; ok = true;
     }
   }
+  // on the ground: compare both chips (noise, gravity) and fly on the better one (src/estimation/imu_vote.h)
+  static fc::ImuVote vote;
+  if (active != drv_.imu) vote.reset();
+  if (drv_.imu2 && ok && !fastArmed && active == drv_.imu && tick % 8 == 0) {
+    Vec3 g2, a2;
+    if (drv_.imu2->read(g2, a2)) {
+      vote.add(gn * RAD2DEG, an, g2 * RAD2DEG, a2, 8.0f / loopHz);
+      if (vote.prefer()) {
+        active = drv_.imu2;
+        bus::imuActive = 2;
+        bus::postMessage("IMU 1 noisy or wrong: flying on IMU 2");
+      }
+      bus::imuMismatch = vote.mismatch() && !vote.prefer();
+    }
+  }
+  if (active != drv_.imu) bus::imuMismatch = false;
   uint32_t cImu = cycles();
   imuErrors = ok ? 0 : imuErrors + 1;
   if (ok) {
@@ -249,6 +267,7 @@ FAST_CODE void fastTask(void*) {
   FastLoopOutput out;
   loop.run(g, a, imuOk, sp, &mag, c.mag_declination_deg * DEG2RAD, motorHz, dt, out);
   fastArmed = out.armed;
+  logging::gyroTapPush(loop.gyroUnfilteredDps(), loop.gyroDps(), (uint32_t)now);  // returns at once unless capturing
 
   // turtle mode: reverse / restore motor direction with DShot commands
   if (out.mode != lastMode) {
@@ -574,8 +593,11 @@ void sensorsTask(void*) {
   bool edtUse = edtFresh;
 
   // ---- battery ----
-  float v = hal::adcVbatPin() * c.vbat_scale;
-  float amps = c.cur_scale > 0 ? (hal::adcCurrentPin() - c.cur_offset) * c.cur_scale : -1.0f;
+  float vPin = hal::adcVbatPin(), cPin = hal::adcCurrentPin();
+  bus::adcVbatV = vPin;
+  bus::adcCurV = cPin;
+  float v = vPin * c.vbat_scale;
+  float amps = c.cur_scale > 0 && cPin >= 0 ? (cPin - c.cur_offset) * c.cur_scale : -1.0f;
   // no divider / current sensor wired: the 4-in-1 ESC's own measurement (EDT) stands in
   if (edtUse && v < 2.0f && edtVolts > 0) v = edtVolts;
   if (edtUse && amps < 0 && edtAmps >= 0) amps = edtAmps;
@@ -883,6 +905,7 @@ void start(const Drivers& d, bool configureGps) {
   // ---- blackbox (SD card first: the backend checks that the card side is usable) ----
   sdlog::begin(c);
   Port bbPort = findPort(PortFn::BLACKBOX);
+  logging::gyroTapConfigure(loopHz);
   blackbox.begin(c.bb_backend == 1 && bbPort == Port::COUNT ? 0 : c.bb_backend, bbPort, c.bb_rate_hz);
 
   // ---- loop trigger: the IMU's data-ready pin (the loop rate becomes ODR / divider, e.g. 6400 / 6) ----

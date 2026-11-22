@@ -34,8 +34,9 @@ Firmware chạy trên FreeRTOS với các task tách bạch; thuật toán bay l
 
 **Tài liệu kèm theo:**
 - [`docs/HARDWARE.md`](docs/HARDWARE.md): sơ đồ đấu dây từng board, thẻ SD, bidirectional DShot.
-- [`docs/PARAMS.md`](docs/PARAMS.md): **toàn bộ 380 tham số** (mặc định, giới hạn, mô tả), tạo tự động.
+- [`docs/PARAMS.md`](docs/PARAMS.md): **toàn bộ 381 tham số** (mặc định, giới hạn, mô tả), tạo tự động.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): task, topic, đường dữ liệu.
+- [`docs/HARDWARE_TEST.md`](docs/HARDWARE_TEST.md): danh sách kiểm tra trên phần cứng thật sau mỗi lần nạp firmware (bàn → cắm pin → bay).
 
 ---
 
@@ -164,23 +165,26 @@ Cùng một giao diện, ba cách kết nối:
 - Thanh trên cùng: **Tìm** (`Ctrl+K` hoặc `/`: tìm tham số theo tên / mô tả có hoặc không dấu, Enter mở đúng tab và tô sáng ô cần sửa), **Đơn giản / Nâng cao** (đơn giản chỉ hiện ~50 thông số chính; tab Tham số luôn đủ), **giao diện** Tự động / Sáng / Tối / **Ngoài trời** (tương phản tối đa, chữ to: đọc được dưới nắng), chấm kết nối kèm **tốc độ cập nhật thực tế** (Hz).
 - Thanh bên trên laptop thu gọn được (nút *Thu gọn* ở cuối) để nhường chỗ cho đồ thị.
 - Nhãn "khởi động lại" = cần lưu rồi khởi động lại FC.
-- Mỗi tham số hiện tên kỹ thuật (`roll_p`…), giới hạn và giải thích.
+- Mỗi tham số hiện tên kỹ thuật (`roll_p`…), giới hạn và giải thích; các thông số hay chỉnh (P / I / D / F, lọc, idle, rates, failsafe…) có thêm dòng **↑ tăng thì… · ↓ giảm thì…**.
+- **Thuật ngữ:** nút **?** cạnh tiêu đề có thuật ngữ (PID, notch, RPM filter, failsafe, EKF…) mở giải thích ngắn; tìm "thuật ngữ" (Ctrl+K) mở cả danh sách ~40 mục.
+- Chế độ **Đơn giản** còn gập tab Tham số và CLI dưới nhãn *Công cụ* (bấm nhãn để hiện lại); tìm kiếm và liên kết vẫn mở được.
 - Giao diện sáng / tối; trên điện thoại menu nằm dưới đáy.
+- **English:** nút 🌐 VI / EN trên thanh trên cùng (và ở màn hình kết nối / đăng nhập): dịch ~1 350 câu chữ của giao diện, giữ nguyên số đo; bật lại VI là về nguyên văn. Câu chưa có trong bảng vẫn hiện tiếng Việt; thêm câu: `node tools/i18n/collect.js` rồi bổ sung `tools/i18n/en.json`.
 
 | Tab | Chức năng chính | Trường / tham số quan trọng |
 |---|---|---|
 | **Tổng quan** | Khung sẵn sàng arm (xanh = sẵn sàng, đỏ = liệt kê từng lý do kèm cách sửa, bấm để tới đúng tab; đang nối trang cấu hình chỉ là thông tin), thẻ **Cấu hình còn thiếu** (hiệu chuẩn accel / compass, công tắc ARM, receiver, failsafe cần GPS, dung lượng pin, blackbox… kèm nút tới đúng chỗ; gợi ý ẩn được), ô trạng thái (pin, tín hiệu, GPS, chế độ, độ cao, thời gian bay còn lại, tải CPU), chân trời nhân tạo hoặc mô hình 3D (nút *Chân trời / 3D*, bấm mô hình để nhìn lại từ phía sau), gyro so với setpoint, motor (chưa arm: giao thức, RPM / nhiệt ESC, nút thử motor; arm: thanh ga), kênh RC, danh sách tình trạng cảm biến có đèn trạng thái, cảnh báo rung / EKF | `bat_capacity` (để tính thời gian còn lại) |
-| **Trước bay** | Danh sách kiểm tra trước khi bay: tự kiểm tra (kết nối, IMU, accel / compass đã hiệu chuẩn, baro, tay điều khiển + số lần mất sóng, công tắc ARM, failsafe, pin / V-cell, GPS khi dùng chế độ cần GPS, điều kiện arm, cấu hình đã lưu, chỗ trống blackbox, rung) và 7 mục kiểm tra bằng mắt (tự bỏ tích sau 12 giờ); điểm tổng và nút *Sửa* tới đúng tab | — |
+| **Trước bay** | Danh sách kiểm tra trước khi bay: tự kiểm tra (kết nối, IMU, accel / compass đã hiệu chuẩn, baro, tay điều khiển + số lần mất sóng, công tắc ARM, failsafe, pin / V-cell, GPS khi dùng chế độ cần GPS, điều kiện arm, cấu hình đã lưu, chỗ trống blackbox, rung) và 7 mục kiểm tra bằng mắt (tự bỏ tích sau 12 giờ); điểm tổng và nút *Sửa* tới đúng tab. **Hướng dẫn bay lần đầu**: 9 bước theo thứ tự (đấu dây, cảm biến, hướng lắp FC, tay điều khiển, ARM / chế độ, đo pin, motor, failsafe, điều kiện arm), bước đang làm có lý do vì sao; **thử nghiêng** (nghiêng phải, ngóc mũi: trang nhận ra FC lắp lệch 90° / ngược và chỉ `imu_align`) và **thử failsafe** (tắt tay điều khiển: FC phải báo mất sóng; receiver vẫn gửi kênh sau 20 s thì báo đặt "No pulses") chạy trực tiếp | `imu_align`, `fs_action` |
 | **Thiết lập** | Trình thiết lập 9 bước, kiểm tra bằng số liệu thật; bước hướng lắp FC có mô hình 3D chạy theo tư thế đo được | `imu_align`, `board_roll/pitch/yaw` |
-| **PID & lọc** | **Trợ lý chỉnh PID** (chọn khung → bài bay thử → phân tích blackbox → đưa kế hoạch vào hàng chờ, lặp lại; bảng vọt lố / nhiễu từng vòng), bảng P/I/D/F 3 profile, thanh trượt chỉnh nhanh (độ mạnh chung, giảm chấn, feedforward, I); cảm giác bay & bảo vệ; rates kèm đồ thị; bộ lọc kèm đồ thị đáp ứng tần số & độ trễ | `roll_p…yaw_f`, `p2_*`, `p3_*`, `*_rc_rate`, `*_max_rate`, `*_expo`, `gyro_lpf_hz`, `dterm_lpf_hz`, `dyn_notch_*`, `rpm_harmonics`, `rpm_w1..3` |
+| **PID & lọc** | **Trợ lý chỉnh PID** (chọn khung → bài bay thử → phân tích blackbox → đưa kế hoạch vào hàng chờ, lặp lại; bảng vọt lố / nhiễu từng vòng), bảng P/I/D/F 3 profile, thanh trượt chỉnh nhanh (độ mạnh chung, giảm chấn, feedforward, I); cảm giác bay & bảo vệ; rates kèm đồ thị; bộ lọc kèm đồ thị đáp ứng tần số & độ trễ; **trạng thái RPM filter** bằng lời (đang chạy 4/4 ESC, thiếu ESC, chưa có nguồn RPM, tắt) | `roll_p…yaw_f`, `p2_*`, `p3_*`, `*_rc_rate`, `*_max_rate`, `*_expo`, `gyro_lpf_hz`, `dterm_lpf_hz`, `dyn_notch_*`, `rpm_harmonics`, `rpm_w1..3` |
 | **Chế độ & an toàn** | **Tín hiệu tay điều khiển**: LQ 2 phút gần nhất, trung bình / thấp nhất, số lần và thời gian mất sóng dài nhất; gán chế độ cho khoảng kênh AUX (kéo, Thấp / Giữa / Cao), xem công tắc trực tiếp; failsafe, pin, geofence | `mrN_mode/ch/lo/hi`, `fs_action`, `bat_fs_action`, `fence_*` |
 | **Điều hướng** | Bản đồ (nhà, drone, vệt bay, waypoint, rally, geofence, gió; bản đồ nền OSM); **soạn nhiệm vụ** (chạm thêm, kéo dời), **quét khu vực**, **geofence đa giác**, **bay tới điểm chạm** (GUIDED), nhập / xuất `.waypoints`; **thống kê nhiệm vụ** (quãng đường, thời gian, xa nhà nhất, cao nhất, mAh ước tính theo dòng đo được, cảnh báo khi > 70 % pin); bảng EKF | `rth_alt`, `wp_speed`, `nav_*`, `fence_poly`, `gcs_fs` |
 | **Tay điều khiển** | Thanh từng kênh (4 cần + AUX, kênh vừa gạt được tô sáng), **kiểm tra hành trình** (min / max đã đi, tâm 1500 µs, gợi ý chỉnh endpoint / subtrim trên tay), **thứ tự kênh** (AETR / TAER / AERT / RETA hoặc **tự dò**: lần lượt đẩy ga, roll, pitch, yaw, kèm báo kênh bị đảo chiều), vùng chết quanh tâm cần | `rc_ch_roll/pitch/thr/yaw`, `rc_deadband`, `rc_smooth_hz` |
-| **Cảm biến** | Mô hình 3D, đồ thị gyro / accel / compass / độ cao, cảm biến khoảng cách, optical flow, RPM + nhiệt ESC; hiệu chuẩn & hướng lắp | `acc_*`, `mag_*`, `level_trim_*` |
+| **Cảm biến** | Mô hình 3D, đồ thị gyro / accel / compass / độ cao, cảm biến khoảng cách, optical flow, RPM + nhiệt ESC; hiệu chuẩn & hướng lắp; **kiểm tra optical flow** (cầm drone trên nền có hoa văn, nghiêng qua lại: trang so flow với gyro, tìm `flow_align` / `flow_flip` đúng, báo biên độ, nút Áp dụng; module chỉ đo khoảng cách thì nói rõ) | `acc_*`, `mag_*`, `level_trim_*` |
 | **Motor & ESC** | **Thử motor** (khoá đến khi tích "đã tháo cánh"), đo rung từng motor, kiểm tra phản ứng (không cần arm), thứ tự & chiều quay (tìm tự động), giao thức ESC, bíp / đảo chiều từng motor, hiệu chuẩn ESC PWM, **ESC passthrough** (esc-configurator.com) | `motor_protocol`, `dshot_bidir`, `dshot_edt`, `motor_poles`, `yaw_reversed`, `motorN_out` |
 | **Cổng & thiết bị** | Chức năng + baud từng UART (cảnh báo trùng), **lưu lượng & lỗi từng UART** (byte/s, tràn, lỗi khung, nhiễu; khung receiver/s + % sai checksum, kèm gợi ý nguyên nhân), chức năng **Configurator** cho cầu WiFi, VTX (băng / kênh / công suất / pit, bảng VTX riêng), dải LED | `serialN_fn`, `serialN_baud`, `vtx_*`, `vtxt_*`, `led_*` |
 | **OSD** | Kéo thả phần tử (thêm thanh pin, V/cell, RSSI dBm), nhấp nháy cảnh báo + pin yếu (`osd_blink`), bật / tắt, analog hay kính số, lưới chữ, icon hay chữ, xem trước HD, hướng dẫn DJI / Walksnail / HDZero | `osd_backend`, `osd_canvas`, `osd_font`, `osd_stats`, `osd_*_pos` |
-| **Blackbox** | Tải log từ drone hoặc mở file, **thẻ SD** (trạng thái, danh sách, phân tích / lưu / xoá từng file), phân tích, **kế hoạch chỉnh**, bảng ESC, ghim chuyến mốc để so sánh, xuất CSV, **bản đồ nhiệt nhiễu theo mức ga** (vệt chéo = nhiễu motor, vệt đứng = cộng hưởng khung, có vạch cắt lọc), **sự kiện chuyến bay** (arm / disarm, đổi chế độ, motor chạm 100 %, điện áp thấp nhất, tốc độ quay lớn nhất; bấm để nhảy tới đoạn đó), **đường bay nhìn từ trên** (màu theo độ cao, chấm đi theo thanh thời gian), so sánh với chuyến mốc cả **phổ nhiễu** (đường đứt nét) | `bb_rate_hz`, `bb_backend`, `sd_*` |
+| **Blackbox** | **Tóm tắt chuyến bay** (thời gian, pin đầu → cuối và V/cell thấp nhất, dòng max / TB, mAh, ga lơ lửng, độ cao / xa nhất, rung, nhiệt ESC, kèm nhận xét: pin bị ép, sụt áp, drone nặng, motor chạm 100 %, rung cao…), tải log từ drone hoặc mở file, **thẻ SD** (trạng thái, danh sách, phân tích / lưu / xoá từng file), phân tích, **kế hoạch chỉnh**, bảng ESC, ghim chuyến mốc để so sánh, xuất CSV, **bản đồ nhiệt nhiễu theo mức ga** (vệt chéo = nhiễu motor, vệt đứng = cộng hưởng khung, có vạch cắt lọc), **sự kiện chuyến bay** (arm / disarm, đổi chế độ, motor chạm 100 %, điện áp thấp nhất, tốc độ quay lớn nhất; bấm để nhảy tới đoạn đó), **đường bay nhìn từ trên** (màu theo độ cao, chấm đi theo thanh thời gian), so sánh với chuyến mốc cả **phổ nhiễu** (đường đứt nét) | `bb_rate_hz`, `bb_backend`, `sd_*` |
 | **Hệ thống: gói chẩn đoán** | Một nút gom selftest, status, cấu hình đã đổi (`diff`, không mật khẩu), sơ đồ chân, task / hiệu năng, ESC, thẻ SD, lưu lượng cổng vào một file `.txt` (hoặc sao chép): gửi file này khi nhờ hỗ trợ | — |
 | **Tham số** | **Hồ sơ drone** (lưu cấu hình theo tên trong trình duyệt, nạp vào hàng chờ, xuất / nhập file `.json`; không chép hiệu chuẩn cảm biến, WiFi, cổng), preset (5 inch, 3 inch, cinewhoop, 7 inch, bộ lọc, rates, an toàn GPS), mọi tham số theo nhóm, tìm kiếm, lịch sử thay đổi + hoàn tác + CSV | — |
 | **CLI** | Dòng lệnh như Betaflight, nhớ lệnh, Tab tự hoàn thành, nút nhanh | — |
@@ -230,7 +234,7 @@ Trang cấu hình cho STM32 là một file (`build/web/AllQuad-Configurator.html
 
 ## Cài đặt lần đầu
 
-**THÁO CÁNH QUẠT.** Dùng tab **Thiết lập**, hoặc làm tay qua CLI:
+**THÁO CÁNH QUẠT.** Dùng tab **Thiết lập** rồi **Trước bay → Hướng dẫn bay lần đầu**, hoặc làm tay qua CLI:
 
 1. `status` kiểm tra cảm biến; `scan` để kiểm tra dây:
    - Liệt kê thiết bị I2C, mức SDA/SCL, mã chip và mã IMU.
@@ -240,10 +244,8 @@ Trang cấu hình cho STM32 là một file (`build/web/AllQuad-Configurator.html
 3. `calib_acc` (hoặc `calib_acc6`), `calib_mag 30`, `set mag_declination <độ>`, `save`.
 4. Gán cổng: `set serial1_fn 1` (receiver), `set serial2_fn 2` (GPS)… (mã ở [Cổng](#cổng-trạm-mặt-đất-wifi)). `save` → `reboot`.
 5. `set rx_protocol 0` (CRSF; 1 SBUS, 2 iBUS); `set motor_protocol 2` (DShot300; 3 DShot600).
-6. Pin:
-   - Chỉnh `vbat_scale` theo đồng hồ đo.
+6. Pin: tab **Chế độ & an toàn → "Đo điện áp & dòng: cách nối, hiệu chuẩn"** (xem [Đo điện áp & dòng](#đo-điện-áp--dòng)).
    - Đặt `bat_capacity` (mAh) để có thời gian bay còn lại và failsafe theo dung lượng.
-   - Board không có cầu chia áp: điện áp / dòng lấy từ ESC (EDT).
 7. Thử motor ở tab Motor: thứ tự và chiều quay. Sai thứ tự: `motorN_out` (không cần đổi dây). Sai chiều: đảo chiều trong ESC (DShot).
 8. Thử failsafe: arm trên bàn không cánh, tắt tay điều khiển, motor phải dừng hoặc vào chế độ đã chọn.
 
@@ -430,6 +432,10 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 - **0xA7 (mới):** khung ESC 23 byte, ~50 Hz.
   - Gồm: RPM cơ khí từng motor (từ bidirectional DShot, EDT hoặc telemetry serial), nhiệt độ từng ESC, điện áp và dòng ESC.
   - Trình đọc cũ bỏ qua khung này.
+- **0xA8 (v2.2):** khung gyro tần số cao, 16 mẫu gyro thô + sau lọc (tới 4 kHz) mỗi khung; chỉ trên thẻ SD.
+  - `bb_gyro_s` (giây, 0 = tắt): ghi một đợt sau mỗi lần cất cánh (lần đầu ga > 25 %); CLI `gyrocap <s>` ghi ngay khi đang bay.
+  - Log thường (≤ 1 kHz) chỉ thấy nhiễu dưới 500 Hz; đợt này thấy tới 2 kHz: tab Blackbox → *Gyro tần số cao* (phổ thô / sau lọc, đỉnh nhiễu và độ suy giảm của bộ lọc).
+  - Không có ở F411 (thiếu RAM cho bộ đệm 12 kB).
 - **Giải mã trên máy tính:** `python3 tools/blackbox_decode.py LOG.BBL` → `LOG.csv` (bản ghi) + `LOG_esc.csv` (RPM / nhiệt).
 
 ---
@@ -504,6 +510,24 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 
 ---
 
+### Đo điện áp & dòng
+
+Chân ADC đo tối đa **3,3 V**. Công thức: điện áp = V ở chân × `vbat_scale`; dòng = (V ở chân dòng − `cur_offset`) × `cur_scale` (A/V). Chân của từng board: tab Cổng & thiết bị → Sơ đồ chân (DevEBox H743: VBAT **PC0**, CURRENT **PC1**).
+
+| Trường hợp | Đấu dây | Hệ số |
+|---|---|---|
+| **Board phát triển** (DevEBox, WeAct, BlackPill, ESP32 DevKit): không có cầu chia | Pin (+) → R1 → điểm giữa → chân VBAT; điểm giữa → R2 → GND; tụ 100 nF chân–GND; (tuỳ chọn) 1 kΩ nối tiếp + zener 3,3 V | `vbat_scale` = (R1 + R2) / R2. 10 kΩ / 1 kΩ = 11 (đến 6S, chân 2,4 V khi pin đầy). ESP32 / 8S: 20 kΩ / 1,5 kΩ = 14,3 (giữ chân ≤ 2,5 V vì ADC ESP32 không tuyến tính phía trên) |
+| **FC thương mại** (cầu chia có sẵn) | Pad VBAT của FC ← pin (+) hoặc chân VBAT của ESC 4-in-1 | Betaflight `vbat_scale` ÷ 10 (110 → 11) |
+| **Power module / PDB analog** | V → chân VBAT, I → chân CURRENT, GND chung (loại I2C / CAN không dùng được) | theo datasheet |
+| **Không nối chân** | `dshot_bidir 1` + `dshot_edt 1` (AM32 / Bluejay / BLHeli_32) hoặc dây telemetry ESC | FC tự dùng áp / dòng ESC báo khi chân VBAT không có điện áp |
+| **Dòng (CURR của ESC / module)** | CURR → chân CURRENT, nối thẳng (đã là 0–3,3 V) | `cur_scale` = 1000 / (mV/A); từ Betaflight: `cur_scale` = 10000 / `ibata_scale` (400 → 25 A/V), `cur_offset` = −`ibata_offset`(mA) / 1000 / `cur_scale` |
+
+**Hiệu chỉnh cho chuẩn** (trang có sẵn nút, kết quả vào hàng chờ → Lưu):
+- Điện áp: đo cọc pin bằng đồng hồ, nhập số → `vbat_scale` = V đồng hồ ÷ V ở chân.
+- Điểm 0 dòng: pin cắm, motor dừng → `cur_offset` = V ở chân dòng lúc đó.
+- Hệ số dòng: bay hết một pin, so mAh FC báo với mAh bộ sạc nạp vào → `cur_scale` × (mAh sạc ÷ mAh FC báo). Làm 2–3 lần.
+- `selftest` báo lỗi khi chân đo áp gần 3,3 V (mạch chia quá yếu: điện áp hiển thị sai, có thể hỏng chân) và khi đang disarm mà vẫn báo trên 1,5 A (chưa đặt điểm 0). STM32 lấy trung bình 8 lần đo mỗi lượt để bớt nhiễu motor.
+
 ## An toàn & failsafe
 
 | Sự cố | Tham số | Hành động |
@@ -517,6 +541,7 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
 | Rung | `vibe_warn` | OSD "VIBRATION" |
 | Gia tốc kế bị kịch (> ±15,5 g) | – | OSD "ACC CLIPPING", web, blackbox (cờ bit 8): rung quá mạnh, ước lượng độ cao / vị trí sai. Kiểm tra cách gắn FC, cánh, motor |
 | IMU hỏng | `imu_dual 1` | IMU 2 thay thế |
+| Hai IMU, một chip kém (khi chưa arm) | `imu_dual 1` | so độ nhiễu gyro và trọng lực đo được (không phụ thuộc hướng lắp): chip chính nhiễu gấp 3 hoặc sai trọng lực > 2,5 m/s² thì bay bằng chip 2 (không chặn arm); hai chip lệch trọng lực > 1,5 m/s² mà không rõ chip nào sai thì chặn arm `IMU_MISMATCH` |
 
 - **Kiểm tra trước arm:** 18 mục, hiện ở tab Tổng quan và trên OSD ("Chưa thể arm").
 - **Arm từ trạm mặt đất:** cần `gcs_arm 1`.
@@ -662,14 +687,18 @@ Ví dụ: `logic 1 1 2 1 2 0 1200 1 0 0` = độ cao > 120 m → kêu còi.
 - **Cập nhật qua WiFi (ESP32):**
   - Chọn `firmware.bin`; ghi vào ô OTA còn lại.
   - Không chạy bình thường trong 15 s đầu thì tự quay về bản cũ.
+  - **Ký số (tuỳ chọn):** `python3 tools/ota_sign.py keygen` tạo khoá riêng ở `~/.allquad/ota_private.pem` (không nằm trong thư mục dự án; **sao lưu nó**) và khoá công khai `src/web/ota_pubkey.h`. Nạp bản có khoá qua USB một lần; từ đó drone **chỉ nhận qua WiFi file `firmware.signed.bin`** (PlatformIO tự tạo cạnh `firmware.bin` khi có khoá; ECDSA P-256 trên SHA-256 của ảnh firmware). File không ký / ký khoá khác bị từ chối, firmware cũ giữ nguyên. Mất khoá thì chỉ còn nạp USB. Không chạy `keygen` thì mọi thứ như cũ.
 - **Nạp firmware từ trang (GitHub Pages):** `python3 tools/make_pages.py` tạo thư mục `pages/` = trang + `firmware/*.bin` + `manifest.json` (kích thước, SHA-256). Đưa thư mục lên Pages; hộp *Nạp firmware* có mục *Bản phát hành trên trang này*, tự chọn đúng board, tải về và kiểm SHA-256 trước khi nạp.
-- **Nâng cấp giữ cấu hình:** tham số mới chỉ thêm vào cuối. Cấu hình cũ (v15 trở lên) tự chuyển sang **v30** với giá trị mặc định cho trường mới.
+- **Nâng cấp giữ cấu hình:** tham số mới chỉ thêm vào cuối. Cấu hình cũ (v15 trở lên) tự chuyển sang **v31** với giá trị mặc định cho trường mới.
+- **v2.2, ESP32 DevKit 4 MB:** ô firmware tăng 1,5 → 1,625 MB (flash đang dùng 95 % → 88 %, còn chỗ cho bản sau), blackbox 896 → 640 KB (~14 s ở 500 Hz; dùng thẻ SD nếu cần log dài). Board đang chạy bảng cũ vẫn chạy và vẫn cập nhật qua WiFi được chừng nào firmware còn vừa ô 1,5 MB; muốn có bảng mới thì nạp **file gộp** qua USB một lần (sao lưu cấu hình trước). Cấu hình v31 (`bb_gyro_s`). ESP32-S3 / C6 / P4 không đổi.
 - **v2.1, ESP32 DevKit 4 MB:** ô firmware tăng 1,375 → 1,5 MB (blackbox còn 896 KB). Board đang chạy bảng phân vùng cũ phải nạp **file gộp** qua USB một lần (cấu hình về mặc định: sao lưu trước); cập nhật qua WiFi sẽ báo lỗi chứ không ghi hỏng. ESP32-S3 / C6 / P4 không đổi.
 - **STM32 lưu cấu hình hai bản (H743, F405):** mỗi lần lưu ghi vào bản không dùng, có số thứ tự + CRC; mất điện giữa lúc lưu thì lần sau dùng bản cũ còn nguyên. F405 vì vậy giới hạn firmware 768 KB (đang ~300 KB); H743 blackbox flash còn 6 sector (768 KB). F722 / F411 không còn sector trống: một bản như trước.
 
 ---
 
 ## Kiến trúc & hiệu năng
+
+**Bộ nhớ (build hiện tại):** F405 đặt heap FreeRTOS (task stack, `new`) vào 64 kB CCM RAM, RAM chính còn ~53 % trống (heap không bao giờ là bộ đệm DMA: DShot, LED, thẻ SD dùng bộ đệm tĩnh). F411 báo RAM ~95 % vì heap 66 kB được tính là đã dùng ngay từ đầu; chỗ trống thật trong heap xem bằng `selftest` (dòng `heap`; bản F405 trong QEMU còn ~31 kB trống trên 64 kB). Trang cấu hình trong firmware ESP32 nén bằng zopfli khi có (`pip install zopfli`): nhỏ hơn gzip ~4 %.
 
 | Task | Tần số | Ưu tiên | Nhân (ESP32) | Việc |
 |---|---|---|---|---|
@@ -710,16 +739,17 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Hạng mục | Kết quả |
 |---|---|
 | Biên dịch PlatformIO | 12 / 12 môi trường (6 ESP32, 5 STM32 + QEMU, cầu WiFi C3) |
-| Unit test (kèm AddressSanitizer + UBSan) | **228 / 228** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v30, thứ tự kênh RC, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
-| Mô phỏng toàn hệ thống | 42 kịch bản đạt (EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
+| Unit test (kèm AddressSanitizer + UBSan) | **234 / 234** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v31, ghi gyro tần số cao, thứ tự kênh RC, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
+| Mô phỏng toàn hệ thống | 43 kịch bản đạt (chọn IMU tốt hơn khi chưa arm, EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
 | QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset |
 | Script Lua EdgeTX | `aqtlm` + `aqcfg` chạy trong Lua 5.2, `aqcfg` nói chuyện với mã MSP-over-CRSF thật |
 | MAVLink đối chiếu pymavlink | 17 / 17 |
-| Bộ phân tích blackbox | 21 / 21 (gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp) |
+| Bộ phân tích blackbox | 24 / 24 (khung gyro 4 kHz, gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp, tóm tắt chuyến bay, pin yếu) |
 | Firmware WebAssembly | 5 / 5 |
-| Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, bản đồ offline, PWA, nạp firmware, thẻ SD |
+| Ký số firmware OTA | 6 / 6 (`tools/test_ota_sign.py`; kiểm chéo với mbedtls như firmware) |
+| Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, bản đồ offline, PWA, nạp firmware, thẻ SD, hướng dẫn bay lần đầu (thử nghiêng / failsafe), tìm hướng optical flow (16 kiểu lắp), thuật ngữ, gyro tần số cao, giao diện tiếng Anh |
 
-**CI:** `.github/workflows/ci.yml` chạy unit test (cả sanitizer), mô phỏng, bộ phân tích và build 9 board cho mỗi lần push. File firmware giữ 14 ngày. Để dùng: đưa thư mục dự án lên GitHub (`git init`, `git add .`, `git commit`, `git push`).
+**CI:** `.github/workflows/ci.yml` chạy kiểm tra sơ đồ chân, unit test (cả sanitizer), mô phỏng, bộ phân tích, build 11 môi trường, khởi động F405 trong QEMU và toàn bộ test giao diện (Playwright, drone ảo WebAssembly) cho mỗi lần push. File firmware giữ 14 ngày. Để dùng: đưa thư mục dự án lên GitHub (`git init`, `git add .`, `git commit`, `git push`).
 
 **Chưa kiểm chứng trên phần cứng:** DShot / bidir trên chip thật, RMT, OSD MAX7456, khởi tạo từng cảm biến, thẻ SD trên chip thật (cả `sd_dma`), watchdog IWDG và lưu A/B trên flash thật, cầu WiFi ESP32-C3, script `aqcfg` trên tay thật, các board F405 / F722 / C6 / P4. Khi thử trên bàn, gửi kèm kết quả `status`, `perf`, `tasks`, `sd`, `esc` để kiểm tra.
 
@@ -731,5 +761,4 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 - **Ghi gyro thô tần số cao** (2–4 kHz, từng đợt vài giây) lên thẻ SD để phân tích phổ sâu.
 - **EKF nhiều IMU:** chọn IMU tốt nhất.
 - **WiFi cho ESP32-P4** qua ESP32-C6 (esp-hosted).
-- **Bản đồ nền offline** (tải sẵn tile).
 - **Ký số firmware OTA.**

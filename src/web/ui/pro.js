@@ -893,6 +893,7 @@ function searchRun() {
   host.querySelectorAll(".gs-it").forEach((b) => (b.onclick = () => {
     $("searchDlg").hidden = true;
     if (b.dataset.tab === "pins" && typeof pinShow === "function") return pinShow();
+    if (b.dataset.tab && b.dataset.tab.startsWith("fn:")) { const f = window[b.dataset.tab.slice(3)]; return typeof f === "function" && f(); }
     if (b.dataset.tab) return gotoTab(b.dataset.tab);
     searchGo(b.dataset.n);
   }));

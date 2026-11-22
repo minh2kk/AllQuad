@@ -11,6 +11,7 @@
 
 #include "../bus/bus.h"
 #include "../hal/pinmap.h"
+#include "../logging/gyro_tap.h"
 #include "../logging/sdlog.h"
 #include "../navigation/mission.h"
 
@@ -365,8 +366,23 @@ void Cli::cmdSelftest() {
     }
   }
   // battery
-  if (b.voltage < 2.0f) line(1, "battery", "%.2f V - no battery (USB only) or voltage sensing not wired / scaled", (double)b.voltage);
-  else line(0, "battery", "%.2f V, %u cells, %u%%", (double)b.voltage, b.cells, b.percent);
+  {
+    float vp = bus::adcVbatV, cp = bus::adcCurV;
+    const Config& bc = bus::config;
+    // ADC full scale 3.3 V; a pin reading at the top means the divider lets too much through: the voltage
+    // shown is wrong (too low) and the pin may be overdriven
+    if (vp > 3.20f)
+      line(2, "battery", "voltage pin at %.2f V (ADC full scale 3.3 V): divider too weak - use a bigger ratio (10k/1k), vbat_scale %.1f",
+           (double)vp, (double)bc.vbat_scale);
+    else if (b.voltage < 2.0f) line(1, "battery", "%.2f V (pin %.3f V) - no battery (USB only) or voltage sensing not wired / scaled", (double)b.voltage, (double)vp);
+    else line(0, "battery", "%.2f V, %u cells, %u%% (pin %.3f V x %.2f)", (double)b.voltage, b.cells, b.percent, (double)vp, (double)bc.vbat_scale);
+    if (bc.cur_scale > 0 && cp >= 0) {
+      if (cp > 3.20f) line(2, "current", "current pin at %.2f V: saturated - check the sensor output range", (double)cp);
+      else if (!bus::status.get().armed && b.current > 1.5f)
+        line(1, "current", "%.1f A while disarmed (pin %.3f V): set cur_offset %.3f (zero) if the motors are stopped", (double)b.current, (double)cp, (double)cp);
+      else line(0, "current", "%.1f A (pin %.3f V, scale %.1f A/V, offset %.3f V)", (double)b.current, (double)cp, (double)bc.cur_scale, (double)bc.cur_offset);
+    }
+  }
   // settings storage
   {
     int copy, copies;
@@ -469,7 +485,7 @@ void Cli::exec(char* line, uint32_t now) {
   if (!strcmp(cmd, "help")) {
     print("status | selftest | crash [clear|test|hang] | tasks | perf | esc | get [filter] | set <name> <value> | save | defaults\r\n"
           "calib_acc | calib_acc6 | calib_mag [s] | calib_gyro | compassmot | mission [clear|add ...] | rally [clear|add ...]\r\n"
-          "fence [clear|add <latE7> <lonE7>] | logic [n ...] | log [erase] | sd [ls | rm <file> | mount] | goto <latE7> <lonE7> [alt] (GUIDED)\r\n"
+          "fence [clear|add <latE7> <lonE7>] | logic [n ...] | log [erase] | sd [ls | rm <file> | mount] | gyrocap [s] | goto <latE7> <lonE7> [alt] (GUIDED)\r\n"
           "diff (backup: changed settings) | dump (backup: everything)\r\n"
           "wifi [name <ssid> | pass <8-63 chars> | webpass <6-64 chars, - = same as wifi> | reset]\r\n"
           "version | reboot | bootloader (USB flashing: ESP32-S3 ROM / STM32 DFU) | scan (wiring check) | net (WiFi check)\r\n"
@@ -832,6 +848,20 @@ void Cli::exec(char* line, uint32_t now) {
     print("  file %s %lu bytes, queue %lu / %lu, dropped %lu, slowest write %lu ms\r\n", i.file, (unsigned long)i.fileBytes,
           (unsigned long)i.queued, (unsigned long)i.queueSize, (unsigned long)i.dropped, (unsigned long)i.maxWriteMs);
     print("  pins clk %d cmd %d d0 %d d1 %d d2 %d d3 %d (255 = unused)\r\n", i.pin[0], i.pin[1], i.pin[2], i.pin[3], i.pin[4], i.pin[5]);
+  } else if (!strcmp(cmd, "gyrocap")) {
+    // high-rate gyro capture into the SD-card log: now (armed, logging) or after every take-off (bb_gyro_s)
+    if (!logging::gyroTapAvailable()) { print("not on this board (no RAM for the capture ring)\r\n"); return; }
+    if (a1) {
+      int s = atoi(a1);
+      if (s < 1 || s > 30) { print("1-30 s\r\n"); return; }
+      if (bus::config.bb_backend != 3 || !bus::config.bb_rate_hz) { print("needs the SD-card blackbox (bb_backend 3, bb_rate_hz > 0)\r\n"); return; }
+      if (!armed) { print("arm first (the log runs while armed); bb_gyro_s %u captures after every take-off\r\n", bus::config.bb_gyro_s); return; }
+      bus::gyroCapReq = (uint8_t)s;
+      print("capturing %d s at %u Hz\r\n", s, logging::gyroTapRate());
+      return;
+    }
+    print("gyro capture: %u Hz, %s, after take-off %u s (bb_gyro_s), %lu samples dropped\r\n", logging::gyroTapRate(),
+          logging::gyroTapActive() ? "running" : "idle", bus::config.bb_gyro_s, (unsigned long)logging::gyroTapDropped());
   } else if (!strcmp(cmd, "version")) {
     print("AllQuad %s (%s), %d parameters\r\n", info_ ? info_->version : "?", hal::platformName(), paramCount());
   } else if (!strcmp(cmd, "bootloader") || !strcmp(cmd, "bl")) {

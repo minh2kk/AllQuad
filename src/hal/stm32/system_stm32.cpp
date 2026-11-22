@@ -353,6 +353,14 @@ static void checkBootloaderRequest() {
 #else
 #define IWDG_INST IWDG
 #endif
+#if defined(AQ_HEAP_IN_CCM)
+// F405: the FreeRTOS heap in the 64 kB CCM RAM (frees half of the main RAM). Not a .bss section, so it
+// is cleared here, before the C++ constructors that may already allocate (same start as in .bss).
+extern "C" {
+__attribute__((section(".ccmram"), aligned(8))) uint8_t ucHeap[configTOTAL_HEAP_SIZE];
+}
+__attribute__((constructor(101))) static void aqHeapClear() { memset(ucHeap, 0, sizeof(ucHeap)); }
+#endif
 // ============================================================ crash record + watchdog
 // .noinit RAM is neither zeroed nor loaded by the startup code: what a crash writes there is still
 // readable after the reset that follows (not after a power cycle). The record carries a magic and a
@@ -392,6 +400,9 @@ void cacheWriteBack(const void* p, size_t n) {
 }
 bool inRam(const void* p, size_t n) {
   uintptr_t a = (uintptr_t)p;
+#if defined(AQ_HEAP_IN_CCM)  // task control blocks and stacks live in the CCM heap
+  if (a >= 0x10000000u && a + n <= 0x10010000u && a + n > a) return true;
+#endif
   return a >= (uintptr_t)&_sdata && a + n <= (uintptr_t)&_estack && a + n > a;
 }
 // printable ASCII only (the name may come from a corrupted task control block; it ends up in JSON)

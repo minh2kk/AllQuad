@@ -36,6 +36,7 @@
 #include "board.h"
 #include "dshot_codec.h"
 #include "hal.h"
+#include "../web/ota_pubkey.h"
 #include "hal_internal.h"
 
 namespace hal {
@@ -889,6 +890,7 @@ FirmwareInfo firmwareInfo() {
   const esp_partition_t* run = esp_ota_get_running_partition();
   f.running = run ? run->label : "?";
   f.otaSupported = esp_ota_get_next_update_partition(nullptr) != nullptr;
+  f.otaSigned = OTA_PUBKEY_LEN > 0;
   esp_ota_img_states_t st;
   f.pendingVerify = run && esp_ota_get_state_partition(run, &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY;
   return f;
