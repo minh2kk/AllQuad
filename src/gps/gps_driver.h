@@ -28,6 +28,7 @@ class GpsDriver {
   bool ubxByte(uint8_t b);
   bool nmeaByte(uint8_t b);
   bool parseNmea();
+  void sanitize();
   void sendUbx(uint8_t cls, uint8_t id, const uint8_t* payload, uint16_t len);
   void configure();
 

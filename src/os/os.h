@@ -49,6 +49,7 @@ int taskCount();
 // free heap now and the lowest it has been since boot (bytes; 0 / 0 on the PC)
 void heapStats(uint32_t& freeNow, uint32_t& lowest);
 TaskStats taskStats(int i);
+uint32_t taskStackFree(int i);   // measured now (walks the stack): CLI / self-test
 void resetTaskStats();
 
 // Global short critical section (spinlock on dual-core ESP32). Keep it SHORT.

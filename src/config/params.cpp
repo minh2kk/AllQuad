@@ -350,4 +350,22 @@ bool paramSet(Config& c, int i, float v) {
   return true;
 }
 
+int configClamp(Config& c) {
+  Config def;
+  int fixed = 0;
+  for (int i = 0; i < NPARAMS; i++) {
+    const ParamInfo& p = PARAMS[i];
+    float v = paramGet(c, i);
+    if (v == v && v >= p.min && v <= p.max) continue;
+    if (!fixed) configDefaults(def);
+    float d = paramGet(def, i);
+    if (!(v == v)) v = d;  // NaN: the default
+    else v = v < p.min ? p.min : p.max;
+    if (!paramSet(c, i, v)) paramSet(c, i, d);
+    fixed++;
+  }
+  if (fixed) configSeal(c);
+  return fixed;
+}
+
 }  // namespace fc

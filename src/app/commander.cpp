@@ -159,7 +159,26 @@ void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, boo
     ekf_.slaveAttitude(Quat::fromEuler(0, 0, yawCorr_) * att_.q, squaref(0.05f), 1.0f);
     ekfGpsYawInit_ = false;
   }
-  if (attNew_ && att_.dt > 0) ekf_.predict(att_.dAng, att_.dVel, att_.dt, now);
+  if (imuNew_ && imuDt_ > 0 && imuDt_ < 0.1f) ekf_.predict(imuDAng_, imuDVel_, imuDt_, now);
+  // ---- tilt cross-check against the AHRS: the complementary filter is the robust one (gravity
+  // always pulls it back); an EKF tilt that stays far from it (after a tumble, saturated rates,
+  // a long acceleration) has diverged - its tilt is reset to the AHRS one, heading and
+  // position / velocity kept. Without this a wrong tilt turns into a wrong acceleration and the
+  // position estimate runs away while the filter's own covariance still looks confident.
+  if (headingKnown && att_.valid) {
+    Vec3 zk = ekf_.q().rotate(Vec3(0, 0, 1)), za = att_.q.rotate(Vec3(0, 0, 1));
+    float dotz = zk.x * za.x + zk.y * za.y + zk.z * za.z;
+    if (dotz < cosf(15.0f * DEG2RAD)) {
+      if (!ekfTiltBadSince_) ekfTiltBadSince_ = now ? now : 1;
+      if (now - ekfTiltBadSince_ > 1000) {
+        float yawK = ekf_.yaw();
+        ekf_.slaveAttitude(Quat::fromEuler(0, 0, wrapPi(yawK - att_.yaw)) * att_.q, squaref(0.05f), ekf_.var(8));
+        ekfTiltBadSince_ = 0;
+        ekfTiltResets_++;
+        bus::postMessage("EKF: attitude disagreed with the AHRS - tilt reset");
+      }
+    } else ekfTiltBadSince_ = 0;
+  } else ekfTiltBadSince_ = 0;
   // ---- height: barometer, GPS when the baro is missing or faulty ----
   if (b && b->healthy) ekf_.fuseHeight(b->altM - est_.baroOffset(), c.est_baro_noise, 0, now);
   bool gpsGood = g && g->fix3d && g->sats >= c.gps_min_sats && g->hAcc < c.gps_max_hacc;
@@ -495,6 +514,7 @@ void Commander::run(uint32_t now, float dt) {
   uint32_t sa = bus::attitude.read(att_);
   attNew_ = sa != seqAtt_;
   seqAtt_ = sa;
+  imuNew_ = bus::takeImuDelta(imuDAng_, imuDVel_, imuDt_);
   bus::battery.read(bat_);
   fuseSensors(now, dt);
 

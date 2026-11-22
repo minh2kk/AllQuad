@@ -39,8 +39,13 @@ class NavEstimator {
   Kalman3 kz_, kn_, ke_;
   NavEstimate st_{};
   bool zInit_ = false, hInit_ = false;
+ public:
+  uint16_t baroResets() const { return baroResets_; }
+ private:
   float baroOffset_ = 0;
   uint32_t lastGpsMs_ = 0, lastFlowMs_ = 0, lastRangeMs_ = 0, lastBaroMs_ = 0;
+  uint32_t baroRejSince_ = 0;   // baro rejected by the gate since (0 = accepted)
+  uint16_t baroResets_ = 0;
   bool gpsUsable_ = false, flowUsable_ = false;
   bool rehomePending_ = false;
   bool glitch_ = false, hReset_ = false;

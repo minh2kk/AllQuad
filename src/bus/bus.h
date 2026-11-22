@@ -49,6 +49,13 @@ enum class Request : uint8_t { NONE = 0, ARM, DISARM, SET_MODE, ACC_CAL, MAG_CAL
 void postRequest(Request r, uint32_t arg = 0);
 bool takeRequest(Request& r, uint32_t& arg);
 
+// IMU delta angle / delta velocity for the navigation EKF. The fast loop adds every attitude publish,
+// the control task takes the sum since its last take: the attitude topic only keeps the latest
+// sample, and at loop rates where it publishes faster than the control task runs (2 kHz loop ->
+// 500 Hz vs 250 Hz) the EKF would otherwise integrate only part of the rotation and diverge.
+void addImuDelta(const fc::Vec3& dAng, const fc::Vec3& dVel, float dt);
+bool takeImuDelta(fc::Vec3& dAng, fc::Vec3& dVel, float& dt);
+
 // cross-task flags
 extern volatile uint32_t cliActiveUntilMs;   // CLI in use -> arming blocked
 extern volatile uint8_t gyroCapReq;          // CLI / web: start a high-rate gyro capture of this many s (logger task)

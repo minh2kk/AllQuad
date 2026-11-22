@@ -10,6 +10,9 @@ tools/build_host.sh "$@"
 if python3 -c "import cryptography" 2>/dev/null; then python3 tools/test_ota_sign.py; else echo "(cryptography not installed: OTA signing check skipped)"; fi
 if python3 -c "import pymavlink" 2>/dev/null; then python3 tools/test_mavlink.py; else echo "(pymavlink not installed: MAVLink check skipped)"; fi
 ./build/sim all
+sh tools/fuzz.sh 50000            # protocol parsers under ASan + UBSan (short; CI and nightly run longer)
+./build/sim soak 8 "$(date +%s)"  # a few random flights, new seed every run
+if command -v cppcheck >/dev/null; then sh tools/static_check.sh; else echo "(cppcheck missing: static analysis skipped)"; fi
 if [ -n "$WASI_SDK" ] || ls -d /opt/wasi/wasi-sdk-* >/dev/null 2>&1; then tools/build_wasm.sh; else echo "(wasi-sdk missing: demo build skipped)"; fi
 python3 tools/embed_web.py
 if command -v node >/dev/null; then node test/web/test_analysis.js && node test/web/test_wasm.js; else echo "(node missing: analyzer tests skipped)"; fi
@@ -22,6 +25,7 @@ if python3 -c "import playwright" 2>/dev/null; then
   python3 test/web/test_pro.py
   python3 test/web/test_pwa.py
   python3 test/web/test_ux.py
+  python3 test/web/test_guide.py
   if [ -f .pio/build/esp32dev/firmware.bin ] && [ -f .pio/build/blackpill_f411ce/firmware.bin ] && python3 -c "import esptool" 2>/dev/null; then
     python3 test/web/test_flasher.py
   else echo "(flasher test needs pio builds + pip install esptool)"; fi

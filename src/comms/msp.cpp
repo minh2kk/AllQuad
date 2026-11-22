@@ -23,6 +23,8 @@ enum : uint16_t {
   MSP2_SENSOR_RANGEFINDER = 0x1F01, MSP2_SENSOR_OPTIC_FLOW = 0x1F02,
 };
 
+constexpr int32_t RANGE_MAX_MM = 100000;  // 100 m: above any rangefinder this decodes
+
 uint8_t crc8DvbS2(uint8_t crc, uint8_t b) {
   crc ^= b;
   for (int i = 0; i < 8; i++) crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0xD5) : (uint8_t)(crc << 1);
@@ -110,7 +112,7 @@ void paramAnswer(B& o, int i) {
   o.u32(x1000(paramGet(bus::config, i)));
   o.u32(x1000(p.min));
   o.u32(x1000(p.max));
-  for (int k = 0; p.name[k] && k < 16; k++) o.u8((uint8_t)p.name[k]);
+  for (int k = 0; k < 16 && p.name[k]; k++) o.u8((uint8_t)p.name[k]);
 }
 int32_t rd32(const uint8_t* p) { return (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24)); }
 }  // namespace
@@ -277,7 +279,7 @@ void MspLink::handle(const MspFrame& f, uint32_t now) {
       Config& w = bus::config;
       uint16_t v = (uint16_t)(f.payload[0] | f.payload[1] << 8);
       if (v < 64) { w.vtx_band = (uint8_t)(v / 8 + 1); w.vtx_channel = (uint8_t)(v % 8 + 1); w.vtx_freq = 0; }
-      else w.vtx_freq = v;
+      else if (v <= 6000) w.vtx_freq = v;  // MHz (anything else: a broken frame, ignored)
       if (f.len >= 3 && f.payload[2] >= 1 && f.payload[2] <= vtx::powerCount(w)) w.vtx_power = f.payload[2];
       if (f.len >= 4) w.vtx_pit = f.payload[3] ? 1 : 0;
       if (f.len >= 5) w.vtx_low_disarmed = f.payload[4] ? 1 : 0;
@@ -289,7 +291,8 @@ void MspLink::handle(const MspFrame& f, uint32_t now) {
     case MSP2_SENSOR_RANGEFINDER: {  // quality u8, distance mm i32 (<0 = out of range)
       if (f.len < 5) return;
       int32_t mm = rd32(f.payload + 1);
-      RangeSample r{mm > 0 ? mm * 0.001f : -1.0f, mm > 0 && f.payload[0] > 0, f.payload[0]};
+      bool ok = mm > 0 && mm <= RANGE_MAX_MM && f.payload[0] > 0;  // beyond 100 m: not a small rangefinder, a broken frame
+      RangeSample r{ok ? mm * 0.001f : -1.0f, ok, f.payload[0]};
       bus::range.publish(r);
       return;  // sensor messages are not answered
     }
@@ -388,7 +391,8 @@ void MspLink::micolink(const uint8_t* f, uint32_t now) {
   // time_ms u32, distance mm u32 (0 = none, >= 10 valid), strength, precision, status, reserved,
   // flow_vel_x / y i16 (cm/s at 1 m = 0.01 rad/s), flow_quality, flow_status, reserved u16
   uint32_t mm = le32(p + 4);
-  RangeSample r{mm >= 10 ? mm * 0.001f : -1.0f, mm >= 10, p[8]};
+  bool ok = mm >= 10 && mm <= (uint32_t)RANGE_MAX_MM;
+  RangeSample r{ok ? mm * 0.001f : -1.0f, ok, p[8]};
   bus::range.publish(r);
   int16_t vx = le16s(p + 12), vy = le16s(p + 14);
   // rangefinder-only modules send the flow fields as zeros: no flow sample then (no "flow 0 quality" shown)

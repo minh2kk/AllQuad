@@ -146,7 +146,25 @@ bool GpsDriver::ubxByte(uint8_t b) {
   course_ = i32le(p + 64) * 1e-5f;
   data_.courseDeg = course_;
   data_.vAcc = u32le(p + 44) * 1e-3f;
+  sanitize();
   return true;
+}
+
+// a corrupted frame that still passes its checksum (or a receiver bug) must not become a position:
+// coordinates outside the globe, NaN or absurd speeds drop the fix for this solution
+void GpsDriver::sanitize() {
+  auto fin = [](double v) { return v == v && v < 1e9 && v > -1e9; };
+  bool ok = fin(data_.lat) && fin(data_.lon) && data_.lat >= -90.0 && data_.lat <= 90.0 && data_.lon >= -180.0 && data_.lon <= 180.0 &&
+            fin(data_.altMsl) && data_.altMsl > -1000.0f && data_.altMsl < 50000.0f && fin(data_.velN) && fin(data_.velE) && fin(data_.velD) &&
+            fabsf(data_.velN) < 300.0f && fabsf(data_.velE) < 300.0f && fabsf(data_.velD) < 300.0f && fin(data_.hAcc) && data_.hAcc >= 0;
+  if (!ok) {
+    data_.fix3d = false;
+    if (!(fin(data_.lat) && fin(data_.lon))) data_.lat = data_.lon = 0;
+    if (!(fin(data_.velN) && fin(data_.velE) && fin(data_.velD))) data_.velN = data_.velE = data_.velD = 0;
+    if (!fin(data_.groundSpeed)) data_.groundSpeed = 0;
+    if (!fin(data_.altMsl)) data_.altMsl = 0;
+    if (!fin(data_.hAcc) || data_.hAcc < 0) data_.hAcc = 999;
+  }
 }
 
 // ---------------------------------------------------------------- NMEA (GGA + RMC)
@@ -166,6 +184,7 @@ bool GpsDriver::nmeaByte(uint8_t b) {
 static double nmeaCoord(const char* f, const char* hemi) {
   if (!*f) return 0;
   double v = atof(f);
+  if (!(v >= 0.0 && v <= 18000.0)) return 999.0;  // not ddmm.mmmm / dddmm.mmmm: sanitize() drops the fix
   int deg = (int)(v / 100);
   double d = deg + (v - deg * 100) / 60.0;
   if (*hemi == 'S' || *hemi == 'W') d = -d;
@@ -199,6 +218,7 @@ bool GpsDriver::parseNmea() {
     float hdop = (float)atof(f[8]);
     data_.hAcc = hdop * 2.5f;  // rough estimate
     data_.altMsl = (float)atof(f[9]);
+    sanitize();
     return true;  // published with or without a fix (satellite count shows progress)
   }
   if (!strcmp(type, "RMC") && n >= 9) {
@@ -209,6 +229,7 @@ bool GpsDriver::parseNmea() {
     data_.velN = data_.groundSpeed * cosf(course_ * fc::DEG2RAD);
     data_.velE = data_.groundSpeed * sinf(course_ * fc::DEG2RAD);
     data_.velD = 0;
+    sanitize();
   }
   return false;
 }

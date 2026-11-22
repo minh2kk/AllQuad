@@ -211,7 +211,7 @@ async def main():
         await pg.wait_for_function("S.status && !S.status.mtest", timeout=5000)
         check(True, "wizard: motor stops by itself after 2 s")
         await pg.click("#wzSteps button[data-i='8']")
-        check("Tóm tắt" in await pg.inner_text("#wzBody"), "wizard: summary step")
+        check("Tóm tắt" in await pg.text_content("#wzBody"), "wizard: summary step")  # (headings are shown upper-case)
         await pg.click("#discardBtn")
 
         # ---- blackbox compare + CSV

@@ -39,7 +39,7 @@ function i18nNode(n) {
     I18N.orig.set(n, v);
     n.nodeValue = v.replace(t, en);
   } else if (n.nodeType === 1) {
-    for (const a of ["title", "placeholder", "aria-label"]) {
+    for (const a of ["title", "placeholder", "aria-label", "data-short"]) {
       const v = n.getAttribute(a);
       if (!v || !I18N_VI.test(v)) continue;
       const en = i18nText(v.trim());
@@ -89,7 +89,7 @@ function i18nSet(on) {
           else m.addedNodes.forEach((x) => (x.nodeType === 1 ? i18nTree(x) : i18nNode(x)));
         }
       });
-      I18N.obs.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["title", "placeholder", "aria-label"] });
+      I18N.obs.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["title", "placeholder", "aria-label", "data-short"] });
     }
   } else i18nRestore();
 }

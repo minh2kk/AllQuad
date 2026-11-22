@@ -330,7 +330,8 @@ function buildPorts() {
     const extra = fn === 1 && has("rx_protocol") ? selectHtml("rx_protocol", [[0, "CRSF / ELRS"], [1, "SBUS"], [2, "iBUS"]])
       : fn === 12 ? '<small class="muted">E32: M0 = M1 = GND, cùng tốc độ UART và kênh ở hai module</small>' : "";
     const pins = S.portPins && S.portPins[idx];  // e.g. "USART1 RX PA10 TX PA9": what to wire
-    return `<tr><td><b>${label}</b>${pins ? `<br><small class="muted num">${esc(pins)}</small>` : ""}</td><td>${selectHtml(p + "_fn", opts)}</td><td>${extra}</td><td>${baud}</td></tr>`;
+    const ic = typeof portIcon === "function" ? `<span class="pico${fn ? " on" : ""}" aria-hidden="true">${portIcon(fn)}</span>` : "";
+    return `<tr${fn ? "" : ' class="unused"'}><td>${ic}<b>${label}</b>${pins ? `<br><small class="muted num">${esc(pins)}</small>` : ""}</td><td>${selectHtml(p + "_fn", opts)}</td><td>${extra}</td><td>${baud}</td></tr>`;
   });
   host.innerHTML = "<tr><th>Cổng</th><th>Chức năng</th><th></th><th>Tốc độ</th></tr>" + rows.join("");
   bindSelects(host);

@@ -39,7 +39,26 @@ void NavEstimator::fuseBaro(const BaroSample& b) {
     zInit_ = true;
   }
   float r = cfg_ ? cfg_->est_baro_noise : 0.4f;
-  kz_.update(0, alt, r * r, 6.0f);
+  float S = kz_.P[0][0] + r * r, y = alt - kz_.pos();
+  if (y * y > 36.0f * S) {
+    // outside the 6-sigma gate: a baro spike is skipped. Rejected for 2 s in a row means the estimate
+    // ran away (accelerometer clipping on an impact, a long vibration burst), not the baro: reset the
+    // height to the baro, keep the velocity but trust it less. Without this the gate kept the baro out
+    // until the covariance had grown enough (tens of seconds) while ALTHOLD / LAND followed a wrong height.
+    if (!baroRejSince_) baroRejSince_ = nowMs_ ? nowMs_ : 1;
+    if (nowMs_ - baroRejSince_ > 2000) {
+      kz_.x[0] = alt;
+      kz_.x[1] *= 0.5f;
+      kz_.P[0][0] = r * r * 4.0f;
+      kz_.P[1][1] = kz_.P[1][1] > 1.0f ? kz_.P[1][1] : 1.0f;
+      kz_.P[0][1] = kz_.P[1][0] = kz_.P[0][2] = kz_.P[2][0] = 0;
+      baroRejSince_ = 0;
+      baroResets_++;
+    }
+  } else {
+    baroRejSince_ = 0;
+    kz_.update(0, alt, r * r);
+  }
   lastBaroMs_ = nowMs_;
 }
 

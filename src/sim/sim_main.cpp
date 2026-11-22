@@ -1661,6 +1661,129 @@ void scenarioAccClip() {
   check("ACC CLIPPING warning when the accelerometer saturates", warn && clips > 100, "%.0f samples", (float)clips);
 }
 
+
+// ------------------------------------------------------------------ soak: many random flights
+// Not part of "all" (long): build/sim soak [flights] [seed]. Each flight: random setup (estimator, loop rate,
+// sensors), random sticks and mode switches every 0.5-3 s, wind, and random faults (radio loss, GPS glitch,
+// baro offset, IMU noise burst, vibration). Then LAND from wherever the drone is. Checked all the time:
+// nothing NaN, motor outputs 0..1, motors stopped when disarmed, failsafe within 1 s of the radio delay,
+// no fly-away; at the end the drone is on the ground and disarmed.
+static uint64_t soakRs = 1;
+static uint32_t srnd(uint32_t n) { soakRs ^= soakRs << 13; soakRs ^= soakRs >> 7; soakRs ^= soakRs << 17; return n ? (uint32_t)(soakRs >> 11) % n : 0; }
+static float sfrand(float a, float b) { return a + (b - a) * (srnd(100001) / 100000.0f); }
+int soakFlights = 20, soakOnly = -1;
+void scenarioSoak() {
+  const char* seedEnv = getenv("SIM_SOAK_SEED");
+  uint64_t seed0 = seedEnv ? strtoull(seedEnv, nullptr, 0) : 1;
+  if (soakOnly < 0) printf("\n== soak: %d random flights (seed %llu) ==\n", soakFlights, (unsigned long long)seed0);
+  int bad = 0, crashes = 0, rcLosses = 0, glitches = 0;
+  float worstLand = 0;
+  for (int fl = soakOnly < 0 ? 0 : soakOnly; fl < (soakOnly < 0 ? soakFlights : soakOnly + 1); fl++) {
+    soakRs = seed0 * 0x9E3779B97F4A7C15ull + (uint64_t)fl * 0xD1B54A32D192ED03ull + 1;
+    srand((unsigned)(seed0 * 7919 + fl));
+    opt = Options();
+    opt.gps = srnd(10) != 0;
+    opt.mag = srnd(8) != 0;
+    opt.range = srnd(3) == 0;
+    opt.flow = opt.range && srnd(2);
+    opt.vibration = srnd(2);
+    const uint16_t loops[] = {1000, 2000};
+    uint16_t loopHz = loops[srnd(2)];
+    uint8_t est = (uint8_t)srnd(2);
+    setup([&](Config& c) { c.loop_hz = loopHz; c.est_type = est; c.rpm_harmonics = opt.vibration ? 3 : 0; });
+    float rcLossAt = srnd(2) ? sfrand(15, 60) : -1, rcLossLen = sfrand(0.5f, 5);
+    float glitchAt = opt.gps && srnd(3) == 0 ? sfrand(15, 60) : -1;
+    float baroAt = srnd(4) == 0 ? sfrand(15, 60) : -1;
+    float noiseAt = srnd(5) == 0 ? sfrand(15, 60) : -1;
+    float vibAt = srnd(4) == 0 ? sfrand(15, 60) : -1;
+    const float flyEnd = 75, total = 170;
+    float nextSeg = 0, lostSince = -1, disarmedSince = -1, landedAt = -1;
+    bool armedOnce = false, failed = false, crashed = false;
+    char why[120] = "";
+    auto fail = [&](const char* w, float t) { if (!failed) { failed = true; snprintf(why, sizeof(why), "%s at %.1f s", w, t); } };
+    if (rcLossAt >= 0) rcLosses++;
+    if (glitchAt >= 0) glitches++;
+    run(total, [&](float t) {
+      rcAlive = !(rcLossAt >= 0 && t >= rcLossAt && t < rcLossAt + rcLossLen) || t >= flyEnd;
+      opt.gpsOffset = (glitchAt >= 0 && t >= glitchAt && t < glitchAt + 3 && t < flyEnd) ? Vec3(25, -15, 0) : Vec3();
+      opt.baroOffset = (baroAt >= 0 && t >= baroAt && t < baroAt + 4 && t < flyEnd) ? 8.0f : 0.0f;
+      opt.imuNoise = (noiseAt >= 0 && t >= noiseAt && t < noiseAt + 2 && t < flyEnd) ? 0.05f : 0.0f;
+      opt.accVib = (vibAt >= 0 && t >= vibAt && t < vibAt + 5 && t < flyEnd) ? 6.0f : 0.0f;
+      if (t < 2) return;
+      if (t < 2.1f) { rcIn.ch[4] = 2000; rcIn.ch[5] = 1500; return; }  // arm, ANGLE
+      if (t < 6) { rcIn.ch[RC_THROTTLE] = (uint16_t)(1000 + 600 * fminf(1.0f, (t - 2.1f) / 2.0f)); return; }
+      if (t >= flyEnd) {  // land from wherever it is, sticks centred
+        rcIn.ch[RC_ROLL] = rcIn.ch[RC_PITCH] = rcIn.ch[RC_YAW] = 1500;
+        rcIn.ch[RC_THROTTLE] = 1500;
+        rcIn.ch[6] = 1000;
+        rcIn.ch[7] = 2000;  // LAND
+        quad.wind = Vec3();
+        return;
+      }
+      if (t >= nextSeg) {
+        nextSeg = t + sfrand(0.5f, 3);
+        rcIn.ch[RC_ROLL] = (uint16_t)(1500 + sfrand(-350, 350));
+        rcIn.ch[RC_PITCH] = (uint16_t)(1500 + sfrand(-350, 350));
+        rcIn.ch[RC_YAW] = (uint16_t)(1500 + sfrand(-300, 300));
+        rcIn.ch[RC_THROTTLE] = (uint16_t)sfrand(1400, 1600);
+        const uint16_t pos3[] = {1000, 1500, 2000};
+        rcIn.ch[5] = pos3[srnd(10) < 2 ? 0 : 1 + srnd(2)];   // ACRO rarely (random sticks in ACRO = tumbling)
+        rcIn.ch[6] = srnd(4) ? 1000 : pos3[1 + srnd(2)];     // POSHOLD / RTH sometimes
+        rcIn.ch[7] = srnd(8) ? 1000 : 1500;                  // MISSION (none uploaded: refused)
+        quad.wind = srnd(3) ? Vec3() : Vec3(sfrand(-1.5f, 1.5f), sfrand(-1.5f, 1.5f), 0);
+      }
+      // the pilot keeps it below ~40 m and within ~150 m (LAND at the end must fit the run)
+      if (alt() > 40) rcIn.ch[RC_THROTTLE] = 1350;
+      if (distHome() > 150) { rcIn.ch[6] = 2000; }  // RTH
+    }, [&](float t) {
+      if (getenv("SIM_SOAK_TRACE") && fmodf(t, 2.5f) < 0.0005f) {
+        trace(t);
+        NavEstimate ne = bus::nav.get();
+        printf("           est alt %.1f vz %.2f valid %d · true vz %.2f · thr %.2f motors %.2f %.2f\n", ne.alt, ne.vz, ne.altValid, -quad.vel.z,
+               (rcIn.ch[RC_THROTTLE] - 1000) / 1000.0f, hal::host::motors[0], hal::host::motors[1]);
+        AttitudeState as = bus::attitude.get();
+        printf("           est N %.1f E %.1f vn %.2f ve %.2f pos %d gps %d glitch %d · tgt %.1f %.1f %.1f · att r %.1f p %.1f y %.1f · head %.1f src %d true y %.1f\n", ne.n, ne.e, ne.vn, ne.ve,
+               ne.posValid, ne.gpsValid, ne.gpsGlitch, ne.tgtN, ne.tgtE, ne.tgtAlt, as.roll * RAD2DEG, as.pitch * RAD2DEG, as.yaw * RAD2DEG, ne.yaw * RAD2DEG, ne.headingSrc, quad.q.yaw() * RAD2DEG);
+        EkfReport k = bus::ekf.get();
+        printf("           ekf yaw %.1f r %.1f p %.1f ystd %.1f trYaw %.2f trH %.2f trP %.2f trV %.2f flt 0x%x hsrc %d resets p%d v%d f%d\n", k.yawDeg, k.rollDeg, k.pitchDeg,
+               k.yawStdDeg, k.trYaw, k.trHeight, k.trGpsPos, k.trGpsVel, k.faults, k.heightSrc, k.posResets, k.velResets, k.filterResets);
+      }
+      if (failed) return;
+      VehicleStatus s = status();
+      armedOnce |= s.armed;
+      bool fin = quad.pos.x == quad.pos.x && quad.pos.y == quad.pos.y && quad.pos.z == quad.pos.z && quad.q.w == quad.q.w;
+      for (int i = 0; i < 4; i++) {
+        float m = hal::host::motors[i];
+        fin &= m == m;
+        if (m < -1e-6f || m > 1.0f + 1e-6f) fail("motor output outside 0..1", t);
+      }
+      if (!fin) fail("NaN in the state", t);
+      if (!s.armed) {
+        if (disarmedSince < 0) disarmedSince = t;
+        if (t - disarmedSince > 0.2f && hal::host::motorsArmed) fail("motors armed while disarmed", t);
+      } else disarmedSince = -1;
+      if (!rcAlive && s.armed) {
+        if (lostSince < 0) lostSince = t;
+        float fsAfter = bus::config.fs_delay_ms * 0.001f + 1.0f;
+        if (t - lostSince > fsAfter && !s.failsafe && s.mode != FlightMode::RTH && s.mode != FlightMode::LAND && s.mode != FlightMode::FAILSAFE &&
+            s.mode != FlightMode::SMART_RTL)
+          fail("radio lost but no failsafe", t);
+      } else lostSince = -1;
+      if (distHome() > 400) fail("fly-away (> 400 m)", t);
+      if (armedOnce && !s.armed && t > 6 && t < flyEnd && alt() > 1.0f) crashed = true;  // crash detection / failsafe disarm in the air
+      if (t >= flyEnd && landedAt < 0 && !s.armed && alt() < 0.3f) landedAt = t;
+    });
+    if (!failed && !armedOnce) fail("never armed", 0);
+    if (!failed && landedAt < 0) fail("not landed + disarmed after LAND", total);
+    if (landedAt > 0) worstLand = fmaxf(worstLand, landedAt - flyEnd);
+    crashes += crashed;
+    if (failed) { bad++; printf("  flight %3d FAIL: %s (gps %d mag %d range %d flow %d vib %d loop %u est %u)\n", fl, why, opt.gps, opt.mag, opt.range, opt.flow, opt.vibration, loopHz, est); }
+    else printf("  flight %3d ok: landed %.1f s after LAND%s\n", fl, landedAt - flyEnd, crashed ? " (disarmed in the air once)" : "");
+  }
+  if (soakOnly < 0) printf("  %d flights, %d with radio loss, %d with GPS glitch, %d disarmed in the air, slowest landing %.1f s\n", soakFlights, rcLosses, glitches, crashes, worstLand);
+  check("Soak: every random flight safe and landed", bad == 0, "%.0f failed", (double)bad);
+}
+
 void scenarioBeginner() {
   printf("\n== beginner: first-flight limits (ACRO switch flies ANGLE, 25 deg, fence -> RTH) ==\n");
   setup([](Config& c) { c.beginner = 1; c.beg_radius = 40; });
@@ -1777,6 +1900,27 @@ int main(int argc, char** argv) {
     }
     printf("\n%d of %d scenarios failed\n", failed, (int)(sizeof(scenarios) / sizeof(scenarios[0])));
     return failed ? 1 : 0;
+  }
+  if (!strcmp(which, "soak")) {  // every flight in a fresh process (clean firmware state), like "all"
+    int n = argc > 2 ? atoi(argv[2]) : 20;
+    const char* seed = argc > 3 ? argv[3] : "1";
+    int failed = 0;
+    printf("\n== soak: %d random flights (seed %s) ==\n", n, seed);
+    for (int fl = 0; fl < n; fl++) {
+      char cmd[600];
+      fflush(stdout);
+      snprintf(cmd, sizeof(cmd), "\"%s\" soakone %s %d", argv[0], seed, fl);
+      if (system(cmd) != 0) failed++;
+    }
+    printf("\n%d of %d soak flights failed\n", failed, n);
+    return failed ? 1 : 0;
+  }
+  if (!strcmp(which, "soakone")) {
+    setenv("SIM_SOAK_SEED", argc > 2 ? argv[2] : "1", 1);
+    soakOnly = argc > 3 ? atoi(argv[3]) : 0;
+    soakFlights = soakOnly + 1;
+    scenarioSoak();
+    return results[0].ok ? 0 : 1;
   }
   for (auto& s : scenarios)
     if (!strcmp(which, s.name)) s.fn();

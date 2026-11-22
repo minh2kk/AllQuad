@@ -7,41 +7,43 @@
 <link rel="icon" href="data:,">
 <style>
 :root {
-  --paper: #F2F5F8;
-  --sheet: #FFFFFF;
-  --ink: #12243A;
-  --ink-2: #5B6C80;
-  --rule: #D9E0E7;
-  --grid: #E7ECF1;
-  --acc: #1E66D0;
-  --soft: #F6F8FA;
-  --shadow: 0 1px 2px rgba(18, 36, 58, .05), 0 6px 20px rgba(18, 36, 58, .05);
-  --roll: #D24B2A;
-  --pitch: #2F8A4E;
-  --yaw: #2C66C9;
-  --amber: #E09B12;
-  --amber-ink: #5A3B00;
-  --danger: #B3261E;
-  --ok: #2F8A4E;
+  /* cockpit (default): deep slate, cyan for actions, green / amber / red only for state */
+  --paper: #0A0F15;
+  --sheet: #111922;
+  --ink: #E6EDF3;
+  --ink-2: #8B9CAD;
+  --rule: #223040;
+  --grid: #1A2532;
+  --acc: #38BDF8;
+  --soft: #16212C;
+  --shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 10px 28px rgba(0, 0, 0, .35);
+  --roll: #FB7185;
+  --pitch: #34D399;
+  --yaw: #60A5FA;
+  --amber: #FBBF24;
+  --amber-ink: #231700;
+  --danger: #F87171;
+  --ok: #34D399;
+  --glow: rgba(56, 189, 248, .16);
   --num: "DIN Alternate", "Bahnschrift", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
   --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --frame: #0E1E31;
-  --on-acc: #FFFFFF;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper: #0D1722; --sheet: #15222E; --ink: #E3EAF0; --ink-2: #9AACBC; --rule: #273746; --grid: #1D2B38;
-    --roll: #F07455; --pitch: #5CC27F; --yaw: #6E9EF0; --amber: #F2B53A; --amber-ink: #2A1C00; --danger: #FF6B5E;
-    --acc: #6EA2F5; --soft: #1A2835; --shadow: 0 1px 2px rgba(0, 0, 0, .3); --frame: #09131D; --on-acc: #06121F;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --paper: #0D1722; --sheet: #15222E; --ink: #E3EAF0; --ink-2: #9AACBC; --rule: #273746; --grid: #1D2B38;
-  --roll: #F07455; --pitch: #5CC27F; --yaw: #6E9EF0; --amber: #F2B53A; --amber-ink: #2A1C00; --danger: #FF6B5E;
-  --acc: #6EA2F5; --soft: #1A2835; --shadow: 0 1px 2px rgba(0, 0, 0, .3); --frame: #09131D; --on-acc: #06121F;
+  --frame: #060A0E;
+  --on-acc: #03131D;
   color-scheme: dark;
+}
+:root[data-theme="light"] {
+    --paper: #F2F5F8; --sheet: #FFFFFF; --ink: #12243A; --ink-2: #5B6C80; --rule: #D9E0E7; --grid: #E7ECF1;
+    --acc: #1E66D0; --soft: #F6F8FA; --shadow: 0 1px 2px rgba(18, 36, 58, .05), 0 6px 20px rgba(18, 36, 58, .05);
+    --roll: #D24B2A; --pitch: #2F8A4E; --yaw: #2C66C9; --amber: #E09B12; --amber-ink: #5A3B00; --danger: #B3261E; --ok: #2F8A4E;
+    --frame: #0E1E31; --on-acc: #FFFFFF; --glow: transparent; color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+    --paper: #F2F5F8; --sheet: #FFFFFF; --ink: #12243A; --ink-2: #5B6C80; --rule: #D9E0E7; --grid: #E7ECF1;
+    --acc: #1E66D0; --soft: #F6F8FA; --shadow: 0 1px 2px rgba(18, 36, 58, .05), 0 6px 20px rgba(18, 36, 58, .05);
+    --roll: #D24B2A; --pitch: #2F8A4E; --yaw: #2C66C9; --amber: #E09B12; --amber-ink: #5A3B00; --danger: #B3261E; --ok: #2F8A4E;
+    --frame: #0E1E31; --on-acc: #FFFFFF; --glow: transparent; color-scheme: light;
+  }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -854,6 +856,171 @@ ol.ff { list-style: none; margin: 6px 0 0; padding: 0; }
   body.simple nav.tabs .tgroup.tg-x { cursor: pointer; }
   body.simple:not(.tabs-open) nav.tabs .tgroup.tg-x::after { content: " +2"; letter-spacing: 0; }
 }
+/* ================= cockpit design layer (v2.2): hierarchy, calm surfaces, colour = state ================= */
+body { background: radial-gradient(1200px 600px at 70% -10%, color-mix(in srgb, var(--acc) 6%, transparent), transparent 60%), var(--paper); background-attachment: fixed; }
+main { max-width: 1320px; }
+/* A. one card style: flat surface, hairline, title row; decorative dots off (status dots stay) */
+.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); padding: 16px 18px; }
+.card-h { gap: 10px; min-height: 28px; }
+.card-h h3, .panel > h3:first-child { font: 650 .82rem/1.2 var(--body); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); margin: 0; }
+.panel > h3:first-child { margin-bottom: 12px; }
+.card-h .dot { display: none; }
+.card-h .dot.ic { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: color-mix(in srgb, var(--acc) 12%, transparent); box-shadow: none; }
+.card-h .dot.ic svg { width: 15px; height: 15px; stroke: var(--acc); fill: none; stroke-width: 2; }
+.ov2 .card-h, .cards > .panel > .card-h:first-child { border-bottom: 1px solid var(--grid); padding-bottom: 10px; margin-bottom: 12px; }
+.card-x { margin-left: auto; color: var(--ink-2); font-size: .82rem; }
+/* section titles: the page pill already names the page -> the repeated heading goes, the intro shrinks to one line */
+main > section[data-page]:not([data-page="-1"]) > h2 { display: none; }
+main > section > h2 { font: 700 1.25rem var(--num); letter-spacing: .01em; color: var(--ink); padding-left: 0; border: 0; }
+main > section > h2::before { display: none; }
+p.clamp { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; max-width: 90ch; }
+p.clamp.two { -webkit-line-clamp: 2; }
+p.clamp::after { content: ""; }
+p.clamp.open { display: block; -webkit-line-clamp: unset; }
+p.clamp:not(.open):hover { color: var(--ink); }
+/* page pills: segmented bar, "Tất cả" quiet at the end */
+.jump { padding: 12px 0 10px; gap: 6px; background: color-mix(in srgb, var(--paper) 88%, transparent); }
+.jump a { border: 1px solid var(--rule); background: var(--sheet); color: var(--ink-2); font-weight: 600; padding: 7px 14px; }
+.jump a:hover { color: var(--ink); background: var(--soft); box-shadow: none; }
+.jump a.on { color: var(--on-acc); background: var(--acc); border-color: var(--acc); box-shadow: 0 0 0 4px var(--glow); }
+.jump a[data-pg="-1"] { margin-left: auto; border-color: transparent; background: none; font-weight: 500; }
+.jump a[data-pg="-1"].on { color: var(--acc); background: none; box-shadow: none; text-decoration: underline; text-underline-offset: 4px; }
+/* buttons */
+.btn { border-radius: 10px; border-color: var(--rule); background: var(--soft); }
+.btn:hover { border-color: color-mix(in srgb, var(--acc) 45%, var(--rule)); }
+.btn.primary { background: var(--acc); border-color: var(--acc); color: var(--on-acc); box-shadow: 0 0 0 4px var(--glow); }
+.btn.ghost { background: transparent; }
+/* D. inputs: comfortable but not wall-to-wall */
+.prow input:not([type=checkbox]):not([type=range]), .prow select, table.ports select, .field select, .field input { background: var(--soft); border-color: var(--rule); border-radius: 10px; }
+.prow input:focus, .prow select:focus, table.ports select:focus { border-color: var(--acc); box-shadow: 0 0 0 4px var(--glow); outline: 0; }
+table.ports select { max-width: 340px; }
+table.ports td:first-child { white-space: nowrap; }
+table.ports tr.unused td:first-child b, table.ports tr.unused small { opacity: .55; }
+.pico { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; margin-right: 10px; vertical-align: middle; float: left;
+  background: var(--soft); border: 1px solid var(--grid); color: var(--ink-2); }
+.pico svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+.pico.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); border-color: color-mix(in srgb, var(--acc) 35%, transparent); }
+/* loose inputs (outside parameter rows) follow the same look */
+:where(main, dialog, .modal) input:is([type=number], [type=text], [type=search], [type=password], :not([type])), :where(main, dialog, .modal) select, :where(main, dialog, .modal) textarea {
+  background: var(--soft); color: var(--ink); border: 1px solid var(--rule); border-radius: 8px; min-height: 34px; padding: 0 8px; }
+/* E. charts: lower, quieter */
+.chart { background: var(--soft); border-color: var(--grid); border-radius: 10px; height: 180px; }
+.chart.tall { height: 240px; }
+.ov-att .att-chart .chart { height: 200px; }
+#rxChart { height: 110px !important; }
+/* F. header: thin glass bar, icon tools, state as a coloured chip */
+.strip { background: color-mix(in srgb, var(--frame) 86%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--rule);
+  box-shadow: none; grid-template-columns: 48px minmax(0, 1fr) auto auto; padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: 8px; }
+.strip canvas { width: 48px; height: 48px; box-shadow: 0 0 0 2px var(--rule); }
+.strip .mode { font-size: 1.35rem; letter-spacing: .04em; }
+.armed-tag { border-radius: 999px; padding: 2px 10px; font: 700 .72rem var(--body); letter-spacing: .06em; text-transform: uppercase; }
+.armed-tag.off { border: 1px solid color-mix(in srgb, var(--ok) 50%, transparent); color: var(--ok); opacity: 1; background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.armed-tag.on { background: var(--danger); color: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 25%, transparent); }
+@media (prefers-reduced-motion: no-preference) { .armed-tag.on { animation: armpulse 1.6s ease-in-out infinite; } @keyframes armpulse { 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--danger) 8%, transparent); } } }
+.st-btn { width: 36px; padding: 0; justify-content: center; border-radius: 10px; background: transparent; border-color: var(--rule); color: var(--ink-2); }
+.st-btn:hover { color: var(--ink); background: var(--soft); }
+.st-btn span, .st-btn kbd { display: none; }
+#langBtn { width: auto; padding: 0 10px; }
+#langBtn span { display: inline; font: 700 .72rem var(--body); letter-spacing: .06em; }
+.st-btn[aria-pressed="true"] { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 50%, transparent); background: color-mix(in srgb, var(--acc) 10%, transparent); }
+.strip .bat b { font-size: 1.4rem; }
+/* sidebar: same surface family as the page */
+@media (min-width: 900px) {
+  nav.tabs { background: var(--frame); border-right: 1px solid var(--rule); }
+  nav.tabs button { color: var(--ink-2); }
+  nav.tabs button:hover { color: var(--ink); background: var(--soft); }
+  nav.tabs button[aria-selected="true"] { color: var(--ink); background: color-mix(in srgb, var(--acc) 14%, transparent); border-left-color: var(--acc); box-shadow: inset 3px 0 0 var(--acc); }
+  nav.tabs button[aria-selected="true"] svg { stroke: var(--acc); }
+  nav.tabs .brand { color: var(--ink); border-bottom-color: var(--rule); }
+  nav.tabs .brand i { background: linear-gradient(135deg, var(--acc), #2563EB); color: var(--on-acc); }
+}
+@media (min-width: 1200px) { nav.tabs button[aria-selected="true"] { box-shadow: none; } }
+/* B. overview cockpit: one status hero, a row of instruments, then the live panels */
+#blockers.ready { position: relative; padding: 0; border: 1px solid var(--rule); background:
+  linear-gradient(100deg, color-mix(in srgb, var(--rc, var(--ink-2)) 16%, var(--sheet)) 0%, var(--sheet) 46%); }
+#blockers.ready::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--rc, var(--ink-2)); box-shadow: 0 0 18px var(--rc, transparent); }
+#blockers .ready-h { padding: 18px 22px 14px; gap: 16px; }
+#blockers .ready-ic { width: 48px; height: 48px; border-radius: 14px; }
+#blockers .ready-ic::after { width: 16px; height: 16px; }
+#blockers .ready-t h3 { font: 700 1.45rem/1.15 var(--num); letter-spacing: .01em; color: var(--ink); text-transform: none; }
+#blockers .ready-t p { font-size: .86rem; }
+#blockers .chips { padding: 0 22px 16px; }
+#blockers #todoPanel { margin: 0; border: 0; border-top: 1px solid var(--grid); border-radius: 0; box-shadow: none; background: transparent; padding: 10px 22px 12px; }
+#blockers #todoPanel .card-h { border: 0; padding: 0; margin: 0; }
+.ov-side { order: -1; grid-column: span 12 !important; }
+.ov-side .dash { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px; height: auto !important; }
+@media (min-width: 760px) { .ov-side .dash { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+@media (min-width: 1180px) {
+  .ov-side .dash { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+  .ov-att { grid-column: span 8; order: 1; } .ov-sys { grid-column: span 4; order: 2; }
+  .ov-rc { grid-column: span 7; order: 3; } .ov-mot { grid-column: span 5; order: 4; }
+}
+.tile { min-height: 0 !important; padding: 12px 14px 12px 16px !important; border-radius: 12px; background: var(--sheet); border-color: var(--rule); box-shadow: none; }
+.tile::before { width: 3px; top: 12px; bottom: 12px; box-shadow: 0 0 10px var(--tc, transparent); }
+.tile .k { font-size: .66rem; letter-spacing: .1em; }
+.tile .v { font-size: 1.28rem !important; margin-top: 4px !important; }
+.tile .s { font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .ring { width: 22px !important; height: 22px !important; top: 12px !important; right: 12px !important; }
+.tile .ring::after { inset: 4px; }
+.tile.ok .v { color: var(--ink); }
+.tile.warn .v { color: var(--amber); }
+.stick .pad { border-color: var(--rule); background:
+  linear-gradient(var(--grid), var(--grid)) center / 1px 100% no-repeat, linear-gradient(var(--grid), var(--grid)) center / 100% 1px no-repeat,
+  radial-gradient(circle at center, color-mix(in srgb, var(--acc) 10%, var(--soft)) 0 35%, var(--soft) 70%); }
+.stick .pad i { box-shadow: 0 0 0 5px var(--glow), 0 0 14px var(--acc); }
+.sw, .sen { background: var(--soft); border-color: var(--grid); }
+/* status colours carry meaning */
+.note { border-radius: 10px; }
+.note.bad { background: color-mix(in srgb, var(--danger) 12%, var(--sheet)); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+/* G. phone */
+@media (max-width: 899px) {
+  nav.tabs { background: color-mix(in srgb, var(--frame) 92%, transparent); backdrop-filter: blur(10px); border-top: 1px solid var(--rule); }
+  nav.tabs button { white-space: nowrap; }
+  nav.tabs button[data-short] { font-size: 0; }
+  nav.tabs button[data-short]::after { content: attr(data-short); font-size: .72rem; }
+  nav.tabs button[aria-selected="true"] { color: var(--acc); border-top-color: var(--acc); }
+  body.navsheet nav.tabs button[data-short] { font-size: .72rem; }
+  body.navsheet nav.tabs button[data-short]::after { content: none; }
+  .strip { grid-template-columns: 40px minmax(0, 1fr) auto; row-gap: 6px; }
+  .strip canvas { width: 40px; height: 40px; }
+  .strip .bat { display: none; }
+  .strip .mode { font-size: 1.15rem; }
+  #blockers .ready-h { padding: 14px 16px 10px; }
+  #blockers .ready-t h3 { font-size: 1.2rem; }
+  #blockers .chips, #blockers #todoPanel { padding-left: 16px; padding-right: 16px; }
+}
+@media (max-width: 520px) { .strip-tools .st-btn:not(#langBtn):not(#searchBtn) { display: none; } }
+/* toasts: bottom, never over the content being read */
+.toast { top: auto; bottom: calc(24px + env(safe-area-inset-bottom)); background: var(--soft); color: var(--ink); border: 1px solid var(--rule); box-shadow: 0 12px 32px rgba(0, 0, 0, .45); }
+@media (max-width: 899px) { .toast { bottom: calc(84px + env(safe-area-inset-bottom)); } }
+body.barshow .toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
+@media (prefers-reduced-motion: no-preference) { .toast.show { animation: rise .2s ease-out; } @keyframes rise { from { transform: translate(-50%, 8px); opacity: 0; } } }
+/* H. calm motion: a page fades in */
+@media (prefers-reduced-motion: no-preference) {
+  main > section:not([hidden]) { animation: secin .22s ease-out; }
+  @keyframes secin { from { opacity: 0; transform: translateY(4px); } }
+}
+.num, .tile .v, .hrow b, .kv dd { font-variant-numeric: tabular-nums; }
+/* light / outdoor keep their own look: undo the cockpit glow */
+:root[data-theme="light"] body, :root[data-theme="sun"] body { background: var(--paper); }
+:root[data-theme="light"] .strip { background: linear-gradient(100deg, #0E1E31, #17375C); color: #EAF1F7; }
+:root[data-theme="light"] .st-btn { color: #DCE7F2; border-color: rgba(255, 255, 255, .14); }
+:root[data-theme="sun"] .strip { background: #000; color: #fff; }
+@media (prefers-color-scheme: light) { :root[data-theme="auto"] body { background: var(--paper); } :root[data-theme="auto"] .st-btn { color: #DCE7F2; border-color: rgba(255, 255, 255, .14); } }
+@media (min-width: 900px) {
+  :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs button { color: #A9BCD0; }
+  :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs button:hover, :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs button[aria-selected="true"],
+  :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs .brand { color: #fff; }
+  :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs button:hover { background: rgba(255, 255, 255, .08); }
+  :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs .brand { border-bottom-color: rgba(255, 255, 255, .1); }
+  :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs button[aria-selected="true"] svg { stroke: #6EA2F5; }
+  :root:is([data-theme="light"], [data-theme="sun"]) nav.tabs .tgroup { color: #8FA3B8; }
+}
+:root[data-theme="sun"] .st-btn { color: #fff; border-color: rgba(255, 255, 255, .4); }
+@media (min-width: 900px) and (prefers-color-scheme: light) {
+  :root[data-theme="auto"] nav.tabs button { color: #A9BCD0; }
+  :root[data-theme="auto"] nav.tabs button:hover, :root[data-theme="auto"] nav.tabs button[aria-selected="true"], :root[data-theme="auto"] nav.tabs .brand { color: #fff; }
+}
 </style>
 </head>
 <body>
@@ -866,7 +1033,7 @@ ol.ff { list-style: none; margin: 6px 0 0; padding: 0; }
   <div class="strip-tools">
     <button type="button" class="st-btn" id="searchBtn" title="Tìm tham số / chức năng (Ctrl+K)" aria-label="Tìm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><span>Tìm</span><kbd>Ctrl K</kbd></button>
     <button type="button" class="st-btn" id="viewBtn" title="Chế độ hiển thị: đơn giản / nâng cao" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h6"/></svg><span id="viewTxt">Nâng cao</span></button>
-    <button type="button" class="st-btn" id="themeQuick" title="Giao diện: tự động / sáng / tối / ngoài trời"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg><span id="themeTxt">Tự động</span></button>
+    <button type="button" class="st-btn" id="themeQuick" title="Giao diện: buồng lái (tối) / sáng / theo máy / ngoài trời"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg><span id="themeTxt">Buồng lái</span></button>
   </div>
   <div class="bat"><b id="sVolt">—</b><span id="sBat"></span></div>
 </header>
@@ -1243,7 +1410,7 @@ ol.ff { list-style: none; margin: 6px 0 0; padding: 0; }
         <button class="btn primary" id="saveBtn">Lưu vào flash</button>
         <button class="btn" data-cmd="reboot">Khởi động lại FC</button>
         <button class="btn danger" data-cmd="defaults">Về mặc định</button>
-        <button class="btn" id="themeBtn">Đổi giao diện sáng / tối</button>
+        <button class="btn" id="themeBtn">Đổi giao diện buồng lái / sáng</button>
         <button class="btn" id="comClose" hidden>Ngắt kết nối USB</button>
       </div>
       <p class="muted" style="margin-bottom:0">Áp dụng: thay đổi có hiệu lực ngay nhưng mất khi tắt nguồn. Lưu vào flash: giữ lại. Hiệu chuẩn cảm biến nằm ở tab Cảm biến.</p>
@@ -3147,12 +3314,13 @@ $("discardBtn").onclick = () => {
 };
 $("themeBtn").onclick = () => {
   const r = document.documentElement;
-  const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  r.dataset.theme = dark ? "light" : "dark";
+  const t = r.dataset.theme || "";
+  const dark = !(t === "light" || t === "sun" || (t === "auto" && matchMedia("(prefers-color-scheme: light)").matches));
+  if (dark) r.dataset.theme = "light"; else delete r.dataset.theme;
   try { localStorage.setItem("aq-theme", r.dataset.theme); } catch (e) {}
   drawRates(); drawFilters(); drawBlackbox();
 };
-try { const t = localStorage.getItem("aq-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+try { const t = localStorage.getItem("aq-theme"); if (t && t !== "dark") document.documentElement.dataset.theme = t; } catch (e) {}  // "dark" = the cockpit default now
 window.addEventListener("resize", () => { stripHeight(); drawRates(); drawFilters(); drawBlackbox(); drawNav(); });
 $("secSsid").oninput = () => { $("secSsid").dataset.touched = "1"; };
 /*TOOLS_JS*/
@@ -3160,6 +3328,7 @@ $("secSsid").oninput = () => { $("secSsid").dataset.touched = "1"; };
 /*PRO_JS*/
 /*UX_JS*/
 /*GUIDE_JS*/
+/*DESIGN_JS*/
 /*I18N_JS*/
 // opened from a file or the laptop launcher (?usb): connect over USB; served by the drone: WiFi
 // the laptop / phone copy (AllQuad-Configurator.html carries the demo firmware) also when hosted on https

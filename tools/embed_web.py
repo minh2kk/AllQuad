@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bundle the web configurator into firmware.
 
-src/web/ui/index.html + analysis.js + tools.js + extras.js + pro.js + ux.js + guide.js + i18n.js
+src/web/ui/index.html + analysis.js + tools.js + extras.js + pro.js + ux.js + guide.js + design.js + i18n.js
   -> build/web/index.html            (single file, minified, open in a browser for preview)
   -> build/web/index.dev.html        (same, not minified)
   -> build/web/AllQuad-Configurator.html  (same page for a laptop: open in Chrome/Edge, connect USB;
@@ -42,7 +42,9 @@ def bundle():
         guide = f.read()
     with open(os.path.join(UI, "i18n.js"), encoding="utf-8") as f:
         i18n = f.read()
-    for ph in ("/*ANALYSIS_JS*/", "/*TOOLS_JS*/", "/*EXTRAS_JS*/", "/*PRO_JS*/", "/*UX_JS*/", "/*GUIDE_JS*/", "/*I18N_JS*/"):
+    with open(os.path.join(UI, "design.js"), encoding="utf-8") as f:
+        design = f.read()
+    for ph in ("/*ANALYSIS_JS*/", "/*TOOLS_JS*/", "/*EXTRAS_JS*/", "/*PRO_JS*/", "/*UX_JS*/", "/*GUIDE_JS*/", "/*DESIGN_JS*/", "/*I18N_JS*/"):
         if ph not in html:
             sys.exit("index.html: placeholder %s missing" % ph)
     html = html.replace("/*ANALYSIS_JS*/", js.replace("</script", "<\\/script"))
@@ -51,6 +53,7 @@ def bundle():
     html = html.replace("/*PRO_JS*/", pro.replace("</script", "<\\/script"))
     html = html.replace("/*UX_JS*/", ux.replace("</script", "<\\/script"))
     html = html.replace("/*GUIDE_JS*/", guide.replace("</script", "<\\/script"))
+    html = html.replace("/*DESIGN_JS*/", design.replace("</script", "<\\/script"))
     return html.replace("/*I18N_JS*/", i18n.replace("</script", "<\\/script"))
 
 

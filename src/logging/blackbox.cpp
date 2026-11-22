@@ -95,7 +95,7 @@ size_t Blackbox::encodeDelta(const Record& prev, const Record& cur, uint8_t* out
     int64_t d = fieldValue(cur, F[i]) - fieldValue(prev, F[i]);
     if (!d) continue;
     mask[i >> 3] |= (uint8_t)(1 << (i & 7));
-    uint64_t z = ((uint64_t)d << 1) ^ (uint64_t)(d >> 63);  // zig-zag
+    uint64_t z = ((uint64_t)d << 1) ^ (0 - ((uint64_t)d >> 63));  // zig-zag
     while (z >= 0x80) { *o++ = (uint8_t)(z | 0x80); z >>= 7; }
     *o++ = (uint8_t)z;
   }

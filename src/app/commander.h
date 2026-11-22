@@ -40,8 +40,12 @@ class Commander {
   // running for the rangefinder height, the home position and as the fallback
   fc::Ekf ekf_;
   fc::NavEstimate navEst_{};   // what the controllers use (est_ or EKF)
-  uint32_t seqAtt_ = 0, ekfZeroVelMs_ = 0;
+  uint32_t seqAtt_ = 0, ekfZeroVelMs_ = 0, ekfTiltBadSince_ = 0;
+  uint16_t ekfTiltResets_ = 0;
   bool attNew_ = false;
+  bool imuNew_ = false;
+  fc::Vec3 imuDAng_, imuDVel_;
+  float imuDt_ = 0;
   double ekfHomeLat_ = 0, ekfHomeLon_ = 0;
   bool ekfHomeKnown_ = false, ekfYawOk_ = false, ekfGpsYawInit_ = false;
   uint16_t ekfFaultsPrev_ = 0;

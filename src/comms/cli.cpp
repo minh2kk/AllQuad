@@ -213,7 +213,8 @@ void Cli::cmdSelftest() {
     for (int i = 0; i < os::taskCount(); i++) {
       os::TaskStats t = os::taskStats(i);
       over += t.overruns;
-      if (t.stackFree && t.stackFree < worstFree) { worstFree = t.stackFree; worst = i; }
+      uint32_t sf = os::taskStackFree(i);
+      if (sf && sf < worstFree) { worstFree = sf; worst = i; }
     }
     if (worst >= 0 && worstFree < 256) line(2, "stack", "task %s has only %lu B free", os::taskStats(worst).name, (unsigned long)worstFree);
     else if (worst >= 0 && worstFree < 512) line(1, "stack", "task %s has %lu B free", os::taskStats(worst).name, (unsigned long)worstFree);
@@ -415,7 +416,7 @@ void Cli::cmdTasks() {
   for (int i = 0; i < os::taskCount(); i++) {
     os::TaskStats t = os::taskStats(i);
     print("%-10s %7u %7u %7u %5u%% %8u %9u\r\n", t.name, (unsigned)(1000000 / t.periodUs), (unsigned)t.lastUs,
-          (unsigned)t.maxUs, (unsigned)(t.lastUs * 100 / t.periodUs), (unsigned)t.overruns, (unsigned)t.stackFree);
+          (unsigned)t.maxUs, (unsigned)(t.lastUs * 100 / t.periodUs), (unsigned)t.overruns, (unsigned)os::taskStackFree(i));
   }
   os::resetTaskStats();
 }
@@ -537,7 +538,7 @@ void Cli::exec(char* line, uint32_t now) {
         default: snprintf(what, sizeof(what), "board / chip (USB, SWD, flash ...)"); break;
       }
       if (a1) {  // filter: pin name or function text, case-insensitive
-        char all[96];
+        char all[160];
         snprintf(all, sizeof(all), "%s %s %s %s", pin, what, use, hal::pinGroupName(u.group));
         bool hit = false;
         for (char* p = all; *p && !hit; p++) {

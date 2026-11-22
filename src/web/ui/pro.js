@@ -953,8 +953,8 @@ $("viewBtn").onclick = () => { setSimple(!document.body.classList.contains("simp
   buildPid = function () { _bp(); markAdv(); tuneHost(); if (shown("params")) profHost(); };
 }
 
-// ---------------------------------------------------------------- theme: auto / light / dark / outdoor
-const THEMES = [["", "Tự động"], ["light", "Sáng"], ["dark", "Tối"], ["sun", "Ngoài trời"]];
+// ---------------------------------------------------------------- theme: cockpit (dark, default) / light / follow the system / outdoor
+const THEMES = [["", "Buồng lái"], ["light", "Sáng"], ["auto", "Theo máy"], ["sun", "Ngoài trời"]];
 function themeShow() {
   const t = document.documentElement.dataset.theme || "";
   $("themeTxt").textContent = (THEMES.find(([k]) => k === t) || THEMES[0])[1];

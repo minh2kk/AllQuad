@@ -38,6 +38,7 @@ uint32_t timeMs() { return (uint32_t)(nowUs / 1000); }
 int taskCount() { return nTasks; }
 void heapStats(uint32_t& freeNow, uint32_t& lowest) { freeNow = lowest = 0; }
 TaskStats taskStats(int i) { return tasks[i].stats; }
+uint32_t taskStackFree(int i) { return tasks[i].stats.stackFree; }
 void resetTaskStats() {
   for (int i = 0; i < nTasks; i++) tasks[i].stats.maxUs = 0;
 }

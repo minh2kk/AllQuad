@@ -354,6 +354,17 @@ void heapStats(uint32_t& freeNow, uint32_t& lowest) {
   lowest = (uint32_t)xPortGetMinimumEverFreeHeapSize();
 }
 TaskStats taskStats(int i) { return tasks[i].stats; }
+// fresh stack high-water mark: walks that task's stack once (CLI / self-test only, not every poll)
+uint32_t taskStackFree(int i) {
+  if (tasks[i].handle) {
+#if defined(ESP32)
+    tasks[i].stats.stackFree = uxTaskGetStackHighWaterMark(tasks[i].handle);
+#else
+    tasks[i].stats.stackFree = uxTaskGetStackHighWaterMark(tasks[i].handle) * sizeof(StackType_t);
+#endif
+  }
+  return tasks[i].stats.stackFree;
+}
 void resetTaskStats() {
   for (int i = 0; i < nTasks; i++) tasks[i].stats.maxUs = 0;
 }

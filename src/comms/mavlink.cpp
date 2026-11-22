@@ -48,7 +48,7 @@ size_t mavPack(uint8_t* o, uint32_t msgid, const uint8_t* payload, uint8_t len, 
   while (len > 1 && payload[len - 1] == 0) len--;  // MAVLink 2 payload truncation
   o[0] = 0xFD; o[1] = len; o[2] = 0; o[3] = 0; o[4] = seq; o[5] = sysid; o[6] = compid;
   o[7] = (uint8_t)msgid; o[8] = (uint8_t)(msgid >> 8); o[9] = (uint8_t)(msgid >> 16);
-  memcpy(o + 10, payload, len);
+  if (len) memcpy(o + 10, payload, len);
   uint16_t crc = 0xFFFF;
   for (size_t i = 1; i < 10u + len; i++) crc = mavCrcAccumulate(o[i], crc);
   crc = mavCrcAccumulate((uint8_t)mavCrcExtra(msgid), crc);

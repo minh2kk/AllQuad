@@ -168,7 +168,8 @@ Cùng một giao diện, ba cách kết nối:
 - Mỗi tham số hiện tên kỹ thuật (`roll_p`…), giới hạn và giải thích; các thông số hay chỉnh (P / I / D / F, lọc, idle, rates, failsafe…) có thêm dòng **↑ tăng thì… · ↓ giảm thì…**.
 - **Thuật ngữ:** nút **?** cạnh tiêu đề có thuật ngữ (PID, notch, RPM filter, failsafe, EKF…) mở giải thích ngắn; tìm "thuật ngữ" (Ctrl+K) mở cả danh sách ~40 mục.
 - Chế độ **Đơn giản** còn gập tab Tham số và CLI dưới nhãn *Công cụ* (bấm nhãn để hiện lại); tìm kiếm và liên kết vẫn mở được.
-- Giao diện sáng / tối; trên điện thoại menu nằm dưới đáy.
+- **Giao diện buồng lái (mặc định, tối):** nền xám than, màu xanh lơ chỉ cho nút bấm và mục đang chọn; xanh lá / vàng / đỏ chỉ dùng cho trạng thái (ARMED là nhãn đỏ nhấp nháy). Nút mặt trời trên thanh trên cùng đổi giữa *Buồng lái* / *Sáng* / *Theo máy* (theo cài đặt hệ điều hành) / *Ngoài trời* (tương phản tối đa dưới nắng).
+- **Bố cục gọn:** Tổng quan có một dải trạng thái lớn (Sẵn sàng / bị chặn vì…, kèm "Cấu hình còn thiếu"), một hàng 6 chỉ số, rồi tư thế, cảm biến, tay điều khiển, motor. Tiêu đề thẻ có biểu tượng; đoạn giải thích dài thu còn 1–2 dòng (bấm để đọc hết); mỗi cổng serial có biểu tượng theo chức năng, cổng không dùng mờ đi; thông báo hiện ở đáy màn hình. Trên điện thoại menu nằm dưới đáy, nhãn ngắn một dòng.
 - **English:** nút 🌐 VI / EN trên thanh trên cùng (và ở màn hình kết nối / đăng nhập): dịch ~1 350 câu chữ của giao diện, giữ nguyên số đo; bật lại VI là về nguyên văn. Câu chưa có trong bảng vẫn hiện tiếng Việt; thêm câu: `node tools/i18n/collect.js` rồi bổ sung `tools/i18n/en.json`.
 
 | Tab | Chức năng chính | Trường / tham số quan trọng |
@@ -739,9 +740,12 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Hạng mục | Kết quả |
 |---|---|
 | Biên dịch PlatformIO | 12 / 12 môi trường (6 ESP32, 5 STM32 + QEMU, cầu WiFi C3) |
-| Unit test (kèm AddressSanitizer + UBSan) | **234 / 234** (gồm A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v31, ghi gyro tần số cao, thứ tự kênh RC, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
+| Unit test (kèm AddressSanitizer + UBSan) | **236 / 236** (gồm kẹp cấu hình về giới hạn khi nạp, A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v31, ghi gyro tần số cao, thứ tự kênh RC, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
 | Mô phỏng toàn hệ thống | 43 kịch bản đạt (chọn IMU tốt hơn khi chưa arm, EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
-| QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset |
+| QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset + báo cáo stack còn trống từng task (CI fail nếu task nào < 256 B) |
+| Fuzz bộ đọc giao thức (`tools/fuzz.sh`, ASan + UBSan) | 10 bộ đọc (CRSF/SBUS…, MSP, Micolink, MAVLink, GPS UBX/NMEA, cảm biến, AqLink, CLI, 4-way, cấu hình) × 3 seed × 1 triệu mẫu: không crash, không lỗi sanitizer, mọi tham số trong giới hạn. Đã sửa: tần số VTX ngoài dải, rangefinder Micolink 3000 km, GPS fix với toạ độ ngoài Trái Đất, tràn số NMEA, memcpy null trong MAVLink |
+| Phân tích tĩnh (`tools/static_check.sh`) | cppcheck sạch (cảnh báo giả đã xem xét nằm trong `tools/cppcheck.supp`); tuỳ chọn clang-tidy |
+| Soak (`./build/sim soak N seed`) | **360 / 360** chuyến bay ngẫu nhiên 170 s (ACRO/ANGLE/POSHOLD/RTH, gió, mất sóng, GPS nhảy, baro lệch, rung, nhiễu IMU, EKF / Kalman, loop 1/2 kHz): không NaN, motor trong 0..1, failsafe đúng hạn, không bay mất, LAND xong và disarm. Đã sửa 3 lỗi thật chỉ lộ ra sau va chạm / lộn nhào: EKF mất một nửa delta góc ở loop 2 kHz (tư thế EKF trôi), EKF không tự sửa khi tư thế lệch AHRS, Kalman độ cao kẹt cổng 6σ sau va chạm |
 | Script Lua EdgeTX | `aqtlm` + `aqcfg` chạy trong Lua 5.2, `aqcfg` nói chuyện với mã MSP-over-CRSF thật |
 | MAVLink đối chiếu pymavlink | 17 / 17 |
 | Bộ phân tích blackbox | 24 / 24 (khung gyro 4 kHz, gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp, tóm tắt chuyến bay, pin yếu) |
@@ -749,7 +753,7 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Ký số firmware OTA | 6 / 6 (`tools/test_ota_sign.py`; kiểm chéo với mbedtls như firmware) |
 | Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, bản đồ offline, PWA, nạp firmware, thẻ SD, hướng dẫn bay lần đầu (thử nghiêng / failsafe), tìm hướng optical flow (16 kiểu lắp), thuật ngữ, gyro tần số cao, giao diện tiếng Anh |
 
-**CI:** `.github/workflows/ci.yml` chạy kiểm tra sơ đồ chân, unit test (cả sanitizer), mô phỏng, bộ phân tích, build 11 môi trường, khởi động F405 trong QEMU và toàn bộ test giao diện (Playwright, drone ảo WebAssembly) cho mỗi lần push. File firmware giữ 14 ngày. Để dùng: đưa thư mục dự án lên GitHub (`git init`, `git add .`, `git commit`, `git push`).
+**CI:** `.github/workflows/ci.yml` chạy kiểm tra sơ đồ chân, unit test (cả sanitizer), mô phỏng, bộ phân tích, cppcheck, fuzz và soak (mỗi lần chạy một seed mới; bản đêm chạy dài 300 chuyến), build 11 môi trường, khởi động F405 trong QEMU kèm bảng stack từng task và toàn bộ test giao diện (Playwright, drone ảo WebAssembly) cho mỗi lần push. File firmware giữ 14 ngày. Để dùng: đưa thư mục dự án lên GitHub (`git init`, `git add .`, `git commit`, `git push`).
 
 **Chưa kiểm chứng trên phần cứng:** DShot / bidir trên chip thật, RMT, OSD MAX7456, khởi tạo từng cảm biến, thẻ SD trên chip thật (cả `sd_dma`), watchdog IWDG và lưu A/B trên flash thật, cầu WiFi ESP32-C3, script `aqcfg` trên tay thật, các board F405 / F722 / C6 / P4. Khi thử trên bàn, gửi kèm kết quả `status`, `perf`, `tasks`, `sd`, `esc` để kiểm tra.
 

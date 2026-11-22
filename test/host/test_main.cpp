@@ -1126,6 +1126,16 @@ static void testConfigMigration() {
   Config bad = old;
   ((uint8_t*)&bad)[20] ^= 1;
   CHECK(!configMigrate(bad), "Config migration refuses a corrupt old config");
+  // every setting back inside its limits on load
+  Config d;
+  configDefaults(d);
+  CHECK(configClamp(d) == 0 && configValid(d), "Config clamp: the defaults are all within their limits");
+  d.pid[0].p = 1e6f;
+  d.hover_throttle = NAN;
+  d.loop_hz = 60000;
+  int fixed = configClamp(d);
+  CHECK(fixed == 3 && configValid(d) && d.pid[0].p < 1e6f && d.hover_throttle == d.hover_throttle && d.loop_hz < 60000,
+        "Config clamp: out-of-range / NaN settings fixed and the config resealed");
 }
 
 static void testCliMotorSensors() {

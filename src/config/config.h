@@ -399,5 +399,8 @@ inline const RateProfile& profileRate(const Config& c, int profile, int axis) {
 int paramFind(const char* name);
 float paramGet(const Config& c, int i);
 bool paramSet(Config& c, int i, float v);  // clamps, false if out of range
+// every parameter back inside its limits (NaN -> default); returns how many were fixed. Run on the
+// settings loaded from flash: a setting written out of range by any path never reaches the flight code.
+int configClamp(Config& c);
 
 }  // namespace fc

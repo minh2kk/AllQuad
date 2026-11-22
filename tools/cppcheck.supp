@@ -1,0 +1,11 @@
+// cppcheck findings checked by hand and found harmless (tools/static_check.sh)
+// motor_out is range-checked one line above (index 0..3)
+negativeIndex:src/web/webapi.cpp
+// lo >= 2 and hi <= N/2 - 2, so best - 1 / best + 1 stay inside mag[]
+negativeIndex:src/filter/dynamic_notch.cpp
+// function-pointer lambdas: web::Sink is a pointer type, not an object
+passedByValue:src/comms/aqlink.cpp
+// all-zero bytes are 0.0f on every target (IEEE 754)
+memsetClassFloat:src/config/config.cpp
+// buf_ is written (len_) before it is read
+uninitMemberVar:src/web/webapi.h

@@ -337,6 +337,7 @@ FAST_CODE void fastTask(void*) {
     st.accEarth = loop.takeAccEarthAverage();
     st.accBody = loop.accFiltered();
     loop.takeDelta(st.dAng, st.dVel, st.dt);
+    bus::addImuDelta(st.dAng, st.dVel, st.dt);
     st.vibration = loop.accVibration();
     st.accClips = loop.accClips();
     st.valid = imuOk && loop.gyroCalibrated();
@@ -821,6 +822,11 @@ void loadConfig() {
   if (!(ok && configValid(bus::config))) {
     if (configMigrate(bus::config)) bus::postMessage("Settings kept from the previous firmware");
     else configDefaults(bus::config);
+    hal::storageSave(hal::Slot::CONFIG, &bus::config, sizeof(Config));
+  }
+  // every setting back inside its limits (a config written by a buggy tool or a bit flip in flash)
+  if (configClamp(bus::config)) {
+    bus::postMessage("Settings out of range were reset to their limits");
     hal::storageSave(hal::Slot::CONFIG, &bus::config, sizeof(Config));
   }
   if (bus::config.loop_hz < 500 || bus::config.loop_hz > AQ_LOOP_HZ_MAX) bus::config.loop_hz = 1000;
