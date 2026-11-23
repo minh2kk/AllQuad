@@ -81,9 +81,32 @@ jobs:
       - name: Configurator UI tests
         run: |
           bash tools/build_host.sh && node test/web/test_analysis.js >/dev/null   # simulator logs (build/web/normal.bin) for the blackbox tests
-          for t in test_ui test_configurator test_tools test_pro test_extras test_pwa test_ux test_guide test_flasher; do
+          for t in test_ui test_configurator test_tools test_pro test_extras test_pwa test_ux test_guide; do
             echo "== $t"; python3 test/web/$t.py /tmp/shots || exit 1
           done
+  flasher:
+    # the configurator's firmware flasher writes the real images built by the firmware job
+    needs: firmware
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          path: .pio/build
+      - name: Firmware images where the test expects them (.pio/build/<env>/)
+        run: for d in .pio/build/firmware-*; do mv "$d" ".pio/build/${d#.pio/build/firmware-}"; done; ls .pio/build
+      - name: Page bundle + flasher test
+        run: |
+          npm install --no-audit --no-fund
+          pip install playwright zopfli esptool pyserial
+          python3 -m playwright install --with-deps chromium
+          python3 tools/embed_web.py
+          python3 test/web/test_flasher.py /tmp/shots
   firmware:
     runs-on: ubuntu-24.04
     strategy:
