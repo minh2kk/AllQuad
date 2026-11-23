@@ -39,8 +39,8 @@ class Icm456xx : public ImuDriver {
     hal::delayMs(1);
     hal::spiWrite(dev_, 0x1B, 0x10 | 0x05);  // ACCEL_CONFIG0: 16 g, 1.6 kHz
     hal::delayMs(10);
-    // GYRO_CONFIG0: 2000 dps, ODR 1.6 kHz (1 kHz loop) / 3.2 kHz (2 kHz loop)
-    hal::spiWrite(dev_, 0x1C, 0x10 | (loopHz >= 2000 ? 0x04 : 0x05));
+    // GYRO_CONFIG0: 2000 dps, ODR 1.6 kHz (1 kHz loop) / 3.2 kHz (2 kHz loop) / 6.4 kHz (4 kHz+)
+    hal::spiWrite(dev_, 0x1C, 0x10 | (loopHz >= 4000 ? 0x03 : loopHz >= 2000 ? 0x04 : 0x05));
     hal::delayMs(35);
     hal::spiSetSpeed(dev_, 12000000);
     return true;

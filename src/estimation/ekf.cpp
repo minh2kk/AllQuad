@@ -49,9 +49,9 @@ void Ekf::predict(const Vec3& dAng, const Vec3& dVel, float dt, uint32_t now) {
   if (!init_ || dt <= 0.0f || dt > 0.1f) return;
   const float sa = cfg_ ? cfg_->est_acc_noise : 0.6f;
   Vec3 da = dAng - bg_ * dt, dvb = dVel - ba_ * dt;
+  Vec3 dvE = q_.rotate(dvb);  // dVel is in the body frame at the start of the interval
   q_ = q_ * fromRotVec(da);
   q_.normalize();
-  Vec3 dvE = q_.rotate(dvb);
   Vec3 vNew = v_ + dvE + Vec3(0, 0, GRAVITY * dt);
   p_ += (v_ + vNew) * (0.5f * dt);
   v_ = vNew;
@@ -305,6 +305,25 @@ void Ekf::setYaw(float yaw) {
   q_.normalize();
   for (int i = 0; i < N; i++) P_[8][i] = P_[i][8] = 0;
   P_[8][8] = squaref(0.1f);
+}
+
+void Ekf::fuseTilt(const Quat& qRef, float sigma) {
+  if (!init_) return;
+  Quat e = qRef * q_.conj();  // earth-frame rotation from the EKF attitude to the reference
+  if (e.w < 0) { e.w = -e.w; e.x = -e.x; e.y = -e.y; e.z = -e.z; }
+  float h[N];
+  unit(h, IT);
+  fuse(h, 2.0f * e.x, sigma * sigma, 5.0f);
+  unit(h, IT + 1);
+  fuse(h, 2.0f * e.y, sigma * sigma, 5.0f);
+}
+
+void Ekf::relearnAccBias(float sigma) {
+  if (!init_) return;
+  for (int k = IBA; k < IBA + 3; k++) {
+    for (int i = 0; i < N; i++) P_[k][i] = P_[i][k] = 0;
+    P_[k][k] = sigma * sigma;
+  }
 }
 
 void Ekf::slaveAttitude(const Quat& q, float tiltVar, float yawVar) {

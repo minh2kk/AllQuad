@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 
+#include "../comms/hitl.h"
 #include "../hal/hal.h"
 
 namespace app {
@@ -54,12 +55,13 @@ void Commander::fuseSensors(uint32_t now, float dt) {
   const Config& c = bus::config;
   // ---- heading source: compass, else GPS-learned correction of the gyro-only AHRS yaw ----
   bool useEkf = c.est_type == 1;
-  bool magCal = c.mag_bias[0] != 0 || c.mag_bias[1] != 0 || c.mag_bias[2] != 0;
+  bool magCal = c.mag_bias[0] != 0 || c.mag_bias[1] != 0 || c.mag_bias[2] != 0 || hitl::active();  // HITL field needs none
   bool magFault = useEkf && ekf_.initialized() && ekf_.magFault();
   bus::magRejected = magFault;
   bool magOk = magSeen_ && mag_.healthy && magCal && !magFault;
   useGpsHeading_ = !magOk && c.gps_heading;
   float prevCorr = yawCorr_;
+  if (att_.valid) gpsRef_.predict(att_.accEarth.x, att_.accEarth.y, dt);  // referee, always running
   if (useGpsHeading_) {
     if (att_.valid) gpsHeading_.predict(att_.accEarth.x, att_.accEarth.y, dt);
     yawCorr_ = gpsHeading_.offset();
@@ -108,6 +110,7 @@ void Commander::fuseSensors(uint32_t now, float dt) {
     newGps = true;
     est_.fuseGps(g, now);
     if (useGpsHeading_ && g.fix3d && g.sats >= c.gps_min_sats) gpsHeading_.fuseGps(g.velN, g.velE, now);
+    if (g.fix3d && g.sats >= c.gps_min_sats) gpsRef_.fuseGps(g.velN, g.velE, now);
     if (g.fix3d && g.sats >= c.gps_min_sats) {
       uint32_t dtMs = now - gpsVelPrevMs_;
       if (gpsVelPrevMs_ && dtMs > 30 && dtMs < 500) {
@@ -152,7 +155,7 @@ void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, boo
     ekfHomeKnown_ = false;
     return;
   }
-  bool magCal = c.mag_bias[0] != 0 || c.mag_bias[1] != 0 || c.mag_bias[2] != 0;
+  bool magCal = c.mag_bias[0] != 0 || c.mag_bias[1] != 0 || c.mag_bias[2] != 0 || hitl::active();
   bool magUsable = magSeen_ && mag_.healthy && magCal && !ekf_.magFault();
   bool headingKnown = magUsable || (useGpsHeading_ && gpsHeading_.aligned());
   if (!headingKnown) {
@@ -160,24 +163,39 @@ void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, boo
     ekfGpsYawInit_ = false;
   }
   if (imuNew_ && imuDt_ > 0 && imuDt_ < 0.1f) ekf_.predict(imuDAng_, imuDVel_, imuDt_, now);
+#ifdef ALLQUAD_HOST
+  if (bus::simEkfYawKickDeg) { ekf_.setYaw(ekf_.yaw() + bus::simEkfYawKickDeg * DEG2RAD); bus::simEkfYawKickDeg = 0; }
+#endif
   // ---- tilt cross-check against the AHRS: the complementary filter is the robust one (gravity
   // always pulls it back); an EKF tilt that stays far from it (after a tumble, saturated rates,
   // a long acceleration) has diverged - its tilt is reset to the AHRS one, heading and
   // position / velocity kept. Without this a wrong tilt turns into a wrong acceleration and the
   // position estimate runs away while the filter's own covariance still looks confident.
+  // While the craft is steady (hovering: no acceleration, slow rates for 2 s) the AHRS tilt is
+  // accurate to a degree or two, so the limit drops from 15 to 4 deg: that catches the quieter trap
+  // where a tilt error and a wrong accelerometer bias explain each other.
+  bool steady = att_.valid && att_.accEarth.norm() < 0.6f && fabsf(att_.rateDps.x) < 15 && fabsf(att_.rateDps.y) < 15 &&
+                fabsf(att_.rateDps.z) < 30;
+  if (!steady) steadySince_ = 0;
+  else if (!steadySince_) steadySince_ = now ? now : 1;
+  bool calm = steadySince_ && now - steadySince_ > 2000;
   if (headingKnown && att_.valid) {
-    Vec3 zk = ekf_.q().rotate(Vec3(0, 0, 1)), za = att_.q.rotate(Vec3(0, 0, 1));
+    // gravity direction in the body frame: independent of heading (EKF and AHRS headings differ)
+    Vec3 zk = ekf_.q().rotateInv(Vec3(0, 0, 1)), za = att_.q.rotateInv(Vec3(0, 0, 1));
     float dotz = zk.x * za.x + zk.y * za.y + zk.z * za.z;
-    if (dotz < cosf(15.0f * DEG2RAD)) {
+    if (dotz < cosf((calm ? 4.0f : 15.0f) * DEG2RAD)) {
       if (!ekfTiltBadSince_) ekfTiltBadSince_ = now ? now : 1;
-      if (now - ekfTiltBadSince_ > 1000) {
+      if (now - ekfTiltBadSince_ > (calm ? 3000u : 1000u)) {
         float yawK = ekf_.yaw();
         ekf_.slaveAttitude(Quat::fromEuler(0, 0, wrapPi(yawK - att_.yaw)) * att_.q, squaref(0.05f), ekf_.var(8));
+        ekf_.relearnAccBias(0.3f);
         ekfTiltBadSince_ = 0;
         ekfTiltResets_++;
         bus::postMessage("EKF: attitude disagreed with the AHRS - tilt reset");
       }
     } else ekfTiltBadSince_ = 0;
+    // calm hover: a weak pull towards the AHRS tilt (the attitude the craft is flown on anyway)
+    if (calm && now - ekfTiltFuseMs_ >= 100) ekfTiltFuseMs_ = now, ekf_.fuseTilt(Quat::fromEuler(0, 0, wrapPi(ekf_.yaw() - att_.yaw)) * att_.q, 2.0f * DEG2RAD);
   } else ekfTiltBadSince_ = 0;
   // ---- height: barometer, GPS when the baro is missing or faulty ----
   if (b && b->healthy) ekf_.fuseHeight(b->altM - est_.baroOffset(), c.est_baro_noise, 0, now);
@@ -211,6 +229,27 @@ void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, boo
         ekf_.fuseYaw(wrapPi(ekf_.yaw() - wrapPi(atan2f(mE.y, mE.x) - decl)), 0.1f);
     }
   }
+  // ---- GPS referee for the EKF heading while a compass is fitted: the heading learned from GPS
+  // accelerations (independent of compass and EKF) says who is wrong when they disagree. Compass
+  // agrees with it, EKF 30 deg off for 2 s: the EKF heading diverged (rejecting a good compass, or
+  // about to blame it with a compass fault) -> heading reset to the compass, compass fault cleared.
+  // The other way round (compass wrong) is the EKF's own compass fault check.
+  bool compassFitted = magSeen_ && mag_.healthy && magCal;
+  if (compassFitted && gpsRef_.aligned() && now - gpsRef_.lastGoodMs() < 5000) {
+    float refYaw = wrapPi(att_.yaw + gpsRef_.offset());
+    bool compassAgrees = fabsf(gpsRef_.offset()) < 15.0f * DEG2RAD;
+    if (compassAgrees && fabsf(wrapPi(ekf_.yaw() - refYaw)) > 30.0f * DEG2RAD) {
+      if (!ekfYawBadSince_) ekfYawBadSince_ = now ? now : 1;
+      if (now - ekfYawBadSince_ > 2000) {
+        ekf_.setYaw(att_.yaw);  // compass heading (the AHRS follows the compass)
+        ekf_.relearnAccBias(0.3f);
+        ekf_.clearMagFault();
+        ekfYawBadSince_ = 0;
+        ekfYawResets_++;
+        bus::postMessage("EKF: heading disagreed with compass + GPS - reset");
+      }
+    } else ekfYawBadSince_ = 0;
+  } else ekfYawBadSince_ = 0;
   if (!magUsable && headingKnown) {  // GPS-learned heading (the attitude was slaved until now)
     ekfGpsYawInit_ = true;
     if (g) ekf_.fuseYaw(wrapPi(att_.yaw + gpsHeading_.offset()), 0.15f);
@@ -320,7 +359,7 @@ uint32_t Commander::computeArmBlockers(bool rcOk) {
   if (rcFailsafe_) b |= ARM_FAILSAFE;
   if (!c.acc_calibrated) b |= ARM_ACC_NOT_CAL;
   if (seqBaro_ && !baroSeen_) b |= ARM_BARO;
-  bool magCal = c.mag_bias[0] != 0 || c.mag_bias[1] != 0 || c.mag_bias[2] != 0;
+  bool magCal = c.mag_bias[0] != 0 || c.mag_bias[1] != 0 || c.mag_bias[2] != 0 || hitl::active();
   if (magSeen_ && (!mag_.healthy || !magCal)) b |= ARM_MAG;
   if (c.arm_require_gps && !(e.gpsValid && e.homeSet)) b |= ARM_GPS;
   if (fenceBreached(c, e)) b |= ARM_FENCE;
@@ -1155,6 +1194,9 @@ void Commander::publish(uint32_t now) {
   bus::status.publish(st);
   EkfReport r{};
   r.active = ekfOn;
+  r.tiltResets = ekfTiltResets_;
+  r.yawResets = ekfYawResets_;
+  r.baroResets = est_.baroResets();
   if (ekfOn) {
     const EkfStatus& k = ekf_.status();
     r.trGpsPos = k.trGpsPos; r.trGpsVel = k.trGpsVel; r.trHeight = k.trHeight;

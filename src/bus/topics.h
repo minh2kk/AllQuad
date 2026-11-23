@@ -196,6 +196,9 @@ struct EkfReport {
   float trGpsPos, trGpsVel, trHeight, trYaw, trMag, trFlow;
   uint16_t faults;          // EkfFault bits
   uint16_t posResets, velResets, filterResets;
+  uint16_t tiltResets;      // EKF tilt reset to the AHRS one (they disagreed > 15 deg for 1 s)
+  uint16_t yawResets;       // EKF heading reset to the compass: the GPS referee agreed with the compass, not the EKF
+  uint16_t baroResets;      // classic estimator: height reset after the baro was rejected for 2 s
   float posStd, velStd, hgtStd, yawStdDeg;
   uint8_t heightSrc;        // 0 baro, 1 GPS
   float gyroBias[3];        // deg/s

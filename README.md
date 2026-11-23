@@ -437,7 +437,9 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
   - `bb_gyro_s` (giây, 0 = tắt): ghi một đợt sau mỗi lần cất cánh (lần đầu ga > 25 %); CLI `gyrocap <s>` ghi ngay khi đang bay.
   - Log thường (≤ 1 kHz) chỉ thấy nhiễu dưới 500 Hz; đợt này thấy tới 2 kHz: tab Blackbox → *Gyro tần số cao* (phổ thô / sau lọc, đỉnh nhiễu và độ suy giảm của bộ lọc).
   - Không có ở F411 (thiếu RAM cho bộ đệm 12 kB).
-- **Giải mã trên máy tính:** `python3 tools/blackbox_decode.py LOG.BBL` → `LOG.csv` (bản ghi) + `LOG_esc.csv` (RPM / nhiệt).
+- **0xA9 (v2.2):** khung điều hướng 41 byte, ~10 Hz: bộ ước lượng nào đang chạy, cờ lỗi EKF, tỉ số kiểm định từng cảm biến, tư thế EKF và hướng AHRS, độ lệch chuẩn, số vệ tinh và sai số GPS, bộ đếm đặt lại (vị trí, vận tốc, cả bộ lọc, tư thế, hướng, độ cao baro).
+  - Tab Blackbox → *Tóm tắt chuyến bay* tự đọc: baro bị loại bao lâu, la bàn lệch GPS, GPS nhảy, EKF phải tự đặt lại tư thế / hướng mấy lần.
+- **Giải mã trên máy tính:** `python3 tools/blackbox_decode.py LOG.BBL` → `LOG.csv` (bản ghi) + `LOG_esc.csv` (RPM / nhiệt) + `LOG_nav.csv` (sức khoẻ bộ ước lượng).
 
 ---
 
@@ -450,6 +452,10 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
   - **Chống nhảy:** `gps_glitch_m` / `gps_glitch_s`.
 - **EKF:**
   - `est_type 1`: EKF 15 trạng thái. GPS nhảy → nhận vị trí mới; baro lệch 5 s → độ cao từ GPS; compass sai 5 s → hướng từ GPS. Web hiện tỉ số kiểm định từng cảm biến.
+  - Tự sửa khi chính EKF sai (v2.2):
+    - Tư thế EKF lệch AHRS quá 15° trong 1 s (sau lộn nhào, va chạm) → đặt lại tư thế theo AHRS và học lại bias gia tốc kế. Khi treo yên thì ngưỡng 4°, và EKF được kéo nhẹ về tư thế AHRS (lúc treo yên, lỗi nghiêng và bias gia tốc kế không tách được bằng GPS).
+    - Trọng tài GPS cho hướng: hướng học từ gia tốc GPS (độc lập với la bàn và EKF). La bàn khớp nó mà EKF lệch quá 30° trong 2 s → hướng EKF đặt lại theo la bàn, la bàn không bị đổ lỗi oan.
+    - Delta góc / vận tốc từ vòng bay được cộng dồn kèm bù coning / sculling, không mất mẫu ở bất kỳ tần số vòng bay nào.
   - `est_type 0`: bộ Kalman tách trục cũ.
 - **Không compass:** `gps_heading 1` học hướng từ chuyển động. Trước khi học xong, RTH bay tới – lui để học.
 - **Độ cao:**
@@ -703,7 +709,7 @@ Ví dụ: `logic 1 1 2 1 2 0 1200 1 0 0` = độ cao > 120 m → kêu còi.
 
 | Task | Tần số | Ưu tiên | Nhân (ESP32) | Việc |
 |---|---|---|---|---|
-| `fast` | 1–4 kHz (timer / ngắt IMU) | 6 | 1 | IMU → lọc → AHRS → PID → mixer → motor |
+| `fast` | 1–6.4 kHz (timer / ngắt IMU) | 6 | 1 | IMU → lọc → AHRS → PID → mixer → motor |
 | `io` | 500 Hz | 5 | 0 | receiver, GPS, telemetry ESC, cảm biến khoảng cách |
 | `control` | 250 Hz | 4 | 0 | EKF, arm, failsafe, chế độ, điều hướng |
 | `sensors` | 100 Hz | 3 | 0 | baro, compass, pin, LED, còi |
@@ -714,6 +720,10 @@ Ví dụ: `logic 1 1 2 1 2 0 1200 1 0 0` = độ cao > 120 m → kêu còi.
 
 - **Trao đổi dữ liệu:** các task dùng **topic** publish / subscribe, mỗi topic một task ghi.
 - **Đo hiệu năng trên board:** `perf` / `tasks`, hoặc Hệ thống → Hiệu năng.
+- **H743, vòng bay tới 6.4 kHz** (`loop_hz` tối đa 6400 = tốc độ dữ liệu của ICM-45686; mặc định vẫn 3200):
+  - Đọc IMU trên H7 không qua HAL: địa chỉ và dữ liệu trong một lần truyền SPI. Được so với HAL ở những lần đọc đầu; hết thời gian chờ hoặc lệch thì quay về HAL luôn.
+  - Bidirectional DShot không còn chờ: ngắt DMA đảo chân và bắt đầu lấy mẫu ngay khi khung DShot gửi xong (trước đây vòng bay đứng chờ 27–53 µs mỗi vòng). Ngắt không tới 3 lần thì quay về cách cũ.
+  - Sau khi đổi `loop_hz`, xem `perf`: tải vòng bay dưới ~70 % là ổn.
 - **Vòng bay đã tối ưu:**
   - AHRS sửa sai ở ~1 kHz, góc Euler tính khi cần.
   - PID một phép chia mỗi vòng.
@@ -729,6 +739,12 @@ tools/      build/test, giải mã blackbox, tạo docs/PARAMS.md, configurator,
 
 ---
 
+## Bay thử trên bàn (HITL)
+
+FC thật bay một chiếc drone mô phỏng trên máy tính qua USB, motor đứng yên: `python tools\hitl.py COM5 --auto` (chuyến bay kiểm tra tự động) hoặc `python tools\hitl.py COM5` (bay bằng tay điều khiển thật). Hướng dẫn đầy đủ: [docs/HITL.md](docs/HITL.md).
+
+---
+
 ## Kiểm chứng
 
 ```bash
@@ -740,16 +756,17 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Hạng mục | Kết quả |
 |---|---|
 | Biên dịch PlatformIO | 12 / 12 môi trường (6 ESP32, 5 STM32 + QEMU, cầu WiFi C3) |
-| Unit test (kèm AddressSanitizer + UBSan) | **236 / 236** (gồm kẹp cấu hình về giới hạn khi nạp, A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v31, ghi gyro tần số cao, thứ tự kênh RC, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
-| Mô phỏng toàn hệ thống | 43 kịch bản đạt (chọn IMU tốt hơn khi chưa arm, EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
+| Unit test (kèm AddressSanitizer + UBSan) | **239 / 239** (gồm coning / sculling, kẹp cấu hình về giới hạn khi nạp, A/B cấu hình khi mất điện, MSP qua CRSF, bộ lọc gai RPM, migrate tới v31, ghi gyro tần số cao, thứ tự kênh RC, chế độ bay lần đầu, băng thông MAVLink tốc độ thấp) |
+| Mô phỏng toàn hệ thống | 44 kịch bản đạt (hướng EKF quay 178° được trọng tài GPS sửa, chọn IMU tốt hơn khi chưa arm, EKF với cảm biến lỗi, RTH, nhiệm vụ, gió, optical flow, autotune, GPS Rescue, launch, bidir DShot, mất RPM telemetry khi bay, console USB / cầu WiFi, EDT, gia tốc kế bị kịch, bay lần đầu…) |
 | QEMU STM32F405 | khởi động firmware thật + bản ghi crash còn sau reset + báo cáo stack còn trống từng task (CI fail nếu task nào < 256 B) |
-| Fuzz bộ đọc giao thức (`tools/fuzz.sh`, ASan + UBSan) | 10 bộ đọc (CRSF/SBUS…, MSP, Micolink, MAVLink, GPS UBX/NMEA, cảm biến, AqLink, CLI, 4-way, cấu hình) × 3 seed × 1 triệu mẫu: không crash, không lỗi sanitizer, mọi tham số trong giới hạn. Đã sửa: tần số VTX ngoài dải, rangefinder Micolink 3000 km, GPS fix với toạ độ ngoài Trái Đất, tràn số NMEA, memcpy null trong MAVLink |
+| Fuzz bộ đọc giao thức (`tools/fuzz.sh`, ASan + UBSan) | 11 bộ đọc (CRSF/SBUS…, MSP, Micolink, MAVLink, GPS UBX/NMEA, cảm biến, AqLink, CLI, 4-way, cấu hình, khung HITL) × 3 seed × 1 triệu mẫu: không crash, không lỗi sanitizer, mọi tham số trong giới hạn. Đã sửa: tần số VTX ngoài dải, rangefinder Micolink 3000 km, GPS fix với toạ độ ngoài Trái Đất, tràn số NMEA, memcpy null trong MAVLink |
 | Phân tích tĩnh (`tools/static_check.sh`) | cppcheck sạch (cảnh báo giả đã xem xét nằm trong `tools/cppcheck.supp`); tuỳ chọn clang-tidy |
-| Soak (`./build/sim soak N seed`) | **360 / 360** chuyến bay ngẫu nhiên 170 s (ACRO/ANGLE/POSHOLD/RTH, gió, mất sóng, GPS nhảy, baro lệch, rung, nhiễu IMU, EKF / Kalman, loop 1/2 kHz): không NaN, motor trong 0..1, failsafe đúng hạn, không bay mất, LAND xong và disarm. Đã sửa 3 lỗi thật chỉ lộ ra sau va chạm / lộn nhào: EKF mất một nửa delta góc ở loop 2 kHz (tư thế EKF trôi), EKF không tự sửa khi tư thế lệch AHRS, Kalman độ cao kẹt cổng 6σ sau va chạm |
+| Soak (`./build/sim soak N seed`) | **360 / 360** + **240 / 240** sau các thay đổi EKF v2.2 (coning, trọng tài GPS, kéo tư thế khi treo yên): chuyến bay ngẫu nhiên 170 s (ACRO/ANGLE/POSHOLD/RTH, gió, mất sóng, GPS nhảy, baro lệch, rung, nhiễu IMU, EKF / Kalman, loop 1/2 kHz): không NaN, motor trong 0..1, failsafe đúng hạn, không bay mất, LAND xong và disarm. Đã sửa 3 lỗi thật chỉ lộ ra sau va chạm / lộn nhào: EKF mất một nửa delta góc ở loop 2 kHz (tư thế EKF trôi), EKF không tự sửa khi tư thế lệch AHRS, Kalman độ cao kẹt cổng 6σ sau va chạm |
 | Script Lua EdgeTX | `aqtlm` + `aqcfg` chạy trong Lua 5.2, `aqcfg` nói chuyện với mã MSP-over-CRSF thật |
 | MAVLink đối chiếu pymavlink | 17 / 17 |
-| Bộ phân tích blackbox | 24 / 24 (khung gyro 4 kHz, gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp, tóm tắt chuyến bay, pin yếu) |
+| Bộ phân tích blackbox | 29 / 29 (khung điều hướng: baro / la bàn bị loại, EKF đặt lại tư thế / hướng; khung gyro 4 kHz, gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp, tóm tắt chuyến bay, pin yếu) |
 | Firmware WebAssembly | 5 / 5 |
+| HITL (`tools/hitl.py --exec "build/sim serve" --auto`) | 6 / 6: 500 khung/s, arm, ALTHOLD (dao động 0.03 m), POSHOLD, tư thế ước lượng lệch ≤ 1.3°, LAND và disarm |
 | Ký số firmware OTA | 6 / 6 (`tools/test_ota_sign.py`; kiểm chéo với mbedtls như firmware) |
 | Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, bản đồ offline, PWA, nạp firmware, thẻ SD, hướng dẫn bay lần đầu (thử nghiêng / failsafe), tìm hướng optical flow (16 kiểu lắp), thuật ngữ, gyro tần số cao, giao diện tiếng Anh |
 

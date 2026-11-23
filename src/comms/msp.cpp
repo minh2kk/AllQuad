@@ -6,6 +6,7 @@
 #include "../bus/bus.h"
 #include "../vtx/vtx.h"
 #include "fourway.h"
+#include "hitl.h"
 
 namespace comms {
 
@@ -293,7 +294,7 @@ void MspLink::handle(const MspFrame& f, uint32_t now) {
       int32_t mm = rd32(f.payload + 1);
       bool ok = mm > 0 && mm <= RANGE_MAX_MM && f.payload[0] > 0;  // beyond 100 m: not a small rangefinder, a broken frame
       RangeSample r{ok ? mm * 0.001f : -1.0f, ok, f.payload[0]};
-      bus::range.publish(r);
+      if (!hitl::active()) bus::range.publish(r);  // HITL: the simulated rangefinder instead
       return;  // sensor messages are not answered
     }
     case MSP2_SENSOR_OPTIC_FLOW: {  // quality u8, motionX i32, motionY i32
@@ -327,6 +328,13 @@ void MspLink::handle(const MspFrame& f, uint32_t now) {
       bus::configChanged();
       paramAnswer(o, i);
       break;
+    }
+    case hitl::MSP_CMD: {  // hardware in the loop (tools/hitl.py): USB console only
+      uint8_t r[hitl::REPLY_LEN];
+      size_t rn = 0;
+      if (port_ != hal::Port::CONSOLE || !hitl::begin(f.payload, f.len, r, rn)) { error(f); return; }
+      reply(f, r, (uint16_t)rn);
+      return;
     }
     case MSP_EEPROM_WRITE: {  // save the settings (disarmed); answers u8 1 = saved
       if (bus::status.get().armed) { error(f); return; }
@@ -392,6 +400,7 @@ void MspLink::micolink(const uint8_t* f, uint32_t now) {
   // flow_vel_x / y i16 (cm/s at 1 m = 0.01 rad/s), flow_quality, flow_status, reserved u16
   uint32_t mm = le32(p + 4);
   bool ok = mm >= 10 && mm <= (uint32_t)RANGE_MAX_MM;
+  if (hitl::active()) return;  // HITL: simulated rangefinder / no flow
   RangeSample r{ok ? mm * 0.001f : -1.0f, ok, p[8]};
   bus::range.publish(r);
   int16_t vx = le16s(p + 12), vy = le16s(p + 14);
@@ -402,7 +411,7 @@ void MspLink::micolink(const uint8_t* f, uint32_t now) {
 void MspLink::flowSample(float rx, float ry, uint8_t quality, uint32_t now) {
   float dt = lastFlowMs_ ? (now - lastFlowMs_) * 0.001f : 0.0f;
   lastFlowMs_ = now;
-  if (dt <= 0.001f || dt > 0.25f) return;
+  if (dt <= 0.001f || dt > 0.25f || hitl::active()) return;
   FlowSample s{rx, ry, quality, dt};
   bus::flow.publish(s);
 }

@@ -23,6 +23,7 @@
 #include "../../src/comms/cli.h"
 #include "../../src/comms/crsf_msp.h"
 #include "../../src/comms/fourway.h"
+#include "../../src/comms/hitl.h"
 #include "../../src/comms/mavlink.h"
 #include "../../src/comms/msp.h"
 #include "../../src/config/config.h"
@@ -248,6 +249,44 @@ static void fuzzMsp(int iters) {
   printf("  msp: %d frames handled\n", frames);
 }
 
+// hardware in the loop: the first frame through the console's MSP, then the io task's own reader
+// (hitl::poll) with whatever the PC sends; the replacement drivers are read like the fast loop would
+static void fuzzHitl(int iters) {
+  std::vector<Bytes> seeds;
+  for (int i = 0; i < 6; i++) {
+    Bytes p = randPayload(hitl::FRAME_LEN);
+    p.resize(hitl::FRAME_LEN);
+    p[44] = (uint8_t)(i == 0 ? 0 : rnd(16));  // flags without EXIT (that one reboots)
+    seeds.push_back(mspFrame(true, '<', hitl::MSP_CMD, p));
+  }
+  seeds.push_back(mspFrame(true, '<', hitl::MSP_CMD, randPayload(20)));  // short frame
+  comms::MspLink console;
+  console.begin(hal::Port::CONSOLE);
+  comms::MspParser parser;
+  int frames = 0;
+  for (int it = 0; it < iters; it++) {
+    Bytes in = pickInput(seeds);
+    for (size_t k = 0; k + 52 < in.size(); k++)
+      if (in[k] == '$' && in[k + 1] == 'X') in[k + 52] &= 0x7F;  // keep the EXIT flag off (reboot)
+    if (!hitl::active()) {
+      for (uint8_t b : in) { MspFrame f; if (parser.feed(b, f)) { frames++; console.handle(f, nowMs); } }
+    } else {
+      auto& q = hal::host::in(hal::Port::CONSOLE);
+      for (uint8_t b : in) q.push_back(b);
+      hitl::poll(nowMs);
+    }
+    fc::Vec3 g, a, m;
+    float pa, t, v, i;
+    hitl::imu()->read(g, a);
+    hitl::baro()->update(pa, t);
+    hitl::mag()->read(m);
+    hitl::battery(v, i);
+    nowMs += 1 + rnd(3);
+    if (it % 200 == 0) { checkParams(); drainOutputs(); }
+  }
+  printf("  hitl: %d console frames, active %d, %u frames applied\n", frames, hitl::active(), (unsigned)hitl::stats().frames);
+}
+
 static void fuzzMicolink(int iters) {
   std::vector<Bytes> seeds;
   for (int i = 0; i < 6; i++) {
@@ -450,7 +489,8 @@ int main(int argc, char** argv) {
   const char* only = argc > 3 ? argv[3] : nullptr;
   struct { const char* name; Target fn; int scale; } targets[] = {
       {"rx", fuzzRx, 1}, {"msp", fuzzMsp, 1}, {"micolink", fuzzMicolink, 1}, {"mavlink", fuzzMavlink, 1}, {"gps", fuzzGps, 2},
-      {"sensors", fuzzSerialSensors, 2}, {"aqlink", fuzzAqLink, 1}, {"cli", fuzzCli, 1}, {"fourway", fuzzFourWay, 1}, {"config", fuzzConfig, 2}};
+      {"sensors", fuzzSerialSensors, 2}, {"aqlink", fuzzAqLink, 1}, {"cli", fuzzCli, 1}, {"fourway", fuzzFourWay, 1}, {"config", fuzzConfig, 2},
+      {"hitl", fuzzHitl, 1}};
   for (auto& t : targets) {
     if (only && strcmp(only, t.name)) continue;
     freshState();

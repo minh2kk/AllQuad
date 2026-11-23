@@ -18,6 +18,8 @@ Trang cấu hình có sẵn công cụ cho hầu hết các bước: tab **Trư�
 | A6 | Accel / compass | tab Cảm biến | accel đã hiệu chuẩn; compass xoay đủ mọi hướng, hướng Bắc đúng |
 | A7 | Baro | tab Cảm biến, nâng FC 1 m | độ cao tăng khoảng 1 m, không nhảy |
 | A8 | Sơ đồ chân | CLI `pins`, tab Cổng → Sơ đồ chân | không chân nào trùng; mỗi thiết bị đúng UART |
+| A9 | Bay trên bàn (HITL) | đóng trang cấu hình, `python tools\hitl.py COM5 --auto` ([HITL.md](HITL.md)) | `6/6 HITL checks passed`; `fc loop` bằng `loop_hz` |
+| A10 | Failsafe trên bàn | `python tools\hitl.py COM5`, bay bằng tay điều khiển, rồi tắt tay giữa chừng | FC vào FAILSAFE (về nhà rồi hạ cánh), tự disarm |
 
 ## B. Trên bàn, cắm pin, **THÁO CÁNH**
 

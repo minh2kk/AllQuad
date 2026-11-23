@@ -29,5 +29,7 @@ void firmwareSetup();
 void firmwareLoop();
 
 const Drivers& drivers();
+// hardware in the loop (comms/hitl): the simulated sensors replace the real drivers until reboot
+void hitlSwap();
 
 }  // namespace app

@@ -69,6 +69,12 @@ class Ekf {
   // heading unknown (no compass, GPS heading not learned): the attitude follows the AHRS and is kept
   // out of the estimation, so GPS innovations cannot drag the tilt / accelerometer bias around
   void slaveAttitude(const Quat& q, float tiltVar, float yawVar);
+  // accelerometer bias uncertain again (after a tilt reset: a tilt error and a wrong bias can hide
+  // each other while hovering, the filter has to learn the bias anew)
+  void relearnAccBias(float sigma);
+  // weak tilt measurement (qRef: reference attitude with the EKF's own heading), used while hovering
+  // calmly, where tilt and accelerometer bias are not separable from GPS alone
+  void fuseTilt(const Quat& qRef, float sigma);
 
   Vec3 pos() const { return p_; }   // NED
   Vec3 vel() const { return v_; }
@@ -82,6 +88,7 @@ class Ekf {
   bool heightOk(uint32_t nowMs) const { return lastHgtMs_ && nowMs - lastHgtMs_ < 1000; }
   bool baroFault() const { return st_.faults & EKF_BARO_FAULT; }
   bool magFault() const { return st_.faults & EKF_MAG_FAULT; }
+  void clearMagFault() { st_.faults &= ~EKF_MAG_FAULT; magBadSince_ = magGoodSince_ = 0; }
   const EkfStatus& status() const { return st_; }
   float var(int i) const { return P_[i][i]; }
 

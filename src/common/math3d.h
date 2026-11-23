@@ -85,4 +85,18 @@ struct Quat {
   AQ_HOT float cosTilt() const { return 1.0f - 2.0f * (x * x + y * y); }
 };
 
+// IMU delta angle / delta velocity over an interval, both in the body frame at its start, with the
+// first-order coning (angle) and sculling (velocity) terms: at 1000 deg/s on two axes plain sums are
+// off by ~1 deg per 4 ms, which the EKF would take as a tilt error.
+// one gyro / accelerometer sample (dTh = rate * dt, dV = acc * dt)
+AQ_HOT inline void imuDeltaAdd(Vec3& dAng, Vec3& dVel, const Vec3& dTh, const Vec3& dV) {
+  dVel += dV + (dAng + dTh * 0.5f).cross(dV);
+  dAng += dTh + dAng.cross(dTh) * 0.5f;
+}
+// append a whole interval (dAng2 / dVel2 in the frame at its own start = the end of the first one)
+inline void imuDeltaJoin(Vec3& dAng, Vec3& dVel, const Vec3& dAng2, const Vec3& dVel2) {
+  dVel += dVel2 + dAng.cross(dVel2);
+  dAng += dAng2 + dAng.cross(dAng2) * 0.5f;
+}
+
 }  // namespace fc

@@ -38,6 +38,7 @@ class GpsHeading {
   }
   float offset() const { return offset_; }   // add to the AHRS yaw
   bool aligned() const { return good_ >= 2; }
+  uint32_t lastGoodMs() const { return lastGoodMs_; }
 
  private:
   void start(float vn, float ve, uint32_t now) {

@@ -20,6 +20,7 @@ void Blackbox::begin(uint8_t backend, hal::Port port, uint16_t rateHz) {
   if (backend_ == 2 && !hal::logOpen()) backend_ = 0;
   if (backend_ == 3 && !sdlog::enabled()) backend_ = 0;  // sd_mode off / not possible on this board
   escEvery_ = (uint16_t)(rateHz > 50 ? rateHz / 50 : 1);
+  navEvery_ = (uint16_t)(rateHz > 10 ? rateHz / 10 : 1);
 }
 
 bool Blackbox::write(const uint8_t* d, size_t n) {
@@ -33,15 +34,15 @@ bool Blackbox::write(const uint8_t* d, size_t n) {
 
 void Blackbox::writeHeader() {
   const Config& c = bus::config;
-  char h[440];
+  char h[480];
   int n = snprintf(h, sizeof(h),
                    "H AllQuad blackbox v1\nH record_size %u\nH encoding delta1\nH loop_hz %u\n"
                    "H pid_roll %.0f %.0f %.0f %.0f\nH pid_pitch %.0f %.0f %.0f %.0f\nH pid_yaw %.0f %.0f %.0f %.0f\n"
-                   "H gyro_lpf %.0f %.0f dterm_lpf %.0f dyn_notch %u rpm %u\nH esc_frame %u\nH gyro_frame %u %u\nH end\n",
+                   "H gyro_lpf %.0f %.0f dterm_lpf %.0f dyn_notch %u rpm %u\nH esc_frame %u\nH gyro_frame %u %u\nH nav_frame %u est %u\nH end\n",
                    (unsigned)sizeof(Record), c.loop_hz, c.pid[0].p, c.pid[0].i, c.pid[0].d, c.pid[0].f, c.pid[1].p,
                    c.pid[1].i, c.pid[1].d, c.pid[1].f, c.pid[2].p, c.pid[2].i, c.pid[2].d, c.pid[2].f, c.gyro_lpf_hz,
                    c.gyro_lpf2_hz, c.dterm_lpf_hz, c.dyn_notch_count, c.rpm_harmonics, (unsigned)sizeof(EscRecord),
-                   (unsigned)sizeof(GyroFrame), (unsigned)gyroTapRate());
+                   (unsigned)sizeof(GyroFrame), (unsigned)gyroTapRate(), (unsigned)sizeof(NavRecord), (unsigned)c.est_type);
   write((const uint8_t*)h, n > 0 ? (size_t)n : 0);
 }
 
@@ -179,6 +180,46 @@ bool Blackbox::fillEsc(EscRecord& r, uint32_t nowUs) {
   return any;
 }
 
+static uint16_t u16c(float v) { return (uint16_t)constrainf(v + 0.5f, 0, 65535); }
+static uint8_t tr50(float v) { return (uint8_t)constrainf(v * 50.0f + 0.5f, 0, 255); }
+
+void Blackbox::fillNav(NavRecord& r, uint32_t nowUs) {
+  static_assert(sizeof(NavRecord) == 41, "update the decoders with the navigation frame");
+  memset(&r, 0, sizeof(r));
+  EkfReport k = bus::ekf.get();
+  NavEstimate e = bus::nav.get();
+  AttitudeState a = bus::attitude.get();
+  GpsData g = bus::gps.get();
+  r.sync = 0xA9;
+  r.len = sizeof(NavRecord);
+  r.timeUs = nowUs;
+  r.est = k.active ? 1 : 0;
+  r.heightSrc = k.heightSrc;
+  r.headingSrc = e.headingSrc;
+  r.sats = g.sats;
+  r.faults = k.faults;
+  const float tr[6] = {k.trGpsPos, k.trGpsVel, k.trHeight, k.trYaw, k.trMag, k.trFlow};
+  for (int i = 0; i < 6; i++) r.tr[i] = k.active ? tr50(tr[i]) : 0;
+  r.ekfAtt[0] = s16(k.rollDeg * 10);
+  r.ekfAtt[1] = s16(k.pitchDeg * 10);
+  r.ekfAtt[2] = s16(k.yawDeg * 10);
+  r.ahrsYaw = s16(a.yaw * RAD2DEG * 10);
+  r.posStdCm = u16c(k.posStd * 100);
+  r.hgtStdCm = u16c(k.hgtStd * 100);
+  r.yawStdDd = u16c(k.yawStdDeg * 10);
+  r.hAccCm = g.sats ? u16c(g.hAcc * 100) : 0xFFFF;
+  r.resets[0] = (uint8_t)k.posResets;
+  r.resets[1] = (uint8_t)k.velResets;
+  r.resets[2] = (uint8_t)k.filterResets;
+  r.resets[3] = (uint8_t)k.tiltResets;
+  r.resets[4] = (uint8_t)k.yawResets;
+  r.resets[5] = (uint8_t)k.baroResets;
+  uint8_t x = 0;
+  const uint8_t* q = (const uint8_t*)&r;
+  for (size_t i = 0; i < sizeof(r) - 1; i++) x ^= q[i];
+  r.crc = x;
+}
+
 void Blackbox::update(uint32_t nowUs) {
   if (!backend_) return;
   bool armed = bus::status.get().armed;
@@ -211,6 +252,12 @@ void Blackbox::update(uint32_t nowUs) {
     escN_ = 0;  // ESC frame between two records (does not touch the delta chain)
     EscRecord er;
     if (fillEsc(er, nowUs)) write((const uint8_t*)&er, sizeof(er));
+  }
+  if (ok && ++navN_ >= navEvery_) {
+    navN_ = 0;  // like the ESC frame: between two records
+    NavRecord nr;
+    fillNav(nr, nowUs);
+    write((const uint8_t*)&nr, sizeof(nr));
   }
   // high-rate gyro capture (SD card only): bb_gyro_s once per flight when the throttle first passes 25 %
   // (in the air, not on the ground), or on request (CLI gyrocap / configurator)

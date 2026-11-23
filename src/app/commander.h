@@ -41,7 +41,9 @@ class Commander {
   fc::Ekf ekf_;
   fc::NavEstimate navEst_{};   // what the controllers use (est_ or EKF)
   uint32_t seqAtt_ = 0, ekfZeroVelMs_ = 0, ekfTiltBadSince_ = 0;
-  uint16_t ekfTiltResets_ = 0;
+  uint16_t ekfTiltResets_ = 0, ekfYawResets_ = 0;
+  fc::GpsHeading gpsRef_;          // GPS-acceleration heading, as an independent referee for the EKF heading
+  uint32_t ekfYawBadSince_ = 0, steadySince_ = 0, ekfTiltFuseMs_ = 0;
   bool attNew_ = false;
   bool imuNew_ = false;
   fc::Vec3 imuDAng_, imuDVel_;

@@ -42,6 +42,25 @@ struct EscRecord {
   int16_t currentDa;   // total ESC current x10, -32768 = none
   uint8_t crc;         // xor of all previous bytes
 };
+// Navigation frame (0xA9, "H nav_frame 41"): estimator health ~10 Hz, so a strange flight can be
+// read afterwards - which sensor the filter rejected, how often it reset, EKF vs AHRS attitude.
+struct NavRecord {
+  uint8_t sync;        // 0xA9
+  uint8_t len;         // sizeof(NavRecord)
+  uint32_t timeUs;
+  uint8_t est;         // 0 classic, 1 EKF running
+  uint8_t heightSrc;   // EKF height: 0 baro, 1 GPS
+  uint8_t headingSrc;  // 0 gyro only, 1 compass, 2 GPS
+  uint8_t sats;
+  uint16_t faults;     // EkfFault bits
+  uint8_t tr[6];       // EKF test ratios x50 (50 = at the gate, more = rejected): GPS pos, GPS vel, height, heading, compass, flow
+  int16_t ekfAtt[3];   // EKF roll / pitch / yaw, 0.1 deg
+  int16_t ahrsYaw;     // AHRS yaw, 0.1 deg
+  uint16_t posStdCm, hgtStdCm, yawStdDd;  // EKF 1-sigma: cm, cm, 0.1 deg
+  uint16_t hAccCm;     // GPS horizontal accuracy
+  uint8_t resets[6];   // counters since boot (low byte): EKF position, velocity, whole filter, tilt, heading; classic baro
+  uint8_t crc;         // xor of all previous bytes
+};
 #pragma pack(pop)
 
 class Blackbox {
@@ -52,6 +71,7 @@ class Blackbox {
   uint32_t bytesWritten() const { return bytes_; }
   static void fill(Record& r, uint32_t nowUs);
   static bool fillEsc(EscRecord& r, uint32_t nowUs);  // false: no ESC reports anything
+  static void fillNav(NavRecord& r, uint32_t nowUs);
   // Delta frame (0xA6): checksum byte of the record it builds on (so a lost full record is noticed),
   // changed-field bitmask, zig-zag varint differences to that record, xor checksum. A full record (0xA5) every KEY_EVERY records lets a reader resync after damage.
   // ~3-4x smaller than full records. Returns the frame length.
@@ -70,6 +90,7 @@ class Blackbox {
   Record prev_;
   uint32_t count_ = 0;
   uint16_t escEvery_ = 10, escN_ = 0;  // records between ESC frames (~50 Hz)
+  uint16_t navEvery_ = 50, navN_ = 0;  // records between navigation frames (~10 Hz)
   bool burstDone_ = false;             // the bb_gyro_s capture of this flight has run
 };
 
