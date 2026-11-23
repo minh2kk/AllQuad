@@ -12,6 +12,7 @@
 #include "../comms/aqlink.h"
 #include "../comms/crsf_msp.h"
 #include "../comms/fourway.h"
+#include "../comms/hitl.h"
 #include "../vtx/vtx.h"
 #include "leds.h"
 #include "../comms/cli.h"
@@ -43,6 +44,7 @@ using hal::Port;
 namespace {
 
 Drivers drv_{};
+volatile bool hitlBaroReset = false;
 uint16_t loopHz = 1000;
 
 // ---- per-port protocol objects ----
@@ -104,6 +106,12 @@ FAST_CODE static void motorMap(const Config& c, uint8_t m[4]) {
   if (seen != 0x0F) for (int i = 0; i < 4; i++) m[i] = (uint8_t)i;
 }
 FAST_CODE static void writeMotors(const uint8_t map[4], const float v[4], bool armed, int telemOut) {
+  if (hitl::active()) {  // hardware in the loop: the outputs go to the PC simulation, the ESCs stay stopped
+    hitl::motorsOut(v, armed);
+    static const float stop[4] = {0, 0, 0, 0};
+    hal::motorsWrite(stop, false, -1);
+    return;
+  }
   float o[4];
   for (int i = 0; i < 4; i++) o[map[i]] = v[i];
   hal::motorsWrite(o, armed, telemOut);
@@ -187,6 +195,7 @@ FAST_CODE void fastTask(void*) {
       bq = Quat::fromEuler(br * DEG2RAD, bp * DEG2RAD, by * DEG2RAD);
     }
     if (bOn) { g = bq.rotate(g); a = bq.rotate(a); }
+    if (hitl::active()) { g = gn; a = an; }  // simulated samples are already in the body frame
   }
   bool imuOk = drv_.imu && imuErrors < 20 && (ok || tick > 1);
 
@@ -295,7 +304,7 @@ FAST_CODE void fastTask(void*) {
     // ESC throttle-range calibration: maximum then minimum pulse on every output
     float t[4];
     for (int i = 0; i < 4; i++) t[i] = bus::escCalState == 1 ? 1.0f : 0.0f;
-    hal::motorsWrite(t, true, -1);
+    if (!hitl::active()) hal::motorsWrite(t, true, -1);
   } else if (!out.armed && bus::motorTestActive(nowMs)) {
     float t[4];
     for (int i = 0; i < 4; i++) t[i] = bus::motorTest[i] > 0 ? bus::motorTest[i] : -1.0f;  // 0 = stopped
@@ -425,6 +434,7 @@ void sensorsTask(void*) {
     }
   }
   // ---- barometer (50 Hz) ----
+  if (hitlBaroReset) { hitlBaroReset = false; refCount = 0; refSum = 0; }
   if (drv_.baro && tick % 2 == 0) {
     float pa, t;
     if (drv_.baro->update(pa, t)) {
@@ -444,7 +454,12 @@ void sensorsTask(void*) {
   // ---- compass (50 Hz) + calibration ----
   if (drv_.mag && tick % 2 == 1) {
     Vec3 raw;
-    if (drv_.mag->read(raw)) {
+    bool magRead = drv_.mag->read(raw);
+    if (magRead && hitl::active()) {
+      magErr = 0;
+      MagSample m{raw, true};  // simulated field: body frame, no calibration to undo
+      bus::mag.publish(m);
+    } else if (magRead) {
       magErr = 0;
       raw = drv::applyAlign(raw, (Align)c.mag_align);
       bool calActive = (int32_t)(bus::magCalUntilMs - now) > 0;
@@ -599,6 +614,7 @@ void sensorsTask(void*) {
   bus::adcCurV = cPin;
   float v = vPin * c.vbat_scale;
   float amps = c.cur_scale > 0 && cPin >= 0 ? (cPin - c.cur_offset) * c.cur_scale : -1.0f;
+  { float hv, ha; if (hitl::battery(hv, ha)) { v = hv; amps = ha; } }
   // no divider / current sensor wired: the 4-in-1 ESC's own measurement (EDT) stands in
   if (edtUse && v < 2.0f && edtVolts > 0) v = edtVolts;
   if (edtUse && amps < 0 && edtAmps >= 0) amps = edtAmps;
@@ -635,6 +651,7 @@ void ioTask(void*) {
   static int8_t lastEscMotor = -1;
   uint32_t now = os::timeMs();
   int ch;
+  hitl::poll(now);  // hardware in the loop: the console belongs to it
   if (rxPort != Port::COUNT) {
     bool got = false;
     for (int budget = 128; budget-- > 0 && (ch = hal::portRead(rxPort)) >= 0;) {
@@ -645,7 +662,7 @@ void ioTask(void*) {
       comms::MspFrame mf;
       if (rx.takeMsp(chunk, cn, origin) && crsfMsp.feed(chunk, cn, origin, mf)) mspCrsf.handle(mf, now);
     }
-    if (got) {
+    if (got && !hitl::ownsRc()) {
       RcInput rc = rx.rc();
       rcRemap(bus::config, rc.ch, rc.count);  // channel order (AETR / TAER ...) from rc_ch_*
       bus::rc.publish(rc);
@@ -685,7 +702,7 @@ void ioTask(void*) {
     bus::gpsLink.frames = gps.frames();
     bus::gpsLink.proto = !strcmp(gps.protocol(), "UBX") ? 1 : !strcmp(gps.protocol(), "NMEA") ? 2 : 0;
   }
-  if (gpsNew) {
+  if (gpsNew && !hitl::active()) {
     GpsData g = gps.data();
     g.timeMs = now;
     bus::gps.publish(g);
@@ -708,7 +725,7 @@ void ioTask(void*) {
   }
   if (rangePort != Port::COUNT) {
     while ((ch = hal::portRead(rangePort)) >= 0)
-      if (tfmini.feed((uint8_t)ch)) {
+      if (tfmini.feed((uint8_t)ch) && !hitl::active()) {
         RangeSample r{tfmini.distM, tfmini.distM > 0, (uint8_t)(tfmini.strength > 255 ? 255 : tfmini.strength)};
         bus::range.publish(r);
       }
@@ -732,6 +749,7 @@ void telemetryTask(void*) {
   // USB console: configurator link + CLI + MSP + MAVLink on one stream
   int ch;
   int budget = 2048;
+  if (hitl::active()) budget = 0;  // hardware in the loop: the io task reads the console
   if (fourWay.active()) {  // ESC passthrough owns the console until "exit"
     while (budget-- > 0 && (ch = hal::portRead(Port::CONSOLE)) >= 0) fourWay.feed((uint8_t)ch, now);
     fourWay.update(now);
@@ -814,6 +832,15 @@ uint32_t defaultBaud(PortFn f) {
 }  // namespace
 
 const Drivers& drivers() { return drv_; }
+
+void hitlSwap() {
+  drv_.imu2 = nullptr;
+  drv_.imu = hitl::imu();
+  drv_.baro = hitl::baro();
+  drv_.mag = hitl::mag();
+  bus::imuActive = 0;
+  hitlBaroReset = true;
+}
 
 void loadConfig() {
   // an older firmware's config is shorter: the read may report "short", the header tells

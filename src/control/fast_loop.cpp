@@ -122,8 +122,7 @@ FAST_CODE void FastLoop::run(const Vec3& gyroRad, const Vec3& acc, bool imuOk, c
                  sp.accKinValid ? &sp.accKin : nullptr);
     accEarthSum_ += ahrs_.accEarth();
     accEarthN_++;
-    dAngSum_ += gyroDps_ * (DEG2RAD * dt);
-    dVelSum_ += a * dt;
+    imuDeltaAdd(dAngSum_, dVelSum_, gyroDps_ * (DEG2RAD * dt), a * dt);  // coning / sculling terms
     dtSum_ += dt;
   }
 

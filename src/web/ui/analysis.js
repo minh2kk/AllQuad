@@ -13,6 +13,7 @@
   // Record layout: src/logging/blackbox.h (packed, little-endian)
   const REC = 94;
   const ESC = 23;  // ESC frame (0xA7): time, RPM/10 x4, temperature x4, voltage, current
+  const NAV = 41;  // navigation frame (0xA9): estimator health ~10 Hz (src/logging/blackbox.h NavRecord)
 
   // delta frames (0xA6, "H encoding delta1"): field table of src/logging/blackbox.cpp
   const FIELDS = (() => {
@@ -76,7 +77,7 @@
         while (e < u8.length && u8[e] !== 10) e++;
         const line = text(i + 2, e);
         if (line.startsWith("AllQuad blackbox")) {
-          cur = { header: {}, recs: [], esc: [], gyro: [] };
+          cur = { header: {}, recs: [], esc: [], gyro: [], nav: [] };
           prev = null;
           flights.push(cur);
         }
@@ -103,6 +104,15 @@
         if (x === u8[i + ESC - 1]) {
           cur.esc.push(u8.slice(i, i + ESC));
           i += ESC;
+          continue;
+        }
+      }
+      if (u8[i] === 0xA9 && u8[i + 1] === NAV && i + NAV <= u8.length && cur) {
+        let x = 0;
+        for (let k = 0; k < NAV - 1; k++) x ^= u8[i + k];
+        if (x === u8[i + NAV - 1]) {
+          cur.nav.push(u8.slice(i, i + NAV));
+          i += NAV;
           continue;
         }
       }
@@ -137,6 +147,7 @@
       const c = columns(new DataView(all.buffer), f);
       c.esc = escColumns(f.esc);
       c.hf = gyroColumns(f.gyro);
+      c.nav = navColumns(f.nav);
       return c;
     });
   }
@@ -160,6 +171,60 @@
       e.cur[k] = a === -32768 ? NaN : a / 10;
     });
     return e;
+  }
+
+  // navigation frames -> columns (test ratios as ratio to the gate, angles in deg), null if none
+  function navColumns(frames) {
+    if (!frames || !frames.length) return null;
+    const n = frames.length, f32 = () => new Float32Array(n), u8 = () => new Uint8Array(n);
+    const v = { n, t: new Float64Array(n), est: u8(), heightSrc: u8(), headingSrc: u8(), sats: u8(), faults: new Uint16Array(n),
+      tr: [0, 1, 2, 3, 4, 5].map(f32), ekfAtt: [0, 1, 2].map(f32), ahrsYaw: f32(), posStd: f32(), hgtStd: f32(), yawStd: f32(),
+      hAcc: f32(), resets: [0, 1, 2, 3, 4, 5].map(u8) };
+    frames.forEach((b, k) => {
+      const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+      v.t[k] = dv.getUint32(2, true) / 1e6;
+      v.est[k] = b[6]; v.heightSrc[k] = b[7]; v.headingSrc[k] = b[8]; v.sats[k] = b[9];
+      v.faults[k] = dv.getUint16(10, true);
+      for (let i = 0; i < 6; i++) v.tr[i][k] = b[12 + i] / 50;
+      for (let i = 0; i < 3; i++) v.ekfAtt[i][k] = dv.getInt16(18 + i * 2, true) / 10;
+      v.ahrsYaw[k] = dv.getInt16(24, true) / 10;
+      v.posStd[k] = dv.getUint16(26, true) / 100;
+      v.hgtStd[k] = dv.getUint16(28, true) / 100;
+      v.yawStd[k] = dv.getUint16(30, true) / 10;
+      const h = dv.getUint16(32, true);
+      v.hAcc[k] = h === 0xFFFF ? NaN : h / 100;
+      for (let i = 0; i < 6; i++) v.resets[i][k] = b[34 + i];
+    });
+    return v;
+  }
+  // EKF_* fault bits (src/estimation/ekf.h)
+  const NAV_FAULT = { gpsGlitch: 1, gpsVel: 2, baro: 4, mag: 8, noAiding: 16, reset: 32, flow: 64, heading: 128 };
+  // estimator health of one flight: resets during the flight, seconds each fault was set, worst
+  // EKF-vs-AHRS tilt difference, GPS satellites / accuracy
+  function navStats(fl) {
+    const v = fl.nav;
+    if (!v || v.n < 2) return null;
+    const out = { ekf: false, duration: v.t[v.n - 1] - v.t[0], resets: {}, faultSec: {}, tiltErrMax: 0, satsMin: null, hAccMax: null, trMax: [0, 0, 0, 0, 0, 0] };
+    const names = ["pos", "vel", "filter", "tilt", "heading", "baro"];
+    names.forEach((nm, i) => { out.resets[nm] = (v.resets[i][v.n - 1] - v.resets[i][0] + 256) % 256; });
+    for (const nm of Object.keys(NAV_FAULT)) out.faultSec[nm] = 0;
+    let r = 0;
+    for (let k = 0; k < v.n; k++) {
+      const dt = k ? Math.min(0.5, Math.max(0, v.t[k] - v.t[k - 1])) : 0;
+      if (v.est[k]) out.ekf = true;
+      for (const [nm, bit] of Object.entries(NAV_FAULT)) if (v.faults[k] & bit) out.faultSec[nm] += dt;
+      for (let i = 0; i < 6; i++) out.trMax[i] = Math.max(out.trMax[i], v.tr[i][k]);
+      if (v.sats[k]) {
+        out.satsMin = out.satsMin === null ? v.sats[k] : Math.min(out.satsMin, v.sats[k]);
+        if (isFinite(v.hAcc[k])) out.hAccMax = Math.max(out.hAccMax || 0, v.hAcc[k]);
+      }
+      if (v.est[k] && fl.n) {
+        while (r + 1 < fl.n && fl.t[r + 1] <= v.t[k]) r++;
+        const e = Math.max(Math.abs(v.ekfAtt[0][k] - fl.att[0][r]), Math.abs(v.ekfAtt[1][k] - fl.att[1][r]));
+        if (Math.abs(fl.att[1][r]) < 70) out.tiltErrMax = Math.max(out.tiltErrMax, e);  // Euler angles near 90 deg pitch mean little
+      }
+    }
+    return out;
   }
 
   // high-rate gyro frames -> one series per capture: {rate, t0, raw[3], filt[3], n}; a gap of more than two
@@ -851,7 +916,7 @@
       vib: res ? res.axes.slice(0, 2).reduce((m, a) => Math.max(m, a.noiseRaw || 0), 0) : null,
       vibFilt: res ? res.axes.slice(0, 2).reduce((m, a) => Math.max(m, a.noiseFilt || 0), 0) : null,
       tempMax: res && res.esc && res.esc.haveTemp && Math.max(...res.esc.tempMax.filter((x) => x != null)) > 0 ? Math.max(...res.esc.tempMax.filter((x) => x != null)) : null,
-      saturation: res ? res.saturation : null, notes: [],
+      saturation: res ? res.saturation : null, nav: navStats(fl), notes: [],
     };
     const note = (level, text) => out.notes.push({ level, text });
     const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
@@ -875,6 +940,29 @@
     }
     if (out.tempMax != null && out.tempMax > 85) note("warn", `ESC nóng tới ${out.tempMax} °C: giảm ga tối đa, thông gió hoặc dùng ESC lớn hơn.`);
     if (out.iMax != null && out.iMax < 0.5) note("info", "Không đo được dòng: không có mAh. Xem Chế độ & an toàn → Pin để nối và hiệu chỉnh cảm biến dòng.");
+    const nv = out.nav;
+    if (nv) {
+      const s1 = (v) => `${f1(v)} s`;
+      if (nv.resets.filter) note("bad", `EKF phải khởi động lại toàn bộ ${nv.resets.filter} lần (lỗi số): gửi log này để kiểm tra.`);
+      if (nv.resets.tilt)
+        note("warn", `Tư thế EKF lệch AHRS và đã tự đặt lại ${nv.resets.tilt} lần (lệch tối đa ${Math.round(nv.tiltErrMax)}°): thường do rung mạnh làm gia tốc kế bão hoà ` +
+          "hoặc lộn nhào rất nhanh. Kiểm tra đệm chống rung của FC; nếu bay ACRO mạnh thì đây là bình thường.");
+      if (nv.resets.heading)
+        note("warn", `Hướng EKF lệch cả la bàn lẫn hướng tính từ GPS, đã đặt lại theo la bàn ${nv.resets.heading} lần: gửi log này để kiểm tra (thường sau va chạm hoặc lộn nhào).`);
+      if (nv.resets.pos || nv.resets.vel)
+        note("warn", `GPS nhảy, EKF đặt lại vị trí ${nv.resets.pos} lần, vận tốc ${nv.resets.vel} lần: ăng-ten GPS bị che, gần VTX / dây nguồn, hoặc ít vệ tinh.`);
+      if (nv.faultSec.baro > 1)
+        note("warn", `Baro bị loại ${s1(nv.faultSec.baro)}${nv.ekf ? " (EKF lấy độ cao từ GPS)" : ""}: che baro bằng mút xốp, tránh gió cánh thổi thẳng vào, kiểm tra nhiệt.`);
+      if (nv.resets.baro)
+        note("warn", `Độ cao bị đặt lại theo baro ${nv.resets.baro} lần (baro lệch xa ước lượng hơn 2 s): kiểm tra baro, mút che, hoặc va chạm.`);
+      if (nv.faultSec.mag > 1) note("warn", `La bàn lệch hướng GPS ${s1(nv.faultSec.mag)}: hiệu chuẩn lại, đặt compass xa dây pin / ESC, kiểm tra hướng lắp (mag_align).`);
+      else if (nv.faultSec.heading > 3) note("info", `EKF loại hướng la bàn ${s1(nv.faultSec.heading)}: nhiễu từ ngắn hạn (dòng lớn khi tăng ga).`);
+      if (nv.faultSec.gpsGlitch > 2) note("info", `Vị trí GPS bị loại ${s1(nv.faultSec.gpsGlitch)} (lệch khỏi dự đoán).`);
+      if (nv.satsMin !== null && nv.satsMin < 6) note("info", `GPS xuống còn ${nv.satsMin} vệ tinh trong chuyến bay: giữ chế độ GPS cẩn thận, chờ đủ vệ tinh trước khi cất cánh.`);
+      if (nv.hAccMax !== null && nv.hAccMax > 5) note("info", `Sai số GPS lên tới ${f1(nv.hAccMax)} m.`);
+      if (nv.ekf && !nv.resets.filter && !nv.resets.tilt && !nv.resets.heading && !nv.resets.pos && !nv.resets.vel && nv.faultSec.baro <= 1 && nv.faultSec.mag <= 1)
+        note("ok", "EKF ổn định suốt chuyến bay: không phải đặt lại, không loại cảm biến lâu.");
+    }
     if (res && res.rpmFilter === 0 && res.esc && res.esc.haveRpm) note("info", "ESC có báo RPM nhưng RPM filter đang tắt: bật rpm_harmonics để lọc nhiễu motor tốt hơn.");
     if (!out.notes.some((x) => x.level === "bad" || x.level === "warn") && thrN) note("ok", "Không thấy vấn đề lớn về pin, lực đẩy và rung trong chuyến này.");
     const rank = { bad: 0, warn: 1, info: 2, ok: 3 };
@@ -882,7 +970,7 @@
     return out;
   }
 
-  const api = { decode, fft, spectrum, stepResponse, analyze, suggest, plan, report, bandPeak, toCsv, toBbl, REC, ESC, AXES };
+  const api = { decode, fft, spectrum, stepResponse, analyze, suggest, plan, report, bandPeak, toCsv, toBbl, navStats, REC, ESC, NAV, AXES };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AQ = api;
 })(typeof window !== "undefined" ? window : globalThis);

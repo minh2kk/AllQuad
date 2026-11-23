@@ -5,7 +5,9 @@ usage: tools/blackbox_decode.py LOG.bin [out.csv]
 Each flight starts with text header lines ("H ...", ending with "H end"), followed by
 full records (0xA5, see src/logging/blackbox.h) and, since "H encoding delta1", delta frames
 (0xA6) in between, and since "H esc_frame 23" ESC telemetry frames (0xA7: RPM, temperature,
-voltage, current per motor, ~50 Hz) which go to a second file LOG_esc.csv. Corrupt records are skipped.
+voltage, current per motor, ~50 Hz) which go to a second file LOG_esc.csv, and since "H nav_frame 41"
+navigation frames (0xA9: estimator health ~10 Hz - test ratios, faults, resets, EKF vs AHRS attitude,
+GPS satellites / accuracy) which go to LOG_nav.csv. Corrupt records are skipped.
 """
 import csv
 import struct
@@ -28,6 +30,23 @@ ESC_FMT = "<BBI4H4BHhB"
 ESC_SIZE = struct.calcsize(ESC_FMT)
 ESC_FIELDS = (["time_us"] + [f"rpm{i}" for i in range(1, 5)] + [f"temp{i}" for i in range(1, 5)] +
               ["esc_voltage", "esc_current"])
+
+
+# navigation frames (0xA9): sync, len, time_us, est, height src, heading src, sats, faults, 6 test ratios x50,
+# EKF roll / pitch / yaw, AHRS yaw (0.1 deg), pos std cm, height std cm, yaw std 0.1 deg, GPS hAcc cm, 6 resets, xor
+NAV_FMT = "<BBI4BH6B3hh4H6BB"
+NAV_SIZE = struct.calcsize(NAV_FMT)
+NAV_FIELDS = (["time_us", "est", "height_src", "heading_src", "sats", "faults"] +
+              [f"tr_{n}" for n in ("gps_pos", "gps_vel", "height", "heading", "mag", "flow")] +
+              ["ekf_roll", "ekf_pitch", "ekf_yaw", "ahrs_yaw", "pos_std_m", "hgt_std_m", "yaw_std_deg", "gps_hacc_m"] +
+              [f"resets_{n}" for n in ("pos", "vel", "filter", "tilt", "heading", "baro")])
+
+
+def _nav_row(v):
+    tr = [round(t / 50, 2) for t in v[8:14]]
+    att = [a / 10 for a in v[14:18]]
+    return (list(v[2:8]) + tr + att + [v[18] / 100, v[19] / 100, v[20] / 10, "" if v[21] == 0xFFFF else v[21] / 100] +
+            list(v[22:28]))
 
 
 def _esc_row(v):
@@ -80,8 +99,8 @@ def expand_delta(data, i, prev, prev_crc):
     return vals, c, j + 1 - i
 
 
-def decode(data, esc_out=None):
-    """flights: [(headers, rows)]; esc_out (list) collects [(flight number, ESC row)]."""
+def decode(data, esc_out=None, nav_out=None):
+    """flights: [(headers, rows)]; esc_out / nav_out (lists) collect [(flight number, ESC / navigation row)]."""
     flights, rows, headers, i, prev, prev_crc = [], None, [], 0, None, 0
     while i < len(data):
         if data.startswith(b"H ", i):
@@ -119,6 +138,16 @@ def decode(data, esc_out=None):
                     esc_out.append((len(flights), _esc_row(struct.unpack(ESC_FMT, rec))))
                 i += ESC_SIZE
                 continue
+        if data[i] == 0xA9 and rows is not None and i + NAV_SIZE <= len(data) and data[i + 1] == NAV_SIZE:
+            rec = data[i:i + NAV_SIZE]
+            x = 0
+            for b in rec[:-1]:
+                x ^= b
+            if x == rec[-1]:
+                if nav_out is not None:
+                    nav_out.append((len(flights), _nav_row(struct.unpack(NAV_FMT, rec))))
+                i += NAV_SIZE
+                continue
         if data[i] == 0xA8 and rows is not None and data[i + 1:i + 2] and i + 9 + data[i + 1] * 12 <= len(data):
             # high-rate gyro frame (bb_gyro_s): skipped here, analysed in the configurator
             n = 9 + data[i + 1] * 12
@@ -151,8 +180,8 @@ def main():
         print(__doc__)
         return 1
     data = open(sys.argv[1], "rb").read()
-    esc = []
-    flights = decode(data, esc)
+    esc, nav = [], []
+    flights = decode(data, esc, nav)
     out = sys.argv[2] if len(sys.argv) > 2 else sys.argv[1].rsplit(".", 1)[0] + ".csv"
     with open(out, "w", newline="") as f:
         w = csv.writer(f)
@@ -170,6 +199,14 @@ def main():
             for n, row in esc:
                 w.writerow([n] + row)
         print(f"{len(esc)} ESC frames (RPM, temperature) -> {eout}")
+    if nav:
+        nout = out.rsplit(".", 1)[0] + "_nav.csv"
+        with open(nout, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["flight"] + NAV_FIELDS)
+            for n, row in nav:
+                w.writerow([n] + row)
+        print(f"{len(nav)} navigation frames (estimator health) -> {nout}")
     for n, (hdr, rows) in enumerate(flights, 1):
         dur = (rows[-1][0] - rows[0][0]) / 1e6 if len(rows) > 1 else 0
         print(f"  flight {n}: {len(rows)} records, {dur:.1f} s, " + "; ".join(h for h in hdr if h.startswith("pid")))

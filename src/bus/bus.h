@@ -54,6 +54,9 @@ bool takeRequest(Request& r, uint32_t& arg);
 // sample, and at loop rates where it publishes faster than the control task runs (2 kHz loop ->
 // 500 Hz vs 250 Hz) the EKF would otherwise integrate only part of the rotation and diverge.
 void addImuDelta(const fc::Vec3& dAng, const fc::Vec3& dVel, float dt);
+#ifdef ALLQUAD_HOST
+extern float simEkfYawKickDeg;  // simulator: turn the EKF heading by this much once (divergence test)
+#endif
 bool takeImuDelta(fc::Vec3& dAng, fc::Vec3& dVel, float& dt);
 
 // cross-task flags

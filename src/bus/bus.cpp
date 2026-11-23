@@ -131,13 +131,15 @@ bool takeRequest(Request& r, uint32_t& arg) {
   return true;
 }
 
+#ifdef ALLQUAD_HOST
+float simEkfYawKickDeg = 0;
+#endif
 static fc::Vec3 imuDAng, imuDVel;
 static float imuDt = 0;
 void addImuDelta(const fc::Vec3& dAng, const fc::Vec3& dVel, float dt) {
   os::CriticalGuard g;
   if (imuDt > 0.5f) { imuDAng = imuDVel = fc::Vec3(); imuDt = 0; }  // nobody is taking: do not grow for ever
-  imuDAng += dAng;
-  imuDVel += dVel;
+  fc::imuDeltaJoin(imuDAng, imuDVel, dAng, dVel);
   imuDt += dt;
 }
 bool takeImuDelta(fc::Vec3& dAng, fc::Vec3& dVel, float& dt) {

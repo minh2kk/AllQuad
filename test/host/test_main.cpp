@@ -2139,6 +2139,69 @@ static void testVtxTable() {
   CHECK(d.sentPowerMw() == 1000 && dbm && idx, "VTX table: SmartAudio gets dBm, or the level index for old VTX");
 }
 
+// coning / sculling: delta angle and velocity summed over a 4 ms interval of 1 kHz samples, under a
+// fast two-axis rotation, against a fine (100 kHz) exact integration
+static fc::Quat qFromRot(const fc::Vec3& r) {
+  float a = r.norm();
+  if (a < 1e-9f) return fc::Quat{1, 0, 0, 0};
+  float s = sinf(a * 0.5f) / a;
+  return fc::Quat{cosf(a * 0.5f), r.x * s, r.y * s, r.z * s};
+}
+#define CHECKF(cond, ...)                         \
+  do {                                            \
+    char m_[160];                                 \
+    snprintf(m_, sizeof(m_), __VA_ARGS__);        \
+    CHECK(cond, m_);                              \
+  } while (0)
+static void testImuDelta() {
+  using fc::Vec3;
+  using fc::Quat;
+  auto rate = [](double t) { return Vec3((float)(17.5 * sin(2 * M_PI * 3 * t)), (float)(17.5 * cos(2 * M_PI * 3 * t)), 3.0f); };  // ~1000 deg/s coning
+  const Vec3 accE(0.5f, -1.0f, -9.81f);  // specific force, earth frame
+  Quat qT{1, 0, 0, 0}, qC{1, 0, 0, 0}, qP{1, 0, 0, 0};
+  double t = 0, errC = 0, errP = 0, vErrC = 0, vErrP = 0;
+  const int FINE = 100;
+  for (int iv = 0; iv < 250; iv++) {
+    Quat q0 = qT;
+    Vec3 dA, dV, pA, pV;
+    for (int s = 0; s < 4; s++) {  // four 1 kHz samples per interval
+      Vec3 dTh, dVs;
+      for (int f = 0; f < FINE; f++) {  // exact: fine rotation steps, specific force in the body frame
+        double h = 1e-3 / FINE;
+        Vec3 w = rate(t + h * 0.5);
+        Vec3 ab = qT.rotateInv(accE);
+        dTh += w * (float)h;
+        dVs += ab * (float)h;  // what an accelerometer sample integrates (averaged over the sample)
+        qT = qT * qFromRot(w * (float)h);
+        qT.normalize();
+        t += h;
+      }
+      fc::imuDeltaAdd(dA, dV, dTh, dVs);
+      pA += dTh;
+      pV += dVs;
+    }
+    qC = qC * qFromRot(dA); qC.normalize();
+    qP = qP * qFromRot(pA); qP.normalize();
+    Vec3 vTrue = q0.rotateInv(accE * 0.004f);  // velocity change in the start frame
+    vErrC = fmax(vErrC, (double)(dV - vTrue).norm());
+    vErrP = fmax(vErrP, (double)(pV - vTrue).norm());
+    auto ang = [&](const Quat& q) { Quat d = qT.conj() * q; return 2.0 * acos(fmin(1.0, fabs((double)d.w))) * 180 / M_PI; };
+    errC = ang(qC);
+    errP = ang(qP);
+  }
+  CHECKF(errC < 0.2 * errP && errC < 2.0, "IMU delta: coning term keeps attitude after 1 s at 1000 deg/s (%.2f deg vs %.1f deg plain)", errC, errP);
+  CHECKF(vErrC < 0.5 * vErrP, "IMU delta: sculling term keeps the velocity in the start frame (%.4f vs %.4f m/s)", vErrC, vErrP);
+  // joining two intervals equals one interval over both
+  Vec3 a1, v1, a2, v2, aj, vj;
+  for (int k = 0; k < 8; k++) {
+    Vec3 th(0.004f * k, 0.01f, -0.003f * k), dv(0.01f, -0.005f * k, -0.04f);  // ~1000 deg/s samples
+    fc::imuDeltaAdd(aj, vj, th, dv);
+    if (k < 4) fc::imuDeltaAdd(a1, v1, th, dv); else fc::imuDeltaAdd(a2, v2, th, dv);
+  }
+  fc::imuDeltaJoin(a1, v1, a2, v2);
+  CHECKF((a1 - aj).norm() < 2e-4f && (v1 - vj).norm() < 1e-3f, "IMU delta: joining two intervals ~ one interval (%.5f / %.5f)", (double)(a1 - aj).norm(), (double)(v1 - vj).norm());
+}
+
 static void testEkf() {
   Config c;
   configDefaults(c);
@@ -2473,6 +2536,7 @@ int main(int argc, char** argv) {
   testMsp();
   testDynamicNotch();
   testKalman();
+  testImuDelta();
   testParams();
   testModeRanges();
   testDeferredSave();

@@ -59,7 +59,15 @@ else {
     const size = fs.statSync(path.join(out, "normal.bin")).size, full = normal.fl.n * 94;
     check(normal.fl.header.encoding === "delta1" && full / size > 2.5,
           `blackbox delta frames: ${normal.fl.n} records in ${(size / 1024).toFixed(0)} kB (${(full / size).toFixed(1)}x smaller than full records)`);
-    const py = execFileSync("python3", [path.join(root, "tools", "blackbox_decode.py"), path.join(out, "normal.bin"), path.join(out, "normal.csv")]).toString();
+    {
+    const f2 = path.join(root, "build", "web", "ekf_yaw.bin");
+    execFileSync(sim, ["ekf_yaw"], { env: { ...process.env, SIM_BLACKBOX: f2 }, stdio: "pipe" });
+    const fy = AQ.decode(fs.readFileSync(f2).buffer).pop();
+    const ry = AQ.report(fy, null);
+    check(ry.nav && ry.nav.resets.heading >= 1 && ry.notes.some((x) => /Hướng EKF lệch/.test(x.text)),
+      `EKF heading reset by the GPS referee logged and reported (${ry.nav ? ry.nav.resets.heading : "?"})`);
+  }
+  const py = execFileSync("python3", [path.join(root, "tools", "blackbox_decode.py"), path.join(out, "normal.bin"), path.join(out, "normal.csv")]).toString();
     const m = py.match(/(\d+) records/);
     check(m && +m[1] >= normal.fl.n && +m[1] <= normal.fl.n + 20, `Python decoder agrees (${m ? m[1] : "?"} records)`);
     const pe = py.match(/(\d+) ESC frames/);
@@ -170,6 +178,26 @@ else {
   const plain = AQ.decode(base.buffer.slice(base.byteOffset, base.byteOffset + base.length))[0];
   check(hf && hf.rate === 4000 && Math.abs(hf.duration - 2) < 0.01 && Math.abs(pk.hz - 610) < 8 && fl.n === plain.n,
     `high-rate gyro: ${hf ? hf.duration.toFixed(2) + " s at " + hf.rate + " Hz" : "none"}, peak ${pk ? pk.hz.toFixed(0) : "?"} Hz (true 610, above the 250 Hz of the regular log), records untouched`);
+}
+
+// ---- 2b. navigation frames (0xA9): the simulator's EKF fault flight (baro drift, compass interference)
+if (fs.existsSync(sim)) {
+  const file = path.join(root, "build", "web", "ekf_faults.bin");
+  execFileSync(sim, ["ekf_faults"], { env: { ...process.env, SIM_BLACKBOX: file }, stdio: "pipe" });
+  const fl = AQ.decode(fs.readFileSync(file).buffer).pop();
+  const rep = AQ.report(fl, AQ.analyze(fl));
+  const nv = rep.nav;
+  const has = (re) => rep.notes.some((x) => re.test(x.text));
+  check(fl.nav && fl.nav.n > 700 && nv && nv.ekf && nv.faultSec.baro > 5 && nv.faultSec.mag > 1 && has(/Baro bị loại/) && has(/La bàn lệch/),
+    `navigation frames: ${fl.nav ? fl.nav.n : 0}, baro rejected ${nv ? nv.faultSec.baro.toFixed(0) : "?"} s, compass ${nv ? nv.faultSec.mag.toFixed(0) : "?"} s -> notes`);
+  check(nv && nv.tiltErrMax < 10 && !nv.resets.tilt && !nv.resets.filter, `EKF tilt follows the AHRS (max difference ${nv ? nv.tiltErrMax.toFixed(1) : "?"} deg), no resets`);
+  fl.nav.resets[3][fl.nav.n - 1] += 2;  // as if the EKF tilt had been reset twice
+  check(AQ.report(fl, null).notes.some((x) => x.level === "warn" && /tự đặt lại 2 lần/.test(x.text)), "tilt resets reported");
+  const py = execFileSync("python3", [path.join(root, "tools", "blackbox_decode.py"), file], { encoding: "utf8" });
+  const nav = fs.readFileSync(file.replace(/\.bin$/, "_nav.csv"), "utf8").trim().split("\n");
+  const hdr = nav[0].split(","), last = nav[nav.length - 1].split(",");
+  check(/navigation frames/.test(py) && nav.length - 1 === fl.nav.n && +last[hdr.indexOf("est")] === 1 && hdr.includes("resets_tilt"),
+    `blackbox_decode.py: ${nav.length - 1} navigation rows -> _nav.csv`);
 }
 
 // ---- 3. exports: .bbl read back with a minimal Betaflight-format decoder (I frames, variable-byte)

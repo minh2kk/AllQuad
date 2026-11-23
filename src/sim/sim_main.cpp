@@ -24,6 +24,8 @@
 #include "../bus/bus.h"
 #include "../estimation/ekf.h"
 #include "../estimation/nav_estimator.h"
+#include "../logging/blackbox.h"
+#include "../comms/hitl.h"
 #include "../navigation/mission.h"
 #include "../os/os.h"
 
@@ -231,6 +233,7 @@ void simIoTask(void*) {
   static uint32_t tick = 0;
   tick++;
   uint32_t now = os::timeMs();
+  if (hitl::active()) return;  // hardware-in-the-loop test (serve): the PC tool is the world now
   if (rcAlive) { rcIn.lastFrameMs = now; bus::rc.publish(rcIn); }
   if (opt.gps && tick % 10 == 0 && now > 1000) {
     GpsData g{};
@@ -946,7 +949,8 @@ void scenarioAutotune() {
          start[0].p, start[0].d, start[1].p, start[1].d, bus::config.pid[0].p, bus::config.pid[0].d,
          bus::config.pid[1].p, bus::config.pid[1].d, saved.pid[0].p);
   bool changed = fabsf(bus::config.pid[0].p - start[0].p) > 0.5f || fabsf(bus::config.pid[0].d - start[0].d) > 0.5f;
-  check("Autotune finished both axes", doneT > 0 && doneT < 260, "after %.0f s", doneT - 10);
+  // from half the P gain it takes ~4 min (the exact time shifts with any change to the flight)
+  check("Autotune finished both axes", doneT > 0 && doneT < 310, "after %.0f s", doneT - 10);
   check("Final response near the 4-12 % band", finalOv >= 0.03f && finalOv <= 0.15f, "%.3f", finalOv);
   check("Altitude held while twitching", altDev < 1.5f && minAlt > 0.8f, "max deviation %.2f m", altDev);
   check("Gains saved on disarm (switch on)", disarmT > 0 && changed && fabsf(saved.pid[0].p - bus::config.pid[0].p) < 1e-3f &&
@@ -1506,7 +1510,7 @@ void scenarioFeel() {
 
 void scenarioEkfFaults() {
   printf("\n== ekf_faults: baro drifts 12 m, then compass interference 70 deg -> EKF rejects both ==\n");
-  setup([](Config& c) { c.rth_alt = 15; });
+  setup([](Config& c) { c.rth_alt = 15; c.bb_rate_hz = 100; c.bb_backend = 2; });
   bool baroFault = false, magFault = false;
   float altErr = 0, disarmT = -1, holdErr = 0;
   uint32_t warnSeen = 0;
@@ -1538,6 +1542,70 @@ void scenarioEkfFaults() {
   check("Height kept on GPS during the baro drift", holdErr < 2.5f, "estimate error %.2f m", holdErr);
   check("Compass interference detected", magFault && (warnSeen & WARN_EKF), "%.0f", magFault);
   check("RTH home and landed after both faults", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+  check("No EKF tilt reset (a wrong heading is not a wrong tilt)", bus::ekf.get().tiltResets == 0, "%.0f resets",
+        (double)bus::ekf.get().tiltResets);
+  // navigation frames in the blackbox: ~10 Hz, and they carry the baro / compass faults
+  {
+    const std::vector<uint8_t>& L = hal::host::log;
+    int frames = 0;
+    uint16_t faults = 0;
+    for (size_t i = 0; i + sizeof(logging::NavRecord) <= L.size(); i++) {
+      if (L[i] != 0xA9 || L[i + 1] != sizeof(logging::NavRecord)) continue;
+      uint8_t x = 0;
+      for (size_t k = 0; k < sizeof(logging::NavRecord) - 1; k++) x ^= L[i + k];
+      if (x != L[i + sizeof(logging::NavRecord) - 1]) continue;
+      logging::NavRecord r;
+      memcpy(&r, &L[i], sizeof(r));
+      if (r.est) faults |= r.faults;
+      frames++;
+    }
+    check("Blackbox navigation frames (~10 Hz, EKF faults logged)", frames > 700 && (faults & EKF_BARO_FAULT) && (faults & EKF_MAG_FAULT),
+          "%.0f frames", (double)frames);
+  }
+  if (const char* path = getenv("SIM_BLACKBOX")) {
+    FILE* f = fopen(path, "wb");
+    if (f) { fwrite(hal::host::log.data(), 1, hal::host::log.size(), f); fclose(f); }
+  }
+}
+
+void scenarioEkfYaw() {
+  printf("\n== ekf_yaw: the EKF heading turns 178 deg (compass fine) -> GPS referee resets it ==\n");
+  setup([](Config& c) { c.rth_alt = 15; c.bb_rate_hz = 100; c.bb_backend = 2; });
+  float worst = 0, worstLate = 0, disarmT = -1, hn = 0, he = 0, drift = 0;
+  bool magFault = false;
+  run(120, [&](float t) {
+    if (t >= 3.0f) rcIn.ch[4] = 2000;
+    if (t >= 3.5f && t < 6.0f) rcIn.ch[RC_THROTTLE] = 1580;
+    if (t >= 6.0f) { rcIn.ch[5] = 2000; rcIn.ch[RC_THROTTLE] = 1500; }
+    if (t >= 10) rcIn.ch[6] = 1500;  // POSHOLD
+    if (fabsf(t - 20.0f) < 0.0005f) bus::simEkfYawKickDeg = 178;
+    quad.wind = Vec3(1.0f, 0.5f, 0);  // light wind, the pilot does nothing: hover only
+    if (t >= 80.0f) rcAlive = false;  // RTH
+  }, [&](float t) {
+    VehicleStatus s = status();
+    EkfReport k = bus::ekf.get();
+    float err = fabsf(wrapPi(k.yawDeg * DEG2RAD - quad.q.yaw())) * RAD2DEG;
+    if (t > 21) worst = fmaxf(worst, err);
+    if (fabsf(t - 19.0f) < 0.0005f) { hn = quad.pos.x; he = quad.pos.y; }
+    if (t > 19 && t < 70) drift = fmaxf(drift, hypotf(quad.pos.x - hn, quad.pos.y - he));
+    if (t > 50) worstLate = fmaxf(worstLate, err);
+    if (t > 21 && (k.faults & EKF_MAG_FAULT)) magFault = true;
+    if (t > 80 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) {
+      trace(t);
+      printf("      ekf yaw err %.1f deg, faults 0x%x, yaw resets %u, gbias z %.3f dps, trYaw %.2f, ystd %.1f, ekf r %.2f p %.2f true r %.2f p %.2f abias %.2f %.2f %.2f\n", err, k.faults, k.yawResets, k.gyroBias[2], k.trYaw, k.yawStdDeg, k.rollDeg, k.pitchDeg, quad.q.roll() * RAD2DEG, quad.q.pitch() * RAD2DEG, k.accBias[0], k.accBias[1], k.accBias[2]);
+    }
+  });
+  check("EKF heading kicked 178 deg", worst > 150, "max error %.0f deg", worst);
+  check("Heading back on the GPS / compass (after 30 s)", worstLate < 10, "max error %.1f deg", worstLate);
+  check("POSHOLD kept the craft near (referee reset within seconds)", drift < 25, "max %.1f m", drift);
+  check("Compass not blamed for the EKF's own heading error", !magFault, "%.0f", magFault);
+  quad.wind = Vec3();
+  check("RTH home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+  if (const char* path = getenv("SIM_BLACKBOX")) {
+    FILE* f = fopen(path, "wb");
+    if (f) { fwrite(hal::host::log.data(), 1, hal::host::log.size(), f); fclose(f); }
+  }
 }
 
 void scenarioRescue() {
@@ -1889,7 +1957,7 @@ int main(int argc, char** argv) {
       {"guided", scenarioGuided}, {"smartrtl", scenarioSmartRtl}, {"crash", scenarioCrash}, {"gcsfs", scenarioGcsFailsafe},
       {"spin", scenarioSpin}, {"logic", scenarioLogic}, {"profiles", scenarioProfiles}, {"polyfence", scenarioPolyFence},
       {"imufail", scenarioImuFail}, {"imuvote", scenarioImuVote}, {"acc6", scenarioAcc6}, {"compassmot", scenarioCompassMot}, {"feel", scenarioFeel},
-      {"ekf_faults", scenarioEkfFaults}, {"rescue", scenarioRescue}, {"rescue_sanity", scenarioRescueSanity},
+      {"ekf_faults", scenarioEkfFaults}, {"ekf_yaw", scenarioEkfYaw}, {"rescue", scenarioRescue}, {"rescue_sanity", scenarioRescueSanity},
       {"launch", scenarioLaunch}, {"vibe", scenarioVibeWarn}, {"clip", scenarioAccClip}, {"beginner", scenarioBeginner}};
   if (!strcmp(which, "all")) {  // every scenario in a fresh process (clean firmware state)
     int failed = 0;

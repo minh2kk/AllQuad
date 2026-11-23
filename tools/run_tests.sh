@@ -12,6 +12,7 @@ if python3 -c "import pymavlink" 2>/dev/null; then python3 tools/test_mavlink.py
 ./build/sim all
 sh tools/fuzz.sh 50000            # protocol parsers under ASan + UBSan (short; CI and nightly run longer)
 ./build/sim soak 8 "$(date +%s)"  # a few random flights, new seed every run
+python3 tools/hitl.py --exec "./build/sim serve" --auto   # hardware-in-the-loop protocol + check flight (50 s)
 if command -v cppcheck >/dev/null; then sh tools/static_check.sh; else echo "(cppcheck missing: static analysis skipped)"; fi
 if [ -n "$WASI_SDK" ] || ls -d /opt/wasi/wasi-sdk-* >/dev/null 2>&1; then tools/build_wasm.sh; else echo "(wasi-sdk missing: demo build skipped)"; fi
 python3 tools/embed_web.py

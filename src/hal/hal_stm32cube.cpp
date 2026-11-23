@@ -452,11 +452,13 @@ size_t portWriteSpace(Port p) {
   if (!u || !u->open) return 0;
   return (u->tt - u->th - 1 + UTX) % UTX;
 }
+void dshotDmaIrq();  // DShot (below)
 
 }  // namespace hal
 
 extern "C" {
 void USART1_IRQHandler(void) { hal::uartIrq(USART1); }
+void DMA2_Stream5_IRQHandler(void) { hal::dshotDmaIrq(); }
 void USART2_IRQHandler(void) { hal::uartIrq(USART2); }
 #if defined(USART3)
 void USART3_IRQHandler(void) { hal::uartIrq(USART3); }
@@ -851,11 +853,80 @@ static bool spiXfer(SpiBus& b, const uint8_t* tx, uint8_t* rx, size_t n) {
 bool spiHasDevice(SpiDev d) { return csPin(d) >= 0 && spiBus(d) != nullptr; }
 void spiSetSpeed(SpiDev d, uint32_t hz) { spiHz[(int)d] = hz; }
 
+#if defined(STM32H7xx)
+// IMU reads on the H7 without the HAL: register address and data in one transfer (TSIZE), byte by
+// byte through the FIFO. The HAL needs two calls of several microseconds each; at 6.4 kHz that was
+// a tenth of the CPU spinning. Checked against the HAL on the first reads; any timeout or mismatch
+// goes back to the HAL for good.
+static int8_t spiFast = -1;  // -1 not checked yet, 1 in use, 0 HAL only
+static bool spiXferReg(SpiBus& b, const uint8_t* tx, uint8_t* rx, size_t n) {
+  SPI_TypeDef* r = b.reg;
+  r->CR1 &= ~SPI_CR1_SPE;
+  MODIFY_REG(r->CR2, SPI_CR2_TSIZE, n);
+  r->CR1 |= SPI_CR1_SPE;
+  r->CR1 |= SPI_CR1_CSTART;
+  size_t ti = 0, ri = 0;
+  uint32_t guard = 0;
+  bool ok = true;
+  while (ri < n) {
+    uint32_t sr = r->SR;
+    if (ti < n && ti - ri < 8 && (sr & SPI_SR_TXP)) {  // at most 8 bytes in flight (FIFO 16)
+      *(volatile uint8_t*)&r->TXDR = tx[ti++];
+      continue;
+    }
+    if (sr & SPI_SR_RXP) {
+      rx[ri++] = *(volatile uint8_t*)&r->RXDR;
+      guard = 0;
+      continue;
+    }
+    if (++guard > 20000) { ok = false; break; }
+  }
+  guard = 0;
+  while (ok && !(r->SR & SPI_SR_EOT))
+    if (++guard > 20000) ok = false;
+  r->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC | SPI_IFCR_OVRC | SPI_IFCR_UDRC | SPI_IFCR_MODFC;
+  r->CR1 &= ~SPI_CR1_SPE;
+  return ok;
+}
+static bool spiReadFast(SpiBus& b, int cs, uint8_t reg, uint8_t* buf, size_t len, bool dummy) {
+  uint8_t tx[40] = {(uint8_t)(reg | 0x80)}, rx[40];
+  size_t head = dummy ? 2 : 1, n = head + len;
+  gpio::write(cs, false);
+  bool ok = spiXferReg(b, tx, rx, n);
+  gpio::write(cs, true);
+  if (ok) memcpy(buf, rx + head, len);
+  return ok;
+}
+static bool spiReadHal(SpiBus& b, int cs, uint8_t reg, uint8_t* buf, size_t len, bool dummy);
+#endif
+
 bool spiRead(SpiDev d, uint8_t reg, uint8_t* buf, size_t len, bool dummy) {
   SpiBus* b = spiBus(d);
   int cs = csPin(d);
   if (!b || cs < 0) return false;
   spiApplySpeed(*b, spiHz[(int)d]);
+#if defined(STM32H7xx)
+  if (d != SpiDev::OSD && len + 2 <= 40 && spiFast != 0) {
+    if (spiFast == 1) {
+      if (spiReadFast(*b, cs, reg, buf, len, dummy)) return true;
+      spiFast = 0;  // timeout: HAL from now on (and this read too)
+    } else if (len == 1) {
+      // a register that does not change between two reads (WHO_AM_I, status during the probe)
+      uint8_t h = 0, f = 0;
+      bool okH = spiReadHal(*b, cs, reg, &h, 1, dummy);
+      bool okF = spiReadFast(*b, cs, reg, &f, 1, dummy);
+      static uint8_t agree = 0, differ = 0;  // a status bit may change between the two reads: 3 strikes
+      if (okH && okF && h == f) { if (++agree >= 3) spiFast = 1; }
+      else if (++differ >= 3) spiFast = 0;
+      *buf = h;
+      return okH;
+    }
+  }
+  return spiReadHal(*b, cs, reg, buf, len, dummy);
+}
+static bool spiReadHal(SpiBus& b0, int cs, uint8_t reg, uint8_t* buf, size_t len, bool dummy) {
+  SpiBus* b = &b0;
+#endif
   uint8_t head[2] = {(uint8_t)(reg | 0x80), 0};
   gpio::write(cs, false);
   bool ok = spiXfer(*b, head, nullptr, dummy ? 2 : 1);
@@ -1203,7 +1274,15 @@ static GPIO_TypeDef* dshotPort = nullptr;
 static uint32_t dshotMask[4];
 static uint32_t dshotAllMask = 0;
 alignas(32) static uint32_t dshotBuf[56];
-static bool bidir = false, bidirWanted = false, bdSampling = false;
+static bool bidir = false, bidirWanted = false;
+static volatile bool bdSampling = false;
+// Bidirectional DShot without waiting: the DMA's transfer-complete interrupt turns the pins around
+// and starts the sampling the moment the frame is out (before: the flight loop spun 27-53 us per
+// loop on it, 17-34 % of the CPU at 6.4 kHz). If that interrupt never comes (3 times), the loop
+// waits for the frame as before.
+static volatile bool bdTx = false;
+static bool bdIsr = true;
+static uint8_t bdIsrMiss = 0;
 static uint32_t bitrateHz = 300000;
 static constexpr int BD_SAMPLES = 150;
 alignas(32) static uint16_t bdSamples[160];
@@ -1256,6 +1335,12 @@ static bool dshotInit(bool d600) {
   DMA_Stream_TypeDef* st = DMA2_Stream5;
   st->CR = 0;
   while (st->CR & DMA_SxCR_EN) {}
+  bdTx = false;
+  bdSampling = false;
+  bdIsr = true;
+  bdIsrMiss = 0;
+  HAL_NVIC_SetPriority(DMA2_Stream5_IRQn, AQ_PRIO_DSHOT, 0);  // above everything: the ESC answers ~30 us after the frame
+  HAL_NVIC_EnableIRQ(DMA2_Stream5_IRQn);
   st->PAR = (uint32_t)&dshotPort->BSRR;
   st->FCR = 0;
 #if defined(STM32H7xx)
@@ -1287,10 +1372,42 @@ static void bidirCollect() {
     if (now - bdOkMs[m] > 100) bdErpm[m] = -1;
   }
 }
+// after a bidirectional frame: pins to input, sample the GPIO port at 3x the telemetry bit rate
+static void bidirSample() {
+  DMA_Stream_TypeDef* st = DMA2_Stream5;
+  pinsMode(0);
+  TIM1->ARR = stm32::timerClock(TIM1) * 4 / (bitrateHz * 15) - 1;  // 3 samples per telemetry bit
+  TIM1->EGR = TIM_EGR_UG;
+  st->PAR = (uint32_t)&dshotPort->IDR;
+  st->CR = (st->CR & ~(DMA_SxCR_DIR | DMA_SxCR_MSIZE | DMA_SxCR_PSIZE | DMA_SxCR_TCIE)) | DMA_SxCR_MSIZE_0 | DMA_SxCR_PSIZE_0;
+  cacheInvalidate(bdSamples, sizeof(bdSamples));
+  dmaClearFlags();
+  st->M0AR = (uint32_t)bdSamples;
+  st->NDTR = BD_SAMPLES;
+  st->CR |= DMA_SxCR_EN;
+  bdSampling = true;
+}
+void dshotDmaIrq() {
+  uint32_t f = DMA2->HISR;
+  dmaClearFlags();
+  if ((f & DMA_HISR_TCIF5) && bdTx) {
+    bdTx = false;
+    bidirSample();
+  }
+}
+
 static void dshotSend(const uint16_t values[4], int telemetryMotor, bool allTelemetry) {
   DMA_Stream_TypeDef* st = DMA2_Stream5;
-  if (bidir) bidirCollect();
-  else if (st->CR & DMA_SxCR_EN) return;  // previous frame still running
+  if (bidir) {
+    if (bdTx) {  // the interrupt has not turned the last frame around yet
+      if (st->CR & DMA_SxCR_EN) return;  // still going out (loop faster than the frame): skip this one
+      bdTx = false;                      // out, but no interrupt came
+      if (++bdIsrMiss >= 3) bdIsr = false;
+    }
+    bidirCollect();
+  } else if (st->CR & DMA_SxCR_EN) {
+    return;  // previous frame still running
+  }
   uint16_t pkt[4];
   for (int m = 0; m < 4; m++) pkt[m] = dshot::frame(values[m], allTelemetry || m == telemetryMotor, bidir);
   for (int b = 0; b < 16; b++) {
@@ -1319,21 +1436,17 @@ static void dshotSend(const uint16_t values[4], int telemetryMotor, bool allTele
   dmaClearFlags();
   st->M0AR = (uint32_t)dshotBuf;
   st->NDTR = 49;
+  if (bidir && bdIsr) {
+    st->CR |= DMA_SxCR_TCIE;
+    bdTx = true;  // the interrupt starts the sampling
+  } else {
+    st->CR &= ~DMA_SxCR_TCIE;
+  }
   st->CR |= DMA_SxCR_EN;
-  if (!bidir) return;
+  if (!bidir || bdIsr) return;
   uint32_t guard = 0;
   while ((st->CR & DMA_SxCR_EN) && ++guard < 1000000) {}
-  pinsMode(0);
-  TIM1->ARR = stm32::timerClock(TIM1) * 4 / (bitrateHz * 15) - 1;  // 3 samples per telemetry bit
-  TIM1->EGR = TIM_EGR_UG;
-  st->PAR = (uint32_t)&dshotPort->IDR;
-  st->CR = (st->CR & ~(DMA_SxCR_DIR | DMA_SxCR_MSIZE | DMA_SxCR_PSIZE)) | DMA_SxCR_MSIZE_0 | DMA_SxCR_PSIZE_0;
-  cacheInvalidate(bdSamples, sizeof(bdSamples));
-  dmaClearFlags();
-  st->M0AR = (uint32_t)bdSamples;
-  st->NDTR = BD_SAMPLES;
-  st->CR |= DMA_SxCR_EN;
-  bdSampling = true;
+  bidirSample();
 }
 
 bool motorsAreDshot() { return motorProto == fc::MotorProtocol::DSHOT300 || motorProto == fc::MotorProtocol::DSHOT600; }
@@ -1385,7 +1498,9 @@ static bool escActive = false;
 bool escSerialBegin() {
   if (escActive) return true;
   if (motorsAreDshot()) {
-    if (bdSampling) { DMA2_Stream5->CR &= ~DMA_SxCR_EN; bdSampling = false; }
+    DMA2_Stream5->CR &= ~(DMA_SxCR_TCIE | DMA_SxCR_EN);
+    bdSampling = false;
+    bdTx = false;
     while (DMA2_Stream5->CR & DMA_SxCR_EN) {}
     TIM1->CR1 = 0;
   } else {

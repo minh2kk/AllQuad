@@ -97,6 +97,7 @@
 #endif
 
 // interrupt priorities (0 = most urgent). <= 4: never calls FreeRTOS; >= 5: may (configMAX_SYSCALL 5)
+#define AQ_PRIO_DSHOT 0   // DMA2 stream 5 transfer complete: bidirectional DShot turn-around (no RTOS calls)
 #define AQ_PRIO_UART 1
 #define AQ_PRIO_US_TIM 2
 #define AQ_PRIO_LOOP_TIM 5
