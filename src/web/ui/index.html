@@ -1629,6 +1629,7 @@ function crc16(b, from, to, crc = 0xFFFF) {
   return crc;
 }
 function linkFeed(chunk) {
+  if (LINK.tap) { LINK.tap(chunk); return; }  // hardware in the loop owns the console (hitl.js)
   let b = LINK.rx;
   if (b.length) { const r = new Uint8Array(b.length + chunk.length); r.set(b); r.set(chunk, b.length); b = r; } else b = chunk;
   let i = 0;
@@ -1714,7 +1715,7 @@ async function linkApi(path, opts = {}) {
   return opts.text ? text : JSON.parse(text);
 }
 async function linkPoll() {
-  if (!LINK.open) { S.polling = false; return; }
+  if (!LINK.open || LINK.hitl) { S.polling = false; return; }
   S.polling = true;
   const full = !S.lastFullMs || Date.now() - S.lastFullMs > 1000;  // slow fields once per second
   try {
@@ -3194,6 +3195,7 @@ function drawBlackbox() {
   ].concat(typeof bbRefSpec === "function" ? bbRefSpec(S.specAxis) : []), { xmin: 0, ymin: 0, xunit: " Hz" });
   drawTimeSeries();
   if (typeof bbCompareRender === "function") bbCompareRender();
+  if (typeof bbNavRender === "function") bbNavRender();
 }
 function drawTimeSeries() {
   const fl = S.flight;
@@ -3329,6 +3331,7 @@ $("secSsid").oninput = () => { $("secSsid").dataset.touched = "1"; };
 /*UX_JS*/
 /*GUIDE_JS*/
 /*DESIGN_JS*/
+/*HITL_JS*/
 /*I18N_JS*/
 // opened from a file or the laptop launcher (?usb): connect over USB; served by the drone: WiFi
 // the laptop / phone copy (AllQuad-Configurator.html carries the demo firmware) also when hosted on https

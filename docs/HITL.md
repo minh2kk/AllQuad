@@ -13,7 +13,15 @@ khởi động lại. Không cần pin, không cần tháo cánh (lần đầu v
 - Python 3 và `pip install pyserial`.
 - Đóng trang cấu hình / Mission Planner: cổng USB chỉ một chương trình dùng được một lúc.
 
-## Chạy
+## Chạy trong trang cấu hình (không cần Python)
+
+Mở trang trên GitHub Pages hoặc file `AllQuad-Configurator.html`, nối FC qua USB, vào tab **Hệ thống →
+Bay thử trên bàn (HITL)**: *Bay kiểm tra tự động* hoặc *Bay bằng tay điều khiển*. Trang vẽ đường bay nhìn từ
+trên, độ cao thật và độ cao FC ước lượng, rồi chấm điểm như script. Giữ tab mở trong lúc chạy (trình duyệt
+làm chậm tab bị ẩn). Trang gửi 250 khung/giây (trình duyệt không nhanh hơn được), script Python gửi 500.
+Bảng này không có trong trang mà `esp32dev` phục vụ qua WiFi (HITL cần USB, và chip đó thiếu chỗ).
+
+## Chạy bằng dòng lệnh
 
 ```bat
 REM chuyến bay kiểm tra tự động: RC do máy tính gửi (không cần tay điều khiển)

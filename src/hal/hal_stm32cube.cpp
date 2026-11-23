@@ -1449,6 +1449,17 @@ static void dshotSend(const uint16_t values[4], int telemetryMotor, bool allTele
   bidirSample();
 }
 
+const char* fastPaths() {
+  static char t[96];
+#if defined(STM32H7xx)
+  const char* spi = spiFast == 1 ? "register path" : spiFast == 0 ? "HAL (register path refused)" : "HAL (not checked yet)";
+#else
+  const char* spi = "register path";
+#endif
+  const char* bd = !bidir ? "off" : bdIsr ? "interrupt turn-around" : "waiting (no DMA interrupt)";
+  snprintf(t, sizeof(t), "IMU SPI %s, bidir DShot %s", spi, bd);
+  return t;
+}
 bool motorsAreDshot() { return motorProto == fc::MotorProtocol::DSHOT300 || motorProto == fc::MotorProtocol::DSHOT600; }
 bool motorsBidirActive() { return bidir && motorsReady; }
 void motorsErpm(float erpm[4]) {

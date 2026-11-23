@@ -638,6 +638,7 @@ void Cli::exec(char* line, uint32_t now) {
       uint32_t per = os::taskCount() ? os::taskStats(0).periodUs : 0;  // task 0 = the fast loop
       print("loop %.0f Hz, started by %s\r\n", per ? 1e6 / per : 0.0, os::triggerSource());
     }
+    if (*hal::fastPaths()) print("%s\r\n", hal::fastPaths());
   } else if (!strcmp(cmd, "esc")) {
     // per output: bidirectional DShot eRPM + extended telemetry (AM32 / Bluejay / BLHeli_32)
     if (!hal::motorsBidirActive()) {

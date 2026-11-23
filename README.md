@@ -34,6 +34,8 @@ Firmware chạy trên FreeRTOS với các task tách bạch; thuật toán bay l
 
 **Tài liệu kèm theo:**
 - [`docs/HARDWARE.md`](docs/HARDWARE.md): sơ đồ đấu dây từng board, thẻ SD, bidirectional DShot.
+- [`docs/BOARDS.md`](docs/BOARDS.md): khả năng và giới hạn của từng FC (vòng bay tối đa, DShot, blackbox, thẻ SD, trang cấu hình rút gọn trên ESP32 4 MB) và các cấu hình bị firmware tự giới hạn.
+- [`docs/HITL.md`](docs/HITL.md): bay thử trên bàn, FC thật bay drone mô phỏng.
 - [`docs/PARAMS.md`](docs/PARAMS.md): **toàn bộ 381 tham số** (mặc định, giới hạn, mô tả), tạo tự động.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): task, topic, đường dữ liệu.
 - [`docs/HARDWARE_TEST.md`](docs/HARDWARE_TEST.md): danh sách kiểm tra trên phần cứng thật sau mỗi lần nạp firmware (bàn → cắm pin → bay).
@@ -108,7 +110,7 @@ Kiểm tra nhanh trên board: `tools\aqtest.bat` (Windows) gửi `status` / `per
 | ESC | DShot300/600 (lệnh đặc biệt), **bidirectional DShot**, **EDT** (nhiệt / áp / dòng qua dây tín hiệu), PWM, OneShot125; telemetry serial BLHeli32 / AM32 / KISS |
 | Khác | TFmini / TF-Luna / TF02, optical flow MSP (3901-L0X, MicoAir MTF-01 / 01P / 02: MSP hoặc Micolink), VTX SmartAudio / Tramp / MSP, LED WS2812, **thẻ microSD** |
 
-Sơ đồ chân từng board: [`docs/HARDWARE.md`](docs/HARDWARE.md).
+Sơ đồ chân từng board: [`docs/HARDWARE.md`](docs/HARDWARE.md). Board nào làm được gì, giới hạn nào firmware tự đặt: [`docs/BOARDS.md`](docs/BOARDS.md).
 
 ---
 
@@ -439,6 +441,7 @@ Mỗi chế độ gán cho **một khoảng giá trị của một kênh AUX**, 
   - Không có ở F411 (thiếu RAM cho bộ đệm 12 kB).
 - **0xA9 (v2.2):** khung điều hướng 41 byte, ~10 Hz: bộ ước lượng nào đang chạy, cờ lỗi EKF, tỉ số kiểm định từng cảm biến, tư thế EKF và hướng AHRS, độ lệch chuẩn, số vệ tinh và sai số GPS, bộ đếm đặt lại (vị trí, vận tốc, cả bộ lọc, tư thế, hướng, độ cao baro).
   - Tab Blackbox → *Tóm tắt chuyến bay* tự đọc: baro bị loại bao lâu, la bàn lệch GPS, GPS nhảy, EKF phải tự đặt lại tư thế / hướng mấy lần.
+  - Tab Blackbox → *Bộ ước lượng (EKF) theo thời gian*: tỉ số kiểm định từng cảm biến, số vệ tinh, sai số GPS và danh sách sự kiện (lúc nào baro bị loại, lúc nào EKF đặt lại).
 - **Giải mã trên máy tính:** `python3 tools/blackbox_decode.py LOG.BBL` → `LOG.csv` (bản ghi) + `LOG_esc.csv` (RPM / nhiệt) + `LOG_nav.csv` (sức khoẻ bộ ước lượng).
 
 ---
@@ -741,7 +744,11 @@ tools/      build/test, giải mã blackbox, tạo docs/PARAMS.md, configurator,
 
 ## Bay thử trên bàn (HITL)
 
-FC thật bay một chiếc drone mô phỏng trên máy tính qua USB, motor đứng yên: `python tools\hitl.py COM5 --auto` (chuyến bay kiểm tra tự động) hoặc `python tools\hitl.py COM5` (bay bằng tay điều khiển thật). Hướng dẫn đầy đủ: [docs/HITL.md](docs/HITL.md).
+FC thật bay một chiếc drone mô phỏng trên máy tính qua USB, motor đứng yên. Hai cách:
+- Trang cấu hình (GitHub Pages / file trên máy tính, nối USB): tab Hệ thống → *Bay thử trên bàn (HITL)*. Không cần cài gì; có hình đường bay, độ cao thật / FC ước lượng, chấm điểm chuyến bay kiểm tra.
+- Dòng lệnh: `python tools\hitl.py COM5 --auto` (chuyến bay kiểm tra tự động) hoặc `python tools\hitl.py COM5` (bay bằng tay điều khiển thật).
+
+Hướng dẫn đầy đủ: [docs/HITL.md](docs/HITL.md).
 
 ---
 
@@ -767,8 +774,9 @@ node tools/gen_params_doc.js   # cập nhật docs/PARAMS.md sau khi thêm tham 
 | Bộ phân tích blackbox | 29 / 29 (khung điều hướng: baro / la bàn bị loại, EKF đặt lại tư thế / hướng; khung gyro 4 kHz, gồm: nén, log hỏng, khung ESC, phát hiện motor yếu 15 %, hội tụ khi chỉnh lặp, tóm tắt chuyến bay, pin yếu) |
 | Firmware WebAssembly | 5 / 5 |
 | HITL (`tools/hitl.py --exec "build/sim serve" --auto`) | 6 / 6: 500 khung/s, arm, ALTHOLD (dao động 0.03 m), POSHOLD, tư thế ước lượng lệch ≤ 1.3°, LAND và disarm |
+| HITL trong trang cấu hình (`test/web/test_hitl.py`, drone ảo) | 6 / 6: 250 khung/s, ALTHOLD dao động 0.01 m, tư thế lệch ≤ 1.8°, LAND; biểu đồ EKF trong tab Blackbox |
 | Ký số firmware OTA | 6 / 6 (`tools/test_ota_sign.py`; kiểm chéo với mbedtls như firmware) |
-| Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, bản đồ offline, PWA, nạp firmware, thẻ SD, hướng dẫn bay lần đầu (thử nghiêng / failsafe), tìm hướng optical flow (16 kiểu lắp), thuật ngữ, gyro tần số cao, giao diện tiếng Anh |
+| Giao diện (Playwright) | đạt toàn bộ: web, configurator USB + SITL, công cụ laptop, tính năng mở rộng, bản đồ offline, PWA, nạp firmware, thẻ SD, hướng dẫn bay lần đầu (thử nghiêng / failsafe), tìm hướng optical flow (16 kiểu lắp), thuật ngữ, gyro tần số cao, giao diện tiếng Anh (cả ghi chú phân tích blackbox), trang rút gọn của ESP32 4 MB |
 
 **CI:** `.github/workflows/ci.yml` chạy kiểm tra sơ đồ chân, unit test (cả sanitizer), mô phỏng, bộ phân tích, cppcheck, fuzz và soak (mỗi lần chạy một seed mới; bản đêm chạy dài 300 chuyến), build 11 môi trường, khởi động F405 trong QEMU kèm bảng stack từng task và toàn bộ test giao diện (Playwright, drone ảo WebAssembly) cho mỗi lần push. File firmware giữ 14 ngày. Để dùng: đưa thư mục dự án lên GitHub (`git init`, `git add .`, `git commit`, `git push`).
 

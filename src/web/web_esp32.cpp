@@ -28,7 +28,11 @@
 #include "webapi.h"
 #include "../logging/sdlog.h"
 #include "ota_pubkey.h"
+#if defined(AQ_WEB_LITE)
+#include "web_ui_lite.h"  // 4 MB modules: the page without the English view (~39 kB less flash)
+#else
 #include "web_ui_data.h"
+#endif
 #include "webapi.h"
 #include "../logging/sdlog.h"
 

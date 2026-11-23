@@ -8,7 +8,9 @@ import sys
 
 root = env["PROJECT_DIR"]  # noqa: F821
 header = os.path.join(root, "src", "web", "web_ui_data.h")
+lite = os.path.join(root, "src", "web", "web_ui_lite.h")
 sources = glob.glob(os.path.join(root, "src", "web", "ui", "*")) + glob.glob(os.path.join(root, "tools", "i18n", "*")) + \
     [os.path.join(root, "tools", "embed_web.py")]
-if not os.path.exists(header) or max(os.path.getmtime(p) for p in sources) > os.path.getmtime(header):
+if not os.path.exists(header) or not os.path.exists(lite) or \
+        max(os.path.getmtime(p) for p in sources) > min(os.path.getmtime(header), os.path.getmtime(lite)):
     subprocess.check_call([sys.executable, os.path.join(root, "tools", "embed_web.py")])

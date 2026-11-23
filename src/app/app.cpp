@@ -857,6 +857,12 @@ void loadConfig() {
     hal::storageSave(hal::Slot::CONFIG, &bus::config, sizeof(Config));
   }
   if (bus::config.loop_hz < 500 || bus::config.loop_hz > AQ_LOOP_HZ_MAX) bus::config.loop_hz = 1000;
+  // DShot300 frames take 53 us, the bidirectional answer window another ~130 us: above 4 kHz the loop
+  // period (< 250 us) has no room for both -> 3200 Hz (docs/BOARDS.md). DShot600 fits up to 6.4 kHz.
+  if (bus::config.loop_hz > 4000 && bus::config.dshot_bidir && bus::config.motor_protocol == (uint8_t)MotorProtocol::DSHOT300) {
+    bus::config.loop_hz = 3200;
+    bus::postMessage("loop_hz 3200: DShot300 + bidirectional DShot has no room above 4 kHz (use DShot600)");
+  }
   nav::load();
   nav::rallyLoad();
   nav::fenceLoad();

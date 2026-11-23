@@ -81,7 +81,7 @@ jobs:
       - name: Configurator UI tests
         run: |
           bash tools/build_host.sh && node test/web/test_analysis.js >/dev/null   # simulator logs (build/web/normal.bin) for the blackbox tests
-          for t in test_ui test_configurator test_tools test_pro test_extras test_pwa test_ux test_guide; do
+          for t in test_ui test_configurator test_tools test_pro test_extras test_pwa test_ux test_guide test_hitl; do
             echo "== $t"; python3 test/web/$t.py /tmp/shots || exit 1
           done
   flasher:

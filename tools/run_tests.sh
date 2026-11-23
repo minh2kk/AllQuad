@@ -27,6 +27,7 @@ if python3 -c "import playwright" 2>/dev/null; then
   python3 test/web/test_pwa.py
   python3 test/web/test_ux.py
   python3 test/web/test_guide.py
+  python3 test/web/test_hitl.py
   if [ -f .pio/build/esp32dev/firmware.bin ] && [ -f .pio/build/blackpill_f411ce/firmware.bin ] && python3 -c "import esptool" 2>/dev/null; then
     python3 test/web/test_flasher.py
   else echo "(flasher test needs pio builds + pip install esptool)"; fi

@@ -19,6 +19,8 @@ namespace hal {
 
 void init();
 const char* platformName();
+// the faster code paths of this chip and whether they are in use (CLI perf), "" = none
+const char* fastPaths();
 
 // ---- time ----
 uint32_t micros();

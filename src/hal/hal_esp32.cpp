@@ -51,6 +51,7 @@ static uint16_t dshotT0H, dshotT1H, dshotBit;
 static SPIClass* osdSpi = nullptr;
 
 const char* platformName() { return AQ_BOARD_NAME; }
+const char* fastPaths() { return ""; }
 
 #if ARDUINO_USB_CDC_ON_BOOT
 static constexpr bool CONSOLE_UART = false;  // S3 native USB: no baud rate

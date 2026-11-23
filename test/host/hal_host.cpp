@@ -71,6 +71,7 @@ static bool slotValid[5] = {false, false, false, false, false};
 
 void init() {}
 const char* platformName() { return "host-sim"; }
+const char* fastPaths() { return ""; }
 uint32_t micros() { return (uint32_t)os::timeUs(); }
 uint32_t millis() { return os::timeMs(); }
 void delayMs(uint32_t) {}

@@ -698,6 +698,53 @@ function bbRefSpec(axis) {
   if (!r) return [];
   return [{ x: r.f, y: r.raw, color: "--ink-2", width: 1, dash: [5, 4] }, { x: r.f, y: r.amp, color: "--ink", width: 1.4, dash: [5, 4] }];
 }
+// ---- navigation frames (0xA9): the estimator over the flight - EKF test ratios (1 = the gate, above =
+// that sensor rejected), GPS satellites and accuracy, and the moments the filter had to reset itself
+function bbNavRender() {
+  const fl = S.flight, host = $("bbResults");
+  if (!host || !fl) return;
+  let p = $("bbNav");
+  if (!p) {
+    p = document.createElement("div");
+    p.className = "panel"; p.id = "bbNav";
+    p.innerHTML = `<h3 style="margin-top:0">Bộ ước lượng (EKF) theo thời gian</h3>
+      <p class="muted">Tỉ số kiểm định từng cảm biến: dưới 1 là được dùng, trên vạch 1 là bị loại lúc đó. Bị loại một lúc ngắn là bình thường; kéo dài thì cảm biến hoặc hướng lắp có vấn đề.</p>
+      <canvas class="chart" id="bbNavTr"></canvas><div class="legend" id="bbNavLeg"></div>
+      <canvas class="chart" id="bbNavGps" style="margin-top:10px;height:130px"></canvas>
+      <div class="legend"><span><i style="background:var(--ok)"></i>Số vệ tinh</span><span><i style="background:var(--amber)"></i>Sai số GPS (m)</span></div>
+      <div id="bbNavEv"></div>`;
+    host.appendChild(p);
+  }
+  const v = fl.nav;
+  if (!v || v.n < 2) {
+    p.querySelectorAll("canvas, .legend").forEach((x) => (x.hidden = true));
+    $("bbNavEv").innerHTML = '<p class="muted">Log này không có khung điều hướng (firmware trước v2.2).</p>';
+    return;
+  }
+  p.querySelectorAll("canvas, .legend").forEach((x) => (x.hidden = false));
+  const t0 = fl.t[0], x = Array.from(v.t, (t) => t - t0);
+  const names = [["Vị trí GPS", "--roll"], ["Vận tốc GPS", "--pitch"], ["Độ cao", "--yaw"], ["Hướng", "--amber"], ["La bàn", "--ink-2"]];
+  const series = names.map(([, c], k) => ({ x, y: Array.from(v.tr[k], (r) => Math.min(r, 3)), color: c, width: 1.4 }));
+  const ekf = v.est.some((e) => e);
+  plot($("bbNavTr"), ekf ? series : [], { ymin: 0, ymax: 3, hline: 1, xunit: " s" });
+  $("bbNavLeg").innerHTML = ekf ? names.map(([n, c]) => `<span><i style="background:var(${c})"></i>${n}</span>`).join("")
+    : '<span class="muted">Chuyến này bay bằng bộ ước lượng thường (est_type 0): không có tỉ số kiểm định.</span>';
+  plot($("bbNavGps"), [{ x, y: Array.from(v.sats), color: "--ok", width: 1.6 }, { x, y: Array.from(v.hAcc, (h) => (isFinite(h) ? Math.min(h, 20) : NaN)), color: "--amber", width: 1.4 }], { ymin: 0, xunit: " s" });
+  // events: every reset counter that moved, faults switched on / off
+  const ev = [], rn = ["EKF đặt lại vị trí theo GPS", "EKF đặt lại vận tốc theo GPS", "EKF khởi động lại toàn bộ", "EKF đặt lại tư thế theo AHRS", "EKF đặt lại hướng theo la bàn", "Độ cao đặt lại theo baro"];
+  const fn = [[4, "baro bị loại, độ cao từ GPS"], [8, "la bàn lệch hướng GPS"], [16, "không có GPS / flow: tự suy vị trí"]];
+  for (let k = 1; k < v.n; k++) {
+    const t = (v.t[k] - t0).toFixed(1);
+    for (let r = 0; r < 6; r++) if (v.resets[r][k] !== v.resets[r][k - 1]) ev.push(`${t} s: ${rn[r]}`);
+    for (const [bit, txt] of fn) {
+      const a = v.faults[k] & bit, b = v.faults[k - 1] & bit;
+      if (a && !b) ev.push(`${t} s: bắt đầu ${txt}`);
+      if (!a && b) ev.push(`${t} s: hết ${txt}`);
+    }
+  }
+  $("bbNavEv").innerHTML = ev.length ? `<p class="muted" style="margin-bottom:4px">Sự kiện của bộ ước lượng:</p><div class="num" style="font-size:.85rem;max-height:9em;overflow:auto">${ev.slice(0, 200).map(esc).join("<br>")}</div>`
+    : '<p class="muted">Không có sự kiện: bộ ước lượng không phải đặt lại, không loại cảm biến nào lâu.</p>';
+}
 function bbCompareRender() {
   const host = $("bbCmp");
   if (!host || !S.analysis) return;

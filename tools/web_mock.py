@@ -193,8 +193,9 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
-        if u.path == "/":
-            with open(os.path.join(ROOT, "build", "web", "index.html"), "rb") as f:
+        if u.path in ("/", "/lite"):  # /lite: the page of AQ_WEB_LITE boards (4 MB ESP32, no English view)
+            name = "index.lite.html" if u.path == "/lite" else "index.html"
+            with open(os.path.join(ROOT, "build", "web", name), "rb") as f:
                 return self.send(200, f.read(), "text/html; charset=utf-8")
         if u.path == "/api/login":  # same rules as the firmware: 5 wrong -> 30 s lock
             if time.time() < AUTH["lock"]:

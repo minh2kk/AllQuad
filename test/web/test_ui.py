@@ -168,6 +168,14 @@ async def main():
         check(not await pg.is_visible("#login") and not await pg.is_visible("#defPw")
               and await pg.input_value("#secSsid") == "MyQuad", "password change: re-login with the new password")
         check(not errs, "no JavaScript errors %s" % errs)
+        # the lite page of 4 MB ESP32 boards (AQ_WEB_LITE): everything but the English view
+        lp = await b.new_page(viewport={"width": 390, "height": 844})
+        lerr = []
+        lp.on("pageerror", lambda e: lerr.append(str(e)))
+        await lp.goto("http://127.0.0.1:%d/lite" % PORT)
+        await lp.wait_for_timeout(1500)
+        check(await lp.locator("nav.tabs button[data-tab]").count() > 8 and await lp.locator("#langBtn").count() == 0 and not lerr,
+              "lite page (4 MB ESP32): loads, all tabs, no English switch, no errors %s" % lerr)
         await b.close()
 
 srv = subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "web_mock.py"), str(PORT)])

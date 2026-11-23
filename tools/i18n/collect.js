@@ -19,6 +19,15 @@ const grab = (pg, all) => pg.evaluate((src) => { const VI = new RegExp(src, "i")
   await pg.waitForTimeout(1500);
   const tabs = await pg.evaluate("[...document.querySelectorAll('nav.tabs button[data-tab]')].map(b=>b.dataset.tab)");
   for (const t of tabs) { await pg.evaluate((t) => gotoTab(t), t); await pg.waitForTimeout(800); await grab(pg, all); }
+  // blackbox results of the simulator logs (node test/web/test_analysis.js writes them): notes, suggestions,
+  // the flight summary and the EKF chart
+  for (const f of ["normal", "weak", "ekf_faults", "ekf_yaw", "at_before_0.5", "at_before_2.2", "high_p", "low_p", "assist_1"]) {
+    const file = path.join(__dirname, "..", "..", "build", "web", f + ".bin");
+    if (!fs.existsSync(file)) continue;
+    await pg.evaluate(() => gotoTab("blackbox"));
+    await pg.setInputFiles("#bbFile", file);
+    await pg.waitForTimeout(2500); await grab(pg, all);
+  }
   await pg.evaluate("searchOpen(); $('gsIn').value=''; searchRun()"); await pg.waitForTimeout(200); await grab(pg, all);
   await pg.evaluate("$('searchDlg').hidden=true; glossShow()"); await pg.waitForTimeout(200); await grab(pg, all);
   await pg.evaluate("$('glossDlg').hidden=true; gotoTab('preflight'); ffLive('orient')"); await pg.waitForTimeout(300); await grab(pg, all);
