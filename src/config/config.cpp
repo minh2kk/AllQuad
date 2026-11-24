@@ -84,6 +84,11 @@ static void v30Defaults(Config& c) {
   c.rc_deadband = 5;
 }
 static void v31Defaults(Config& c) { c.bb_gyro_s = 0; }
+static void v32Defaults(Config& c) {
+  c.baro_gnd = 1;
+  c.baro_dyn = 0;
+  c.thr_curve = 0.5f;
+}
 
 void beginnerLimits(Config& c) {
   if (!c.beginner) return;
@@ -321,6 +326,7 @@ void configDefaults(Config& c) {
   v29Defaults(c);
   v30Defaults(c);
   v31Defaults(c);
+  v32Defaults(c);
   configSeal(c);
 }
 
@@ -353,6 +359,7 @@ bool configMigrate(Config& c) {
   if (c.version < 29) v29Defaults(d);
   if (c.version < 30) v30Defaults(d);
   if (c.version < 31) v31Defaults(d);
+  if (c.version < 32) v32Defaults(d);
   configSeal(d);
   c = d;
   return true;

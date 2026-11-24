@@ -96,13 +96,25 @@ void Commander::fuseSensors(uint32_t now, float dt) {
   BaroSample b;
   bool newBaro = false, newGps = false, newMag = false;
   uint32_t s = bus::baro.read(b);
-  if (s != seqBaro_) { seqBaro_ = s; baroSeen_ = b.healthy; est_.fuseBaro(b); newBaro = true; }
+  if (s != seqBaro_) {
+    seqBaro_ = s;
+    baroSeen_ = b.healthy;
+    // baro corrections: speed from the last estimate (only with a position source), near the ground
+    // when armed below 1 m (rangefinder height when it sees the ground, else above home)
+    const NavEstimate& pe = navEst_;
+    baroVh2_ = pe.posValid ? pe.vn * pe.vn + pe.ve * pe.ve : 0.0f;
+    baroGround_ = armed_ && (pe.aglValid ? pe.agl : pe.alt) < 1.0f;
+    est_.setBaroContext(baroVh2_, baroGround_);
+    est_.fuseBaro(b);
+    newBaro = true;
+  }
   s = bus::mag.read(mag_);
   if (s != seqMag_) { seqMag_ = s; magSeen_ = true; newMag = true; }
   float cosTilt = att_.q.cosTilt();
   RangeSample r;
   s = bus::range.read(r);
-  if (s != seqRange_) { seqRange_ = s; est_.fuseRange(r, cosTilt, now); }
+  bool newRange = false;
+  if (s != seqRange_) { seqRange_ = s; est_.fuseRange(r, cosTilt, now); newRange = true; }
   GpsData g;
   s = bus::gps.read(g);
   if (s != seqGps_) {
@@ -131,7 +143,7 @@ void Commander::fuseSensors(uint32_t now, float dt) {
   s = bus::flow.read(f);
   if (s != seqFlow_) { seqFlow_ = s; est_.fuseFlow(f, att_.rateDps, yawNav_, cosTilt, now); }
   est_.update(now);
-  if (useEkf) ekfFuse(now, newGps ? &g : nullptr, newBaro ? &b : nullptr, newMag);
+  if (useEkf) ekfFuse(now, newGps ? &g : nullptr, newBaro ? &b : nullptr, newMag, newRange ? &r : nullptr);
   else ekf_.reset();
   buildNavEstimate(now);
   const NavEstimate& e = navEst_;
@@ -143,7 +155,7 @@ void Commander::fuseSensors(uint32_t now, float dt) {
 }
 
 // ---------------------------------------------------------------- navigation EKF
-void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, bool newMag) {
+void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, bool newMag, const RangeSample* rng) {
   const Config& c = bus::config;
   const NavEstimate& est = est_.state();
   if (!att_.valid || !att_.gyroCalibrated) return;
@@ -198,7 +210,23 @@ void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, boo
     if (calm && now - ekfTiltFuseMs_ >= 100) ekfTiltFuseMs_ = now, ekf_.fuseTilt(Quat::fromEuler(0, 0, wrapPi(ekf_.yaw() - att_.yaw)) * att_.q, 2.0f * DEG2RAD);
   } else ekfTiltBadSince_ = 0;
   // ---- height: barometer, GPS when the baro is missing or faulty ----
-  if (b && b->healthy) ekf_.fuseHeight(b->altM - est_.baroOffset(), c.est_baro_noise, 0, now);
+  if (b && b->healthy) {
+    float alt = b->altM - est_.baroOffset(), r = c.est_baro_noise;
+    baroCorrect(alt, r, ekf_.alt(), baroVh2_, c.baro_dyn, baroGround_ && c.baro_gnd);
+    ekf_.fuseHeight(alt, r, 0, now);
+  }
+  // ---- rangefinder height (below rf_max_m, craft not tilted much) ----
+  if (rng) {
+    float ct = att_.q.cosTilt();
+    ekfRangeUsed_ = false;
+    if (rng->valid && rng->distM > 0.02f && rng->distM <= c.rf_max_m && ct >= 0.86f) {
+      float agl = rng->distM * ct, z;
+      if (ekfRange_.measure(agl, ekf_.alt(), sqrtf(ekf_.posVarDown()), now, z)) {
+        ekf_.fuseHeight(z, RangeHeight::sigma(agl), 2, now);
+        ekfRangeUsed_ = true;
+      }
+    }
+  }
   bool gpsGood = g && g->fix3d && g->sats >= c.gps_min_sats && g->hAcc < c.gps_max_hacc;
   if (gpsGood && est.homeSet) {
     // the local frame follows the home position of the per-axis estimator (rehomed when arming)
@@ -734,7 +762,10 @@ void Commander::control(float dt, uint32_t now) {
       AttitudeControl::level(c, rs * c.angle_limit_deg, -ps * c.angle_limit_deg, rollDeg, pitchDeg, rate);
       tgtTiltDeg_ = hypotf(rs, ps) * c.angle_limit_deg;
       float climb = climbFromStick(thr, c.climb_rate_max);
-      altTarget_ = constrainf(altTarget_ + climb * dt, e.alt - 2.0f, e.alt + 2.0f);
+      // still on the ground (low, not rising yet): the target leads by 0.5 m at most, so the climb asked
+      // while the motors spool up does not pile up into an overshoot right after lift-off
+      float lead = (e.alt < 1.0f && e.vz < 0.3f) ? 1.0f : 2.0f;
+      altTarget_ = constrainf(altTarget_ + climb * dt, e.alt - 2.0f, e.alt + lead);
       altTarget_ = surfaceTarget(altTarget_, climb, dt);
       throttle = alt_.update(altTarget_, climb, c.climb_rate_max, c.climb_rate_max, e, accUp, cosTilt, dt);
       descending = climb < 0;

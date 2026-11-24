@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 381 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 384 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -434,6 +434,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `thr_limit_pct` | 100 % | 25 … 100 | Giới hạn ga (% cần ga ở ACRO / ANGLE / HORIZON; 100 = không giới hạn) |
 | `beginner` | 0 | 0 … 1 | Chế độ bay lần đầu: tự cân bằng, nghiêng 25°, quay 250 / 120 °/s, ga 75 %, rào ảo |
 | `beg_radius` | 60 m | 20 … 500 | Bay lần đầu: bán kính rào ảo quanh điểm cất cánh (m, cần GPS) |
+| `thr_curve` | 0.5 | 0 … 1 | Độ cong lực đẩy theo ga (0 thẳng, 0.5 thường gặp): giữ độ cao đều ở mọi mức ga |
 | `gps_max_hacc` | 5 | 1 … 50 | Bỏ fix có sai số lớn hơn (m) |
 | `gps_glitch_m` | 8 m | 2 … 100 | Nhảy vị trí lớn hơn mức này coi là nhiễu (m) |
 | `gps_glitch_s` | 10 s | 1 … 60 | Nhiễu kéo dài quá thời gian này thì chấp nhận vị trí mới (s) |
@@ -441,6 +442,8 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `wind_comp` | 1 | 0 … 1 | Bù gió: 1 bật |
 | `wind_drag` | 0.45 | 0.05 … 3 | Hệ số cản (1/s): đổi gió từ m/s² sang m/s |
 | `rally_max_m` | 500 m | 0 … 10000 | Bay về điểm rally gần hơn nhà trong phạm vi này (m, 0 = luôn về nhà) |
+| `baro_gnd` | 1 | 0 … 1 | Bỏ qua baro tụt do hiệu ứng mặt đất (đã arm, dưới khoảng 1 m) |
+| `baro_dyn` | 0 | -0.1 … 0.1 | Sửa baro theo tốc độ ngang (m trên (m/s)², 0 tắt; dương khi baro đọc thấp lúc bay nhanh) |
 | `sd_mode` (KĐL) | 0 | 0 … 3 | Kiểu nối thẻ SD: 0 tắt, 1 SPI, 2 SD bus 1-bit, 3 SD bus 4-bit |
 | `sd_mhz` (KĐL) | 0 | 0 … 40 | Xung nhịp thẻ (0 = mặc định 20 MHz; hạ xuống 10 nếu dây dài / lỗi ghi) |
 | `sd_clk` (KĐL) | 255 | 0 … 255 | Chân CLK / SCK (255 = mặc định của board) |

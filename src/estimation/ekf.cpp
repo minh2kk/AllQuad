@@ -250,6 +250,8 @@ void Ekf::fuseGpsVel(float vn, float ve, float vd, float sigma, uint32_t now) {
   lastAidMs_ = now;
 }
 
+float Ekf::posVarDown() const { return P_[IP + 2][IP + 2]; }
+
 void Ekf::fuseHeight(float altUp, float sigma, int src, uint32_t now) {
   if (!init_) return;
   float h[N];
@@ -276,6 +278,9 @@ void Ekf::fuseHeight(float altUp, float sigma, int src, uint32_t now) {
     }
     st_.trHeight = tr;
     if ((st_.faults & EKF_BARO_FAULT) || tr > 1.0f) return;
+  } else if (src == 2) {
+    // rangefinder height (RangeHeight already absorbed ground steps): skip what the gate rejects
+    if (tr > 1.0f) return;
   } else {
     st_.trHeight = tr;
     if (tr > 1.0f) {  // GPS height: no alternative, accept after 5 s
@@ -284,7 +289,7 @@ void Ekf::fuseHeight(float altUp, float sigma, int src, uint32_t now) {
       hgtRejSince_ = 0;
     }
   }
-  st_.heightSrc = (uint8_t)src;
+  if (src != 2) st_.heightSrc = (uint8_t)src;  // the range only adds detail on top of baro / GPS
   fuse(h, innov, R, 1e3f);
   lastHgtMs_ = now;
 }

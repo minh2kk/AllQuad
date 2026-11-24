@@ -5,6 +5,8 @@
 #include "../bus/topics.h"
 #include "../config/config.h"
 #include "kalman.h"
+#include "baro_comp.h"
+#include "range_height.h"
 
 namespace fc {
 
@@ -16,6 +18,8 @@ class NavEstimator {
   // drop the horizontal state (e.g. after a large heading correction); GPS/flow re-initialise it
   void resetHorizontal() { if (gpsUsable_ || flowUsable_) hReset_ = true; }
   void fuseBaro(const BaroSample& b);
+  // flight context for the baro corrections (baro_comp.h): horizontal speed^2, armed near the ground
+  void setBaroContext(float vh2, bool ground) { baroVh2_ = vh2; baroGround_ = ground; }
   void fuseRange(const RangeSample& r, float cosTilt, uint32_t nowMs);
   void fuseGps(const GpsData& g, uint32_t nowMs);
   void fuseFlow(const FlowSample& f, const Vec3& rateDps, float yaw, float cosTilt, uint32_t nowMs);
@@ -41,11 +45,15 @@ class NavEstimator {
   bool zInit_ = false, hInit_ = false;
  public:
   uint16_t baroResets() const { return baroResets_; }
+  bool rangeHeightActive() const { return rangeUsed_; }
  private:
-  float baroOffset_ = 0;
+  float baroOffset_ = 0, baroVh2_ = 0;
+  bool baroGround_ = false;
   uint32_t lastGpsMs_ = 0, lastFlowMs_ = 0, lastRangeMs_ = 0, lastBaroMs_ = 0;
   uint32_t baroRejSince_ = 0;   // baro rejected by the gate since (0 = accepted)
   uint16_t baroResets_ = 0;
+  RangeHeight rh_;
+  bool rangeUsed_ = false;
   bool gpsUsable_ = false, flowUsable_ = false;
   bool rehomePending_ = false;
   bool glitch_ = false, hReset_ = false;

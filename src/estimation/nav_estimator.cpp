@@ -39,6 +39,7 @@ void NavEstimator::fuseBaro(const BaroSample& b) {
     zInit_ = true;
   }
   float r = cfg_ ? cfg_->est_baro_noise : 0.4f;
+  if (cfg_) baroCorrect(alt, r, kz_.pos(), baroVh2_, cfg_->baro_dyn, baroGround_ && cfg_->baro_gnd);
   float S = kz_.P[0][0] + r * r, y = alt - kz_.pos();
   if (y * y > 36.0f * S) {
     // outside the 6-sigma gate: a baro spike is skipped. Rejected for 2 s in a row means the estimate
@@ -64,12 +65,19 @@ void NavEstimator::fuseBaro(const BaroSample& b) {
 
 void NavEstimator::fuseRange(const RangeSample& r, float cosTilt, uint32_t nowMs) {
   float maxM = cfg_ ? cfg_->rf_max_m : 8.0f;
-  if (!r.valid || r.distM <= 0.02f || r.distM > maxM || cosTilt < 0.86f) return;
+  if (!r.valid || r.distM <= 0.02f || r.distM > maxM || cosTilt < 0.86f) { rangeUsed_ = false; return; }
   float agl = r.distM * cosTilt;
   if (!st_.aglValid) st_.agl = agl;
   else st_.agl += 0.35f * (agl - st_.agl);
   st_.aglValid = true;
   lastRangeMs_ = nowMs;
+  // the range is also a height measurement (short term it beats the baro by an order of magnitude)
+  float z;
+  rangeUsed_ = zInit_ && rh_.measure(agl, kz_.pos(), sqrtf(kz_.P[0][0]), nowMs, z);
+  if (rangeUsed_) {
+    float s = RangeHeight::sigma(agl);
+    kz_.update(0, z, s * s);
+  }
 }
 
 void NavEstimator::fuseGps(const GpsData& g, uint32_t nowMs) {
@@ -176,7 +184,7 @@ void NavEstimator::update(uint32_t nowMs) {
   nowMs_ = nowMs;
   gpsUsable_ = hInit_ && lastGpsMs_ && (nowMs - lastGpsMs_) < 1000;
   flowUsable_ = hInit_ && lastFlowMs_ && (nowMs - lastFlowMs_) < 300;
-  if (lastRangeMs_ && nowMs - lastRangeMs_ > 300) st_.aglValid = false;
+  if (lastRangeMs_ && nowMs - lastRangeMs_ > 300) { st_.aglValid = false; rangeUsed_ = false; }
   if (hInit_ && !gpsUsable_ && !flowUsable_ && (nowMs - lastGpsMs_) > 3000 && (nowMs - lastFlowMs_) > 3000) hInit_ = false;
 
   st_.altValid = zInit_ && (nowMs - lastBaroMs_) < 1000;
@@ -198,6 +206,7 @@ void NavEstimator::setHomeHere() {
     float h = kz_.pos();
     baroOffset_ += h;
     kz_.shift(-h);
+    rh_.T -= h;  // the ground moves with the height frame
   }
   if (gpsUsable_) rehomePending_ = true;
   else if (flowUsable_ && hInit_) {  // relative navigation: current point becomes origin

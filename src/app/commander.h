@@ -42,6 +42,8 @@ class Commander {
   fc::NavEstimate navEst_{};   // what the controllers use (est_ or EKF)
   uint32_t seqAtt_ = 0, ekfZeroVelMs_ = 0, ekfTiltBadSince_ = 0;
   uint16_t ekfTiltResets_ = 0, ekfYawResets_ = 0;
+  fc::RangeHeight ekfRange_;       // rangefinder height for the EKF (its own ground offset)
+  bool ekfRangeUsed_ = false;
   fc::GpsHeading gpsRef_;          // GPS-acceleration heading, as an independent referee for the EKF heading
   uint32_t ekfYawBadSince_ = 0, steadySince_ = 0, ekfTiltFuseMs_ = 0;
   bool attNew_ = false;
@@ -51,7 +53,7 @@ class Commander {
   double ekfHomeLat_ = 0, ekfHomeLon_ = 0;
   bool ekfHomeKnown_ = false, ekfYawOk_ = false, ekfGpsYawInit_ = false;
   uint16_t ekfFaultsPrev_ = 0;
-  void ekfFuse(uint32_t nowMs, const fc::GpsData* gps, const fc::BaroSample* baro, bool newMag);
+  void ekfFuse(uint32_t nowMs, const fc::GpsData* gps, const fc::BaroSample* baro, bool newMag, const fc::RangeSample* range);
   void buildNavEstimate(uint32_t nowMs);
   // RTH / GPS rescue progress check
   float rthBestDist_ = 1e9f;
@@ -79,6 +81,8 @@ class Commander {
 
   // state
   bool armed_ = false, airborne_ = false, turtle_ = false;
+  float baroVh2_ = 0;
+  bool baroGround_ = false;
   bool armSwPrev_ = false, armSwSeenLow_ = false;
   uint32_t armTimeMs_ = 0;
   uint32_t blockers_ = 0;

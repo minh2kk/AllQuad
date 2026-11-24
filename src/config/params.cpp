@@ -98,6 +98,7 @@ static const ParamInfo PARAMS[] = {
     P("hover_throttle", F32, hover_throttle, 0.1f, 0.8f),
     P("hover_learn", U8, hover_learn, 0, 2),
     P("alt_surface", U8, alt_surface, 0, 1),
+    P("thr_curve", F32, thr_curve, 0, 1),
     // position
     P("pos_p", F32, pos_p, 0, 5),
     P("pos_vel_p", F32, pos_vel_p, 0, 10),
@@ -183,6 +184,8 @@ static const ParamInfo PARAMS[] = {
     P("est_baro_noise", F32, est_baro_noise, 0.05f, 5),
     P("est_acc_noise", F32, est_acc_noise, 0.05f, 5),
     P("est_gpsvel_noise", F32, est_gps_vel_noise, 0.05f, 5),
+    P("baro_gnd", U8, baro_gnd, 0, 1),
+    P("baro_dyn", F32, baro_dyn, -0.1f, 0.1f),
     P("rf_max_m", F32, rf_max_m, 0.5f, 40),
     P("flow_scale", F32, flow_scale, 0.1f, 100),
     P("flow_align", U8, flow_align, 0, 3),

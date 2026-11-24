@@ -1986,6 +1986,7 @@ const HINT = {
   sd_d1: "Chân D1 (chỉ 4-bit, 255 = mặc định)", sd_d2: "Chân D2 (chỉ 4-bit, 255 = mặc định)", sd_d3: "Chân D3 / CS (4-bit và SPI, 255 = mặc định)",
   alt_pos_p: "P độ cao → tốc độ leo", alt_vel_p: "P tốc độ leo", alt_vel_i: "I tốc độ leo", alt_vel_d: "D tốc độ leo",
   climb_rate_max: "Tốc độ leo/hạ tối đa (m/s)", hover_throttle: "Ga treo (tự học nếu bật)",
+  thr_curve: "Độ cong lực đẩy theo ga (0 thẳng, 0.5 thường gặp): giữ độ cao đều ở mọi mức ga",
   hover_learn: "Tự học ga treo: 0 tắt, 1 học, 2 học và lưu khi disarm",
   alt_surface: "Bám mặt đất bằng cảm biến khoảng cách (ALTHOLD/POSHOLD/CRUISE)",
   pos_p: "P vị trí → tốc độ", pos_vel_p: "P tốc độ ngang", pos_vel_i: "I tốc độ ngang (chống trôi)",
@@ -2028,6 +2029,8 @@ const HINT = {
   rx_protocol: "Giao thức receiver", imu_align: "Hướng lắp FC", mag_align: "Hướng lắp compass",
   mav_sysid: "MAVLink system ID", wifi_armed: "Giữ WiFi khi đang bay (tắt = bớt nhiễu, tiết kiệm CPU)",
   est_baro_noise: "Độ nhiễu baro cho bộ ước lượng", est_acc_noise: "Độ nhiễu accel cho bộ ước lượng", est_gpsvel_noise: "Độ nhiễu vận tốc GPS",
+  baro_gnd: "Bỏ qua baro tụt do hiệu ứng mặt đất (đã arm, dưới khoảng 1 m)",
+  baro_dyn: "Sửa baro theo tốc độ ngang (m trên (m/s)², 0 tắt; dương khi baro đọc thấp lúc bay nhanh)",
   rf_max_m: "Tầm xa tối đa cảm biến khoảng cách (m)", flow_scale: "Hệ số optical flow", flow_align: "Hướng lắp optical flow",
   flow_flip: "Lật trục optical flow", osd_backend: "Loại OSD", osd_pal: "Camera chuẩn PAL (tắt = NTSC)", osd_canvas: "Lưới chữ OSD (canvas)", osd_font: "Ký hiệu OSD",
   osd_stats: "Màn hình thống kê sau khi disarm (giây, 0 = tắt)", rpm_w1: "RPM filter: mức notch hài bậc 1 (%)",
@@ -2234,14 +2237,14 @@ function buildPid() {
     pcard(mp, "Telemetry ESC & motor", ["dshot_bidir", "dshot_edt", "esc_telemetry", "motor_poles", "motor_idle", "yaw_reversed"]);
   }
   const navGroups = [
-    ["Độ cao", ["alt_pos_p", "alt_vel_p", "alt_vel_i", "alt_vel_d", "climb_rate_max", "hover_throttle", "hover_learn", "alt_surface"]],
+    ["Độ cao", ["alt_pos_p", "alt_vel_p", "alt_vel_i", "alt_vel_d", "climb_rate_max", "hover_throttle", "hover_learn", "alt_surface", "thr_curve"]],
     ["Giữ vị trí & gió", ["pos_p", "pos_vel_p", "pos_vel_i", "pos_max_speed", "pos_max_angle", "pos_max_accel", "wind_comp", "wind_drag"]],
     ["GPS, hướng & EKF", ["est_type", "gps_min_sats", "gps_max_hacc", "gps_glitch_m", "gps_glitch_s", "gps_heading", "mag_declination", "vibe_warn"]],
     ["Bay về (RTH) & hạ cánh", ["rth_alt", "rth_speed", "rth_loiter_s", "rth_home_radius", "rth_climb_first", "rth_land", "rth_sanity_s", "rally_max_m", "land_speed", "land_slow_speed", "land_slow_alt"]],
     ["Nhiệm vụ & geofence", ["wp_radius", "wp_speed", "nav_yaw_mode", "nav_yaw_p", "fence_enable", "fence_action", "fence_radius", "fence_alt_max"]],
   ];
   navGroups[3][1].push("srtl_point_m");
-  navGroups.push(["Bộ ước lượng (độ nhiễu cảm biến)", ["est_baro_noise", "est_acc_noise", "est_gpsvel_noise"]]);
+  navGroups.push(["Bộ ước lượng (độ nhiễu cảm biến)", ["est_baro_noise", "est_acc_noise", "est_gpsvel_noise", "baro_gnd", "baro_dyn"]]);
   navGroups[4][1].push("fence_poly");
   const np = $("navParams");
   np.innerHTML = "";

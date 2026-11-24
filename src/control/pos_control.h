@@ -42,6 +42,7 @@ class AltitudeControl {
 
  private:
   void limits();
+  float curve() const;
   const Config* cfg_ = nullptr;
   Pid velPid_;
   float hover_ = 0.4f;

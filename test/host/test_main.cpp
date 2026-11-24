@@ -26,6 +26,10 @@
 #include "../../src/control/mixer.h"
 #include "../../src/estimation/kalman.h"
 #include "../../src/estimation/ekf.h"
+#include "../../src/estimation/baro_comp.h"
+#include "../../src/estimation/range_height.h"
+#include "../../src/control/pos_control.h"
+#include "../../src/config/config.h"
 #include "../../src/estimation/mag_fit.h"
 #include "../../src/control/pid.h"
 #include "../../src/navigation/navigator.h"
@@ -2202,6 +2206,63 @@ static void testImuDelta() {
   CHECKF((a1 - aj).norm() < 2e-4f && (v1 - vj).norm() < 1e-3f, "IMU delta: joining two intervals ~ one interval (%.5f / %.5f)", (double)(a1 - aj).norm(), (double)(v1 - vj).norm());
 }
 
+static void testAltitudeHelpers() {
+  // rangefinder height: offset learned at first sight, step (kerb / table) absorbed, not passed on
+  fc::RangeHeight rh;
+  float z = 0;
+  CHECK(!rh.measure(1.0f, 5.0f, 0.1f, 1000, z), "range height: first sample only sets the offset");
+  bool ok = rh.measure(1.02f, 5.0f, 0.1f, 1020, z);
+  CHECK(ok && fabsf(z - 5.02f) < 0.01f, "range height: follows the range on top of the offset");
+  CHECK(!rh.measure(0.2f, 5.0f, 0.1f, 1040, z) && rh.steps == 1, "range height: a 0.8 m step goes into the offset");
+  ok = rh.measure(0.21f, 5.0f, 0.1f, 1060, z);
+  CHECK(ok && fabsf(z - 5.01f) < 0.02f, "range height: after the step the height stays the same");
+  CHECK(!rh.measure(0.21f, 5.0f, 0.1f, 2000, z), "range height: a gap > 0.5 s starts over");
+  // baro corrections
+  float alt = 10, r = 0.4f;
+  fc::baroCorrect(alt, r, 10, 100, 0.025f, false);
+  CHECK(fabsf(alt - 12.5f) < 1e-4f && fabsf(r - 0.8f) < 1e-4f, "baro: dynamic pressure added back, less weight at 10 m/s");
+  alt = 0.2f; r = 0.4f;
+  fc::baroCorrect(alt, r, 0.5f, 0, 0, true);
+  CHECK(fabsf(alt - 0.5f) < 1e-4f && r > 0.4f, "baro: ground-effect dip under 0.5 m ignored");
+  alt = -0.5f;
+  fc::baroCorrect(alt, r, 0.5f, 0, 0, true);
+  CHECK(fabsf(alt + 0.0f) < 1e-4f, "baro: larger dip counts 0.5 m less");
+  alt = 1.0f;
+  fc::baroCorrect(alt, r, 0.5f, 0, 0, true);
+  CHECK(fabsf(alt - 1.0f) < 1e-4f, "baro: readings above the estimate pass near the ground");
+  // altitude control in thrust: reset gives back the throttle, hover gain unchanged, tilt exact
+  fc::Config c;
+  fc::configDefaults(c);
+  c.thr_curve = 0.5f;
+  c.thrust_expo = 0;
+  c.alt_vel_i = 0;
+  c.alt_vel_d = 0;
+  fc::AltitudeControl a;
+  a.configure(c);
+  fc::NavEstimate e{};
+  e.alt = 3;
+  a.reset(0.55f, 1.0f);
+  float t = a.update(3, 0, 1, 1, e, 0, 1.0f, 0.001f);
+  CHECK(fabsf(t - 0.55f) < 0.002f, "altitude: reset in thrust gives the same throttle back");
+  a.reset(c.hover_throttle, 1.0f);
+  float t0 = a.update(3, 0, 1, 1, e, 0, 1.0f, 0.001f);
+  e.vz = -0.02f;
+  float t1 = a.update(3, 0, 1, 1, e, 0, 1.0f, 0.001f);
+  c.thr_curve = 0;
+  a.reset(c.hover_throttle, 1.0f);
+  e.vz = 0;
+  float l0 = a.update(3, 0, 1, 1, e, 0, 1.0f, 0.001f);
+  e.vz = -0.02f;
+  float l1 = a.update(3, 0, 1, 1, e, 0, 1.0f, 0.001f);
+  CHECK(fabsf((t1 - t0) - (l1 - l0)) < 0.1f * fabsf(l1 - l0) + 1e-5f, "altitude: same gain at hover with or without the curve");
+  c.thr_curve = 0.5f;
+  a.reset(c.hover_throttle, 1.0f);
+  e.vz = 0;
+  float tt = a.update(3, 0, 1, 1, e, 0, 0.8f, 0.001f), h = c.hover_throttle;
+  float f = (0.5f * tt + 0.5f * tt * tt) * 0.8f, fh = 0.5f * h + 0.5f * h * h;
+  CHECK(fabsf(f - fh) < 0.003f, "altitude: tilt compensated in thrust (vertical thrust unchanged)");
+}
+
 static void testEkf() {
   Config c;
   configDefaults(c);
@@ -2537,6 +2598,7 @@ int main(int argc, char** argv) {
   testDynamicNotch();
   testKalman();
   testImuDelta();
+  testAltitudeHelpers();
   testParams();
   testModeRanges();
   testDeferredSave();

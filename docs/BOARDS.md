@@ -78,6 +78,25 @@ Bộ nhớ: `esp32dev` dùng 94 % ô firmware 1.625 MB trước khi cắt trang 
   hướng theo la bàn khi hướng tính từ GPS đồng ý với la bàn. Mọi lần đặt lại được ghi vào blackbox
   (khung điều hướng) và hiện trong tab Blackbox.
 
+### Giữ độ cao (baro, cảm biến khoảng cách)
+Mọi board như nhau; phần tính thêm chỉ vài phép nhân mỗi mẫu baro / mẫu khoảng cách và một căn bậc hai mỗi
+vòng điều khiển độ cao, không đáng kể cả trên F411.
+
+| Cấu hình | Mặc định | Làm gì / giới hạn |
+|---|---|---|
+| Cảm biến khoảng cách (MT-01P…) trong tầm `rf_max_m`, nghiêng dưới 30° | tự dùng | độ cao lấy chi tiết từ cảm biến, baro chỉ giữ dài hạn. Mặt đất đổi bậc (bậc thềm, mép bàn) **không** làm drone nhảy: bước nhảy lớn hơn 0.4 m được coi là đổi mặt đất. Ra ngoài tầm: về baro, không giật |
+| `baro_gnd 1` | bật | đã arm và dưới khoảng 1 m: baro tụt (luồng gió cánh đập xuống đất) tới 0.5 m bị bỏ qua, phần lớn hơn tính bớt 0.5 m. Cất / hạ cánh không bị nảy. Đang disarm thì không áp dụng |
+| `baro_dyn` | **0 (tắt)** | sửa sai số baro khi bay nhanh (gió thổi qua lỗ baro). Mỗi khung và cách đặt baro khác nhau nên không đặt sẵn. Chỉ dùng khi có GPS hoặc optical flow (cần tốc độ ngang). Cách chỉnh bên dưới |
+| `thr_curve` | 0.5 | vòng độ cao tính theo lực đẩy thay vì theo ga: cùng độ nhạy ở ga treo như trước, đều hơn khi ga xa ga treo và khi nghiêng. **Tự tắt khi `thrust_expo` > 0** (mixer đã làm việc này). 0 = như bản cũ |
+
+Chỉnh `baro_dyn`: bay POSHOLD ở độ cao vài mét, đẩy cần pitch hết cỡ vài giây rồi thả. Nếu drone tự **leo**
+lúc bay nhanh (baro đọc thấp), tăng `baro_dyn` (thử 0.01, 0.02…); nếu tự **hạ**, đặt âm. Đúng khi độ cao
+gần như không đổi lúc lao. Trong mô phỏng (`./build/sim alt_real`) đặt đúng giá trị làm sai lệch độ cao lúc
+lao giảm từ 1.4 m xuống 0.3 m.
+
+Ngoài ra, ALTHOLD cất cánh từ mặt đất: khi drone chưa rời đất, đích độ cao chỉ đi trước tối đa 1 m (trước là
+2 m) để lượng leo dồn lại lúc motor đang tăng tốc không thành vọt quá sau khi rời đất.
+
 ### Blackbox (`bb_backend`)
 | Giá trị | Board | Ghi chú |
 |---|---|---|

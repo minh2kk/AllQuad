@@ -33,15 +33,33 @@ void AltitudeControl::limits() {
   velPid_.set(cfg_->alt_vel_p, cfg_->alt_vel_i, cfg_->alt_vel_d, 0.35f, -hover_ + 0.08f, 0.9f - hover_);
 }
 
+
+// thrust curve of the propulsion, f(t) = (1-k) t + k t^2 (0..1 both ways). The altitude loop works in
+// thrust, so its gain is the same at any throttle and the tilt compensation is exact. Off when the mixer
+// already linearises (thrust_expo): then throttle is thrust.
+float AltitudeControl::curve() const { return cfg_->thrust_expo > 0 ? 0.0f : constrainf(cfg_->thr_curve, 0.0f, 1.0f); }
+static float thrustOf(float t, float k) { return (1.0f - k) * t + k * t * t; }
+static float throttleOf(float f, float k) {
+  if (k < 1e-3f) return f;
+  float b = 1.0f - k;
+  return (-b + sqrtf(b * b + 4.0f * k * fmaxf(f, 0.0f))) / (2.0f * k);
+}
+
 void AltitudeControl::setHover(float h) {
   h = constrainf(h, 0.1f, 0.8f);
-  velPid_.i -= h - hover_;
+  // the same thrust before and after: the output does not jump
+  float k = curve();
+  float f = thrustOf(hover_, k) + ((1.0f - k) + 2.0f * k * hover_) * velPid_.i;
+  velPid_.i = (f - thrustOf(h, k)) / ((1.0f - k) + 2.0f * k * h);
   hover_ = h;
   limits();
 }
 
 void AltitudeControl::reset(float thr, float cosTilt) {
-  velPid_.reset(thr * constrainf(cosTilt, 0.6f, 1.0f) - hover_);
+  // the integrator that gives this throttle now (inverse of update)
+  float k = curve(), ct = constrainf(cosTilt, 0.6f, 1.0f);
+  float slope = (1.0f - k) + 2.0f * k * hover_;
+  velPid_.reset((thrustOf(thr, k) * ct - thrustOf(hover_, k)) / slope);
 }
 
 float AltitudeControl::hoverEstimate() const { return hover_ + velPid_.i; }
@@ -50,8 +68,11 @@ float AltitudeControl::update(float targetAlt, float climbFF, float maxUp, float
                               float accUp, float cosTilt, float dt) {
   float velSp = climbFF + sqrtController(targetAlt - est.alt, cfg_->alt_pos_p, 3.0f);
   velSp = constrainf(velSp, -maxDown, maxUp);
-  float thr = hover_ + velPid_.update(velSp - est.vz, accUp, dt);
-  return constrainf(thr / constrainf(cosTilt, 0.6f, 1.0f), 0.05f, 0.95f);
+  float u = velPid_.update(velSp - est.vz, accUp, dt);
+  // u is in throttle units at hover (unchanged tuning): thrust = f(hover) + f'(hover) u, tilted, back to throttle
+  float k = curve();
+  float f = thrustOf(hover_, k) + ((1.0f - k) + 2.0f * k * hover_) * u;
+  return constrainf(throttleOf(f / constrainf(cosTilt, 0.6f, 1.0f), k), 0.05f, 0.95f);
 }
 
 // ---------------------------------------------------------------- position

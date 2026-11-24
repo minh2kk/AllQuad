@@ -46,6 +46,7 @@ struct QuadModel {
   float m[4] = {0, 0, 0, 0};
   float eff[4] = {1, 1, 1, 1};  // < 1: weak motor / damaged prop (spins slower for the same command)
   bool onGround = true;
+  float thrustN = 0;  // total thrust of the last step
 
   void step(const float cmd[4], bool armed, float dt) {
     static const float X[4] = {-1, +1, -1, +1}, Y[4] = {+1, +1, -1, -1}, D[4] = {-1, +1, +1, -1};
@@ -61,6 +62,7 @@ struct QuadModel {
       tau.y += X[i] * arm * t;
       tau.z += D[i] * kYaw * t;
     }
+    thrustN = thrust;
     Vec3 Iw(inertia.x * w.x, inertia.y * w.y, inertia.z * w.z);
     Vec3 wd = tau - w.cross(Iw);
     w += Vec3(wd.x / inertia.x, wd.y / inertia.y, wd.z / inertia.z) * dt;
@@ -102,6 +104,12 @@ struct Options {
   int bidirGlitchEvery = 0;             // every Nth answer of output 0 decodes to 4x its eRPM (0 = never)
   Vec3 gpsOffset;                       // injected GPS position error (glitch), m
   float (*terrain)(float n, float e) = nullptr;  // ground height under the craft (rangefinder only)
+  // a barometer as it is on a real quad (otherwise: white noise only): prop-wash noise growing with
+  // thrust, ground effect (reads low within ~0.8 m of the ground under thrust), dynamic pressure
+  // (reads low with horizontal speed, baroDyn m per (m/s)^2), slow drift (temperature)
+  bool baroReal = false;
+  float baroDyn = 0.025f;
+  float rangeMax = 8.0f;                // rangefinder range (MT-01P class: ~4 m)
 };
 
 QuadModel quad;
@@ -171,6 +179,16 @@ class SimBaro : public drv::BaroDriver {
   bool init() override { return true; }
   bool update(float& pa, float& t) override {
     float alt = -quad.pos.z + gauss(0.08f) + opt.baroOffset;
+    if (opt.baroReal) {
+      static float wash = 0, drift = 0;
+      float load = quad.thrustN / (quad.mass * GRAVITY);  // 1 = hover
+      wash = 0.9f * wash + gauss(0.07f) * fminf(load, 2.0f);
+      drift += gauss(0.002f) + 0.00004f;                  // ~0.1 m / min warm-up plus a random walk
+      float h = -quad.pos.z - (opt.terrain ? opt.terrain(quad.pos.x, quad.pos.y) : 0.0f);
+      float ground = h < 0.8f ? -0.5f * (1.0f - h / 0.8f) * fminf(load, 1.5f) : 0.0f;
+      float vh2 = quad.vel.x * quad.vel.x + quad.vel.y * quad.vel.y;
+      alt += wash + drift + ground - opt.baroDyn * vh2;
+    }
     pa = 101325.0f * powf(1.0f - alt / 44330.0f, 5.255f);
     t = 25.0f;
     return true;
@@ -251,7 +269,8 @@ void simIoTask(void*) {
   if ((opt.flow || opt.range) && tick % 2 == 0) {
     float h = -quad.pos.z - (opt.terrain ? opt.terrain(quad.pos.x, quad.pos.y) : 0.0f);
     float ct = quad.q.cosTilt();
-    RangeSample r{h / fmaxf(ct, 0.5f) + gauss(0.01f), h > 0.02f, 200};
+    float d = h / fmaxf(ct, 0.5f) + gauss(0.01f);
+    RangeSample r{d, h > 0.02f && d < opt.rangeMax, 200};
     bus::range.publish(r);
     if (opt.flow && h > 0.05f) {
       float yaw = quad.q.yaw(), cy = cosf(yaw), sy = sinf(yaw);
@@ -1568,6 +1587,67 @@ void scenarioEkfFaults() {
   }
 }
 
+// altitude bobbing with a real-world barometer (prop wash, ground effect, dynamic pressure, drift):
+// take-off, low hover, high hover, fast dashes in POSHOLD, LAND. rf = with the rangefinder (4 m).
+struct AltStats {
+  float sd = 0, mean = 0, maxDev = 0;
+  double s = 0, s2 = 0;
+  int n = 0;
+  void add(float v) { s += v; s2 += (double)v * v; n++; }
+  void done() { if (n) { mean = (float)(s / n); sd = (float)sqrt(fmax(0.0, s2 / n - (s / n) * (s / n))); } }
+};
+static void altReal(bool rf) {
+  printf("\n== alt_real%s: real-world barometer, ALTHOLD low / high, dashes, LAND ==\n", rf ? "_rf" : "");
+  opt.baroReal = true;
+  opt.range = rf;
+  opt.rangeMax = 4.0f;
+  setup([](Config& c) {
+    c.rf_max_m = 4.0f;
+    c.baro_dyn = opt.baroDyn;  // calibrated as in docs/PARAMS.md (baro_dyn)
+    if (getenv("SIM_BARO_DYN")) c.baro_dyn = (float)atof(getenv("SIM_BARO_DYN"));
+    if (getenv("SIM_BARO_GND")) c.baro_gnd = (uint8_t)atoi(getenv("SIM_BARO_GND"));
+    if (getenv("SIM_THR_CURVE")) c.thr_curve = (float)atof(getenv("SIM_THR_CURVE"));
+  });
+  AltStats low, high;
+  float dashRef = 0, dashDev = 0, landT = -1, bounce = 0, minDuringLand = 99, toOver = 0, estErrLow = 0;
+  bool climbedLow = false, climbedHigh = false;
+  run(110, [&](float t) {
+    if (t >= 3.0f) rcIn.ch[4] = 2000;
+    if (t >= 3.5f) rcIn.ch[5] = 2000;  // ALTHOLD from the ground: the stick climbs
+    if (t >= 3.5f && !climbedLow) { rcIn.ch[RC_THROTTLE] = 1700; if (alt() > 1.3f) climbedLow = true; }
+    if (climbedLow && t < 25) rcIn.ch[RC_THROTTLE] = 1500;
+    if (t >= 25 && !climbedHigh) { rcIn.ch[RC_THROTTLE] = 1750; if (alt() > 6.0f) climbedHigh = true; }
+    if (climbedHigh) rcIn.ch[RC_THROTTLE] = 1500;
+    if (t >= 48) rcIn.ch[6] = 1500;  // POSHOLD
+    rcIn.ch[RC_PITCH] = (t >= 52 && t < 55) ? 2000 : (t >= 60 && t < 63) ? 1000 : 1500;
+    if (t >= 72) rcIn.ch[7] = 2000;  // LAND
+  }, [&](float t) {
+    VehicleStatus s = status();
+    NavEstimate e = bus::nav.get();
+    if (climbedLow && t < 10) toOver = fmaxf(toOver, alt());
+    if (t > 12 && t < 25) { low.add(alt()); estErrLow = fmaxf(estErrLow, fabsf(e.alt - (alt() - 0.0f) - (e.alt - alt()) * 0)); }
+    if (t > 37 && t < 48) high.add(alt());
+    if (fabsf(t - 51.0f) < 0.0005f) dashRef = alt();
+    if (t > 51 && t < 72) dashDev = fmaxf(dashDev, fabsf(alt() - dashRef));
+    if (t > 72 && s.armed) {
+      if (alt() < 1.0f) { minDuringLand = fminf(minDuringLand, alt()); bounce = fmaxf(bounce, alt() - minDuringLand); }
+    }
+    if (t > 72 && !s.armed && landT < 0) landT = t - 72;
+    if (fmodf(t, getenv("SIM_TR") && t < 12 ? 0.5f : 5.0f) < 0.0005f) { trace(t); printf("      est alt %.2f (err %.2f) vz %.2f agl %d %.2f\n", e.alt, e.alt - alt(), e.vz, e.aglValid, e.agl); }
+  });
+  low.done();
+  high.done();
+  printf("  RESULT%s low hover sd %.3f m, high hover sd %.3f m, dash dev %.2f m, take-off overshoot %.2f m, land %.1f s, bounce %.2f m\n",
+         rf ? "_rf" : "", low.sd, high.sd, dashDev, toOver, landT, bounce);
+  check("Low hover (~1.5 m) steady", low.sd < (rf ? 0.08f : 0.25f), "sd %.3f m", low.sd);
+  check("High hover (~6 m) steady", high.sd < 0.25f, "sd %.3f m", high.sd);
+  check("Height during fast dashes", dashDev < 1.0f, "max %.2f m", dashDev);
+  check("LAND: down and disarmed", landT > 0 && landT < 20, "%.1f s", landT);
+  check("No bounce on touch-down", bounce < 0.3f, "%.2f m", bounce);
+}
+void scenarioAltReal() { altReal(false); }
+void scenarioAltRealRf() { altReal(true); }
+
 void scenarioEkfYaw() {
   printf("\n== ekf_yaw: the EKF heading turns 178 deg (compass fine) -> GPS referee resets it ==\n");
   setup([](Config& c) { c.rth_alt = 15; c.bb_rate_hz = 100; c.bb_backend = 2; });
@@ -1957,7 +2037,7 @@ int main(int argc, char** argv) {
       {"guided", scenarioGuided}, {"smartrtl", scenarioSmartRtl}, {"crash", scenarioCrash}, {"gcsfs", scenarioGcsFailsafe},
       {"spin", scenarioSpin}, {"logic", scenarioLogic}, {"profiles", scenarioProfiles}, {"polyfence", scenarioPolyFence},
       {"imufail", scenarioImuFail}, {"imuvote", scenarioImuVote}, {"acc6", scenarioAcc6}, {"compassmot", scenarioCompassMot}, {"feel", scenarioFeel},
-      {"ekf_faults", scenarioEkfFaults}, {"ekf_yaw", scenarioEkfYaw}, {"rescue", scenarioRescue}, {"rescue_sanity", scenarioRescueSanity},
+      {"ekf_faults", scenarioEkfFaults}, {"ekf_yaw", scenarioEkfYaw}, {"alt_real", scenarioAltReal}, {"alt_real_rf", scenarioAltRealRf}, {"rescue", scenarioRescue}, {"rescue_sanity", scenarioRescueSanity},
       {"launch", scenarioLaunch}, {"vibe", scenarioVibeWarn}, {"clip", scenarioAccClip}, {"beginner", scenarioBeginner}};
   if (!strcmp(which, "all")) {  // every scenario in a fresh process (clean firmware state)
     int failed = 0;

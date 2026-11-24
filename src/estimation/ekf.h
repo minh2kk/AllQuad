@@ -57,7 +57,7 @@ class Ekf {
   void fuseGpsPos(float n, float e, float sigma, uint32_t nowMs);
   void fuseGpsVel(float vn, float ve, float vd, float sigma, uint32_t nowMs);
   // height above the origin (up positive); src 0 = baro, 1 = GPS
-  void fuseHeight(float altUp, float sigma, int src, uint32_t nowMs);
+  void fuseHeight(float altUp, float sigma, int src, uint32_t nowMs);  // src 0 baro, 1 GPS, 2 rangefinder
   void fuseYaw(float yaw, float sigma);
   // compass consistency only (no fusion: the heading enters through fuseYaw)
   void checkMag(const Vec3& magBody, float declinationRad, bool yawObservable, uint32_t nowMs);
@@ -79,6 +79,7 @@ class Ekf {
   Vec3 pos() const { return p_; }   // NED
   Vec3 vel() const { return v_; }
   float alt() const { return -p_.z; }
+  float posVarDown() const;
   const Quat& q() const { return q_; }
   float yaw() const { return q_.yaw(); }
   Vec3 gyroBias() const { return bg_; }
