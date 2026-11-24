@@ -22,6 +22,13 @@ def check(ok, msg):
     print("[%s] %s" % ("PASS" if ok else "FAIL", msg))
     if not ok: fails.append(msg)
 
+async def shot(page, path, **kw):
+    """Screenshot for the CI artifact only: a slow capture (tall page on a busy runner) must not fail the test."""
+    try:
+        await page.screenshot(path=path, timeout=60000, **kw)
+    except Exception as e:  # noqa: BLE001
+        print("(screenshot %s skipped: %s)" % (os.path.basename(path), str(e).splitlines()[0]))
+
 async def main():
     os.makedirs(SHOTS, exist_ok=True)
     async with async_playwright() as p:
@@ -36,7 +43,7 @@ async def main():
         await pg.click("#loginForm button[type=submit]")
         await pg.wait_for_timeout(400)
         check(await pg.is_visible("#loginErr") and await pg.is_visible("#login"), "login screen: wrong password refused")
-        await pg.screenshot(path=os.path.join(SHOTS, "login.png"))
+        await shot(pg, os.path.join(SHOTS, "login.png"))
         await pg.fill("#loginPw", "allquad123")
         await pg.click("#loginForm button[type=submit]")
         await pg.wait_for_function("document.querySelectorAll('#pidMatrix input').length === 12")
@@ -56,7 +63,7 @@ async def main():
         await pg.wait_for_timeout(300)
         # applied: the bar turns into the "not saved to flash yet" reminder
         check(not await pg.is_visible("#applyBtn") and await pg.is_visible("#saveNowBtn"), "change applied (save reminder shown)")
-        await pg.screenshot(path=os.path.join(SHOTS, "pid.png"), full_page=True)
+        await shot(pg, os.path.join(SHOTS, "pid.png"), full_page=True)
         await navto(pg, "modes")
         rows = await pg.locator("#modeList .mrow").count()
         await pg.click("#modeAdd")
@@ -68,13 +75,13 @@ async def main():
         await pg.wait_for_timeout(1200)
         check(rows == 9 and "HORIZON" in await pg.inner_text("#modeActive"),
               "modes: default 9 ranges, new HORIZON range on AUX7 becomes active")
-        await pg.screenshot(path=os.path.join(SHOTS, "modes.png"), full_page=True)
+        await shot(pg, os.path.join(SHOTS, "modes.png"), full_page=True)
         await navto(pg, "nav")
         await pg.wait_for_timeout(1500)
         kv = await pg.inner_text("#navKv")
         check(await pg.evaluate("S.mission && S.mission.items.length === 9 && S.mission.rally.length === 1")
               and "Tây Nam" in kv and "compass" in kv, "navigation: mission loaded, wind & heading shown")
-        await pg.screenshot(path=os.path.join(SHOTS, "nav.png"))
+        await shot(pg, os.path.join(SHOTS, "nav.png"))
         await navto(pg, "blackbox")
         await pg.click("#bbDownload")
         await pg.wait_for_selector("#bbResults:not([hidden])", timeout=30000)
@@ -88,7 +95,7 @@ async def main():
             await pg.click("#discardBtn")
         else:
             check(await pg.locator("#bbPlan").count() == 1, "tuning plan rendered (no change needed for this log)")
-        await pg.screenshot(path=os.path.join(SHOTS, "blackbox.png"), full_page=True)
+        await shot(pg, os.path.join(SHOTS, "blackbox.png"), full_page=True)
         # SD card: status + one file per flight, analysed straight from the card, deleted
         await pg.wait_for_selector("#sdFiles .sdrow", timeout=5000)
         nfiles = await pg.locator("#sdFiles .sdrow").count()
@@ -102,7 +109,7 @@ async def main():
         await pg.click("#sdFiles button[data-sdd='AQ00001.BBL']")
         await pg.wait_for_function("document.querySelectorAll('#sdFiles .sdrow').length === 1", timeout=5000)
         check(True, "SD card: log deleted, list refreshed")
-        await pg.screenshot(path=os.path.join(SHOTS, "sdcard.png"))
+        await shot(pg, os.path.join(SHOTS, "sdcard.png"))
         await navto(pg, "system")
         wire = await pg.inner_text("#sdWire")
         opts = await pg.locator("#sdParams select[data-p=sd_mode] option").count()
@@ -154,7 +161,7 @@ async def main():
         await pg.set_input_files("#otaFile", fw)
         await pg.wait_for_function("document.getElementById('otaNote').textContent.includes('khởi động lại')", timeout=10000)
         check(await pg.inner_text("#otaPct") == "100%", "firmware upload with progress, then reboot")
-        await pg.screenshot(path=os.path.join(SHOTS, "system.png"), full_page=True)
+        await shot(pg, os.path.join(SHOTS, "system.png"), full_page=True)
         # change the WiFi / web password: logged out, the new password works, the warning is gone
         await navto(pg, "system")
         await pg.fill("#secSsid", "MyQuad")
