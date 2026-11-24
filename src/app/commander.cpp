@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "../comms/hitl.h"
 #include "../hal/hal.h"
@@ -23,15 +24,17 @@ static float climbFromStick(float thr, float maxRate) {
 static bool isAltMode(FlightMode m) {
   return m == FlightMode::ALTHOLD || m == FlightMode::POSHOLD || m == FlightMode::RTH || m == FlightMode::MISSION ||
          m == FlightMode::LAND || m == FlightMode::CRUISE || m == FlightMode::AUTOTUNE || m == FlightMode::GUIDED ||
-         m == FlightMode::SMART_RTL;
+         m == FlightMode::SMART_RTL || m == FlightMode::BRAKE || m == FlightMode::CIRCLE || m == FlightMode::FOLLOW;
 }
 static bool isNavMode(FlightMode m) {
   return m == FlightMode::POSHOLD || m == FlightMode::RTH || m == FlightMode::MISSION || m == FlightMode::LAND ||
-         m == FlightMode::CRUISE || m == FlightMode::GUIDED || m == FlightMode::SMART_RTL;
+         m == FlightMode::CRUISE || m == FlightMode::GUIDED || m == FlightMode::SMART_RTL || m == FlightMode::BRAKE ||
+         m == FlightMode::CIRCLE || m == FlightMode::FOLLOW;
 }
 static bool gcsSettable(uint32_t m) {
   return m < (uint32_t)FlightMode::TURTLE || m == (uint32_t)FlightMode::CRUISE || m == (uint32_t)FlightMode::GUIDED ||
-         m == (uint32_t)FlightMode::SMART_RTL;
+         m == (uint32_t)FlightMode::SMART_RTL || m == (uint32_t)FlightMode::BRAKE || m == (uint32_t)FlightMode::CIRCLE ||
+         m == (uint32_t)FlightMode::FOLLOW;
 }
 static FlightMode actionFor(uint8_t a) {  // failsafe / fence / battery action
   return a == (uint8_t)FailsafeAction::SMART_RTL ? FlightMode::SMART_RTL
@@ -394,7 +397,7 @@ uint32_t Commander::computeArmBlockers(bool rcOk) {
     b |= ARM_CALIBRATING;  // (log erase stalls the CPU for ~45 ms per sector: only on the ground)
   if (bat_.critical || bat_.capacityLow) b |= ARM_BATTERY;
   if (!att_.valid) b |= ARM_NO_IMU;
-  if ((int32_t)(bus::cliActiveUntilMs - now) > 0) b |= ARM_CLI;
+  if ((int32_t)(bus::cliActiveUntilMs - now) > 0 || bus::osdMenuOpen) b |= ARM_CLI;  // CLI / configurator / OSD menu
   if (rcFailsafe_) b |= ARM_FAILSAFE;
   if (!c.acc_calibrated) b |= ARM_ACC_NOT_CAL;
   if (seqBaro_ && !baroSeen_) b |= ARM_BARO;
@@ -434,6 +437,14 @@ void Commander::arm(uint32_t now, bool turtle) {
   crashSinceMs_ = impactMs_ = 0;
   nav_.path().reset();
   pathMs_ = 0;
+  headfreeRef_ = yawNav_;  // head-free "forward": where the nose points at arming
+  flipActive_ = false;
+  smartDone_ = smartWarn_ = false;
+  smartLowN_ = 0;
+  ampsAvg_ = -1;
+  motorBadSince_ = thrustBadSince_ = 0;
+  motorWarn_ = thrustWarn_ = false;
+  for (float& m : motorAvg_) m = 0;
   mode_ = FlightMode::COUNT;  // force mode entry
   yawHold_ = yawNav_;
   wind_.reset();
@@ -469,6 +480,10 @@ FlightMode Commander::pilotMode(bool rcOk) const {
   if (boxOn(b, ModeBox::SMART_RTL)) return FlightMode::SMART_RTL;
   if (boxOn(b, ModeBox::RTH) || boxOn(b, ModeBox::GPS_RESCUE)) return FlightMode::RTH;
   if (boxOn(b, ModeBox::MISSION)) return FlightMode::MISSION;
+  if (boxOn(b, ModeBox::BRAKE)) return FlightMode::BRAKE;
+  if (boxOn(b, ModeBox::FOLLOW)) return FlightMode::FOLLOW;
+  if (boxOn(b, ModeBox::CIRCLE)) return FlightMode::CIRCLE;
+  if (flipActive_) return FlightMode::FLIP;
   if (boxOn(b, ModeBox::AUTOTUNE)) return FlightMode::AUTOTUNE;
   if (boxOn(b, ModeBox::CRUISE)) return FlightMode::CRUISE;
   if (boxOn(b, ModeBox::POSHOLD)) return FlightMode::POSHOLD;
@@ -496,6 +511,15 @@ FlightMode Commander::validate(FlightMode m) const {
     case FlightMode::GUIDED:
       if (gpsNav) return m;
       m = FlightMode::POSHOLD;
+      if (posOk) return m;
+      return altOk ? FlightMode::ALTHOLD : FlightMode::ANGLE;
+    case FlightMode::FOLLOW:
+      if (gpsNav) return m;
+      m = FlightMode::POSHOLD;
+      if (posOk) return m;
+      return altOk ? FlightMode::ALTHOLD : FlightMode::ANGLE;
+    case FlightMode::BRAKE:
+    case FlightMode::CIRCLE:
       if (posOk) return m;
       return altOk ? FlightMode::ALTHOLD : FlightMode::ANGLE;
     case FlightMode::SMART_RTL:
@@ -558,6 +582,7 @@ void Commander::updateFailsafes(bool rcOk, uint32_t now) {
     bus::postMessage(c.bat_fs_action == 3 ? "Battery failsafe: SmartRTL"
                      : c.bat_fs_action == 2 ? "Battery failsafe: RTH" : "Battery failsafe: landing");
   }
+  smartRth(now);
   // ---- GCS link (ArduPilot FS_GCS): only for modes that depend on the ground station ----
   bool gcsMode = mode_ == FlightMode::GUIDED || mode_ == FlightMode::MISSION;
   uint32_t hb = bus::gcsHeartbeatMs;
@@ -623,6 +648,8 @@ void Commander::run(uint32_t now, float dt) {
   if (gcsMode_ != FlightMode::COUNT && switchState_ != gcsSwitchState_) gcsMode_ = FlightMode::COUNT;
   handleRequests(now);
   guidedInput(now);
+  followInput(now);
+  flipTrigger(now);
   if (now - logicMs_ >= 20) { logicMs_ = now; logicUpdate(now); }
   if (acc6_) acc6Update(now);
 
@@ -717,6 +744,7 @@ void Commander::run(uint32_t now, float dt) {
   }
 
   control(dt, now);
+  motorHealth(now, dt);
   publish(now);
 }
 
@@ -740,11 +768,17 @@ void Commander::control(float dt, uint32_t now) {
   const NavEstimate& e = navEst_;
   bool autonomous = mode_ == FlightMode::RTH || mode_ == FlightMode::MISSION || mode_ == FlightMode::LAND ||
                     mode_ == FlightMode::FAILSAFE || mode_ == FlightMode::GUIDED || mode_ == FlightMode::SMART_RTL ||
-                    rcFailsafe_;
+                    mode_ == FlightMode::BRAKE || mode_ == FlightMode::FOLLOW || rcFailsafe_;
   float rs = autonomous ? 0 : stick(rc_.ch[RC_ROLL]);
   float ps = autonomous ? 0 : stick(rc_.ch[RC_PITCH]);
   float ys = autonomous ? 0 : stick(rc_.ch[RC_YAW]);
   float thr = autonomous ? 0 : thrStick(rc_.ch[RC_THROTTLE]);
+  // head-free: the roll / pitch sticks are turned into the pilot's frame (self-levelling modes only)
+  bool hfBox = boxOn(boxes_, ModeBox::HEADFREE);
+  if (hfBox != headfreeOn_) { headfreeOn_ = hfBox; bus::postMessage(hfBox ? "Headfree on" : "Headfree off"); }
+  if (hfBox && !autonomous && (mode_ == FlightMode::ANGLE || mode_ == FlightMode::HORIZON || mode_ == FlightMode::ALTHOLD ||
+                               mode_ == FlightMode::POSHOLD))
+    headfreeSticks(rs, ps);
   float rollDeg = att_.roll * RAD2DEG, pitchDeg = att_.pitch * RAD2DEG;
   float cosTilt = att_.q.cosTilt();
   float accUp = -att_.accEarth.z;
@@ -828,13 +862,21 @@ void Commander::control(float dt, uint32_t now) {
     case FlightMode::MISSION:
     case FlightMode::GUIDED:
     case FlightMode::SMART_RTL:
+    case FlightMode::BRAKE:
+    case FlightMode::CIRCLE:
+    case FlightMode::FOLLOW:
     case FlightMode::LAND: {
-      bool pilotNav = mode_ == FlightMode::POSHOLD || mode_ == FlightMode::CRUISE;
+      bool pilotNav = mode_ == FlightMode::POSHOLD || mode_ == FlightMode::CRUISE || mode_ == FlightMode::CIRCLE;
       float climbStick = pilotNav ? climbFromStick(thr, 1.0f) : 0.0f;
       nav_.update(e, yawNav_, rs, ps, ys, climbStick, land_.landed() && airborne_, headingOk_, dt, now, navOut_);
-      // RTH / GPS rescue sanity check: the distance to the target must keep shrinking
+      // RTH / GPS rescue sanity check: the distance to the RTH destination (home / rally point) must keep
+      // shrinking. (Not the position target: on the first return cycle that was still the climb's hold
+      // point at the craft, and a best distance of 0 m could never be beaten: every return longer than
+      // rth_sanity_s ended in a landing on the way.)
       if (mode_ == FlightMode::RTH && nav_.phase() == NavPhase::RTH_RETURN && c.rth_sanity_s > 0) {
-        float d = sqrtf(squaref(navOut_.tgtN - e.n) + squaref(navOut_.tgtE - e.e));
+        float dn, de;
+        nav_.rthDestination(dn, de);
+        float d = sqrtf(squaref(dn - e.n) + squaref(de - e.e));
         if (d < rthBestDist_ - 2.0f || rthBestDist_ > 1e8f) { rthBestDist_ = d; rthProgressMs_ = now; }
         else if (now - rthProgressMs_ > (uint32_t)(c.rth_sanity_s * 1000.0f) && !rescueLanding_) {
           rescueLanding_ = true;
@@ -871,6 +913,9 @@ void Commander::control(float dt, uint32_t now) {
       if (!yawFree) rate[2] = constrainf(c.nav_yaw_p * wrapPi(yawHold_ - yawNav_) * RAD2DEG, -90.0f, 90.0f);
       break;
     }
+    case FlightMode::FLIP:
+      if (!flipControl(now, dt, rollDeg, pitchDeg, cosTilt, rate, throttle)) flipActive_ = false;  // done: back to the mode below
+      break;
     case FlightMode::FAILSAFE: {  // no altitude sensor: level and descend
       AttitudeControl::level(c, 0, 0, rollDeg, pitchDeg, rate);
       rate[2] = 0;
@@ -1251,6 +1296,9 @@ void Commander::publish(uint32_t now) {
   }
   if ((int32_t)(clipWarnUntilMs_ - now) > 0) w |= WARN_ACC_CLIP;
   if (c.beginner) w |= WARN_BEGINNER;
+  if (motorWarn_) w |= WARN_MOTOR;
+  if (thrustWarn_) w |= WARN_THRUST;
+  if (smartWarn_ && armed_) w |= WARN_RTH_BAT;
   bool ekfOn = c.est_type == 1 && ekf_.initialized();
   if (ekfOn && (ekf_.status().faults & (EKF_BARO_FAULT | EKF_MAG_FAULT))) w |= WARN_EKF;
   if (launchWaiting_) w |= WARN_LAUNCH;
@@ -1280,6 +1328,184 @@ void Commander::publish(uint32_t now) {
     r.pitchDeg = ekf_.q().pitch() * RAD2DEG;
   }
   bus::ekf.publish(r);
+}
+
+// ---------------------------------------------------------------- head-free
+// The roll / pitch sticks move the craft in the pilot's frame: "forward" is where the nose pointed at
+// arming (headfree_type 0), or straight away from home once 5 m out (1, home lock: pull back = come home).
+void Commander::headfreeSticks(float& rs, float& ps) {
+  const Config& c = cfg();
+  const NavEstimate& e = navEst_;
+  float ref = headfreeRef_;
+  if (c.headfree_type == 1 && e.homeSet && e.posValid && e.n * e.n + e.e * e.e > 25.0f) ref = atan2f(e.e, e.n);
+  float d = wrapPi(yawNav_ - ref), cd = cosf(d), sd = sinf(d);
+  float f = ps, r = rs;
+  ps = f * cd + r * sd;
+  rs = -f * sd + r * cd;
+}
+
+// ---------------------------------------------------------------- FLIP
+// ArduPilot FLIP: switch on -> climb kick 0.25 s, 400 deg/s round the roll axis (pitch when the pitch stick
+// is pushed further than roll; left / back with the stick that way), little thrust upside down, then
+// level again and back to the mode underneath. Only from ACRO / ANGLE / HORIZON / ALTHOLD, 3 m up.
+void Commander::flipTrigger(uint32_t now) {
+  bool box = boxOn(boxes_, ModeBox::FLIP);
+  bool rising = box && !flipBoxPrev_;
+  flipBoxPrev_ = box;
+  if (!rising || flipActive_ || !armed_) return;
+  const NavEstimate& e = navEst_;
+  bool fromOk = mode_ == FlightMode::ACRO || mode_ == FlightMode::ANGLE || mode_ == FlightMode::HORIZON ||
+                mode_ == FlightMode::ALTHOLD;
+  if (!fromOk) { bus::postMessage("Flip: from ACRO / ANGLE / HORIZON / ALTHOLD only"); return; }
+  if (!airborne_ || (e.altValid && e.alt < 3.0f)) { bus::postMessage("Flip: too low (3 m)"); return; }
+  float rs = stick(rc_.ch[RC_ROLL]), ps = stick(rc_.ch[RC_PITCH]);
+  if (fabsf(ps) > 0.3f && fabsf(ps) > fabsf(rs)) { flipAxis_ = 1; flipDir_ = ps > 0 ? 1 : -1; }
+  else { flipAxis_ = 0; flipDir_ = rs < -0.3f ? -1 : 1; }
+  flipActive_ = true;
+  flipPhase_ = FLIP_START;
+  flipAngle_ = 0;
+  flipStartMs_ = flipPhaseMs_ = now;
+  bus::postMessage("Flip!");
+}
+
+bool Commander::flipControl(uint32_t now, float dt, float rollDeg, float pitchDeg, float cosTilt, float rate[3],
+                            float& throttle) {
+  const Config& c = cfg();
+  float h = constrainf(alt_.hoverEstimate(), 0.15f, 0.8f), ct = constrainf(cosTilt, 0.6f, 1.0f);
+  uint32_t inPhase = now - flipPhaseMs_;
+  if (now - flipStartMs_ > 3000 && flipPhase_ != FLIP_RECOVER) { flipPhase_ = FLIP_RECOVER; flipPhaseMs_ = now; inPhase = 0; }
+  switch (flipPhase_) {
+    case FLIP_START:  // climb kick: height to lose on the way round
+      AttitudeControl::level(c, 0, 0, rollDeg, pitchDeg, rate);
+      rate[2] = 0;
+      throttle = fminf(h * 1.6f, 0.9f) / ct;
+      if (inPhase > 250) { flipPhase_ = FLIP_ROLL; flipPhaseMs_ = now; }
+      return true;
+    case FLIP_ROLL: {
+      float meas = flipAxis_ == 0 ? att_.rateDps.x : att_.rateDps.y;
+      float want = 400.0f * flipDir_ * (flipAxis_ == 1 ? -1.0f : 1.0f);  // pitch: forward = nose down
+      rate[0] = flipAxis_ == 0 ? want : 0.0f;
+      rate[1] = flipAxis_ == 1 ? want : 0.0f;
+      rate[2] = 0;
+      flipAngle_ += fabsf(meas) * dt;
+      throttle = cosTilt < 0 ? h * 0.3f : h * 0.8f;  // upside down thrust only pushes it down
+      if (flipAngle_ > 300.0f) { flipPhase_ = FLIP_RECOVER; flipPhaseMs_ = now; }
+      return true;
+    }
+    default:  // level again, then hand back
+      AttitudeControl::level(c, 0, 0, rollDeg, pitchDeg, rate);
+      rate[2] = 0;
+      throttle = fminf(h * 1.3f, 0.9f) / ct;
+      if ((fabsf(rollDeg) < 15.0f && fabsf(pitchDeg) < 15.0f && inPhase > 200) || inPhase > 2000) return false;
+      return true;
+  }
+}
+
+// ---------------------------------------------------------------- FOLLOW leader
+void Commander::followInput(uint32_t now) {
+  bus::FollowTarget f;
+  uint32_t seq = bus::follow.read(f);
+  const NavEstimate& e = navEst_;
+  if (seq != followSeq_) { followSeq_ = seq; followMs_ = now; }
+  bool fresh = followMs_ && now - followMs_ < 3000 && e.homeSet && (f.lat || f.lon);
+  float n = 0, ea = 0;
+  if (fresh) {
+    NavEstimator::llaToNed(f.lat * 1e-7, f.lon * 1e-7, e.homeLat, e.homeLon, n, ea);
+    float age = (now - followMs_) * 1e-3f;  // where the leader is by now
+    n += f.vn * age;
+    ea += f.ve * age;
+    if (n * n + ea * ea > 1000.0f * 1000.0f) fresh = false;  // more than 1 km from home: not a leader to follow
+  }
+  nav_.setFollow(n, ea, f.vn, f.ve, fresh);
+  if (mode_ == FlightMode::FOLLOW && !fresh && !followTold_) { followTold_ = true; bus::postMessage("Follow: no leader - holding"); }
+  if (fresh) followTold_ = false;
+}
+
+// ---------------------------------------------------------------- battery needed to come home
+// DJI smart RTH / iNav: once a second, the charge the way home takes (climb to rth_alt, fly back at
+// rth_speed with the wind, loiter, land) at the average current of the flight, plus 20 %. When the charge
+// left above bat_reserve_pct drops below it for 3 s: warn and (bat_smart_rth 2) start RTH. Needs
+// bat_capacity and a current sensor.
+void Commander::smartRth(uint32_t now) {
+  const Config& c = cfg();
+  if (!c.bat_smart_rth || c.bat_capacity <= 0 || !airborne_ || now - smartMs_ < 1000) return;
+  smartMs_ = now;
+  if (bat_.current >= 0) ampsAvg_ = ampsAvg_ < 0 ? bat_.current : ampsAvg_ + (bat_.current - ampsAvg_) * 0.1f;
+  const NavEstimate& e = navEst_;
+  smartWarn_ = false;
+  if (ampsAvg_ <= 0.5f || !e.homeSet || !e.posValid || !e.gpsValid) return;
+  float d = sqrtf(e.n * e.n + e.e * e.e), alt = fmaxf(e.alt, 0.0f);
+  float rthAlt = fmaxf(alt, c.rth_alt);
+  if (c.fence_enable && c.fence_alt_max > 3.0f) rthAlt = fminf(rthAlt, c.fence_alt_max - 2.0f);
+  float speed = fmaxf(c.rth_speed, 1.0f);
+  float head = 0;  // wind against the way home (m/s): more air speed for the same ground speed
+  if (wind_.valid() && d > 1.0f) head = (wind_.windN() * e.n + wind_.windE() * e.e) / d;
+  float tClimb = fmaxf(rthAlt - alt, 0.0f) / fmaxf(c.climb_rate_max, 0.5f);
+  float tHome = d / speed * (1.0f + 0.5f * fmaxf(head, 0.0f) / speed);
+  float tLand = fmaxf(rthAlt - c.land_slow_alt, 0.0f) / fmaxf(c.land_speed, 0.2f) +
+                fminf(rthAlt, c.land_slow_alt) / fmaxf(c.land_slow_speed, 0.1f);
+  float t = tClimb + tHome + c.rth_loiter_s + tLand;
+  rthNeedMah_ = ampsAvg_ * t / 3.6f * 1.2f;
+  rthLeftMah_ = c.bat_capacity * (100 - c.bat_reserve_pct) * 0.01f - bat_.mahDrawn;
+  smartWarn_ = rthLeftMah_ < rthNeedMah_ * 1.15f;
+  smartLowN_ = rthLeftMah_ < rthNeedMah_ ? (uint8_t)(smartLowN_ < 250 ? smartLowN_ + 1 : 250) : 0;
+  if (smartLowN_ >= 3 && !smartDone_ && d > c.rth_home_radius) {
+    smartDone_ = true;
+    char m[48];
+    snprintf(m, sizeof(m), "Battery: home now (%d mAh needed)", (int)rthNeedMah_);
+    bus::postMessage(m);
+    bool returning = mode_ == FlightMode::RTH || mode_ == FlightMode::LAND || mode_ == FlightMode::SMART_RTL ||
+                     actionMode_ != FlightMode::COUNT || rcFailsafe_;
+    if (c.bat_smart_rth == 2 && !returning) {
+      actionMode_ = FlightMode::RTH;
+      actionSwitchState_ = switchState_;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- weak motor / thrust loss
+// One motor that runs much harder than the others for 3 s in steady flight (2 s average): a weak motor,
+// a damaged prop or a failing ESC. All motors near full power for 1.5 s while sinking: thrust loss
+// (ArduPilot). Warnings only: the pilot decides (land now).
+void Commander::motorHealth(uint32_t now, float dt) {
+  const Config& c = cfg();
+  if (!c.motor_warn || !armed_ || !airborne_ || mode_ == FlightMode::TURTLE || mode_ == FlightMode::FLIP) {
+    motorBadSince_ = thrustBadSince_ = 0;
+    motorWarn_ = thrustWarn_ = false;
+    return;
+  }
+  MotorOutputs mo = bus::motors.get();
+  float k = dt / (2.0f + dt), mean = 0, inst = 0;
+  for (int i = 0; i < 4; i++) {
+    motorAvg_[i] += (mo.out[i] - motorAvg_[i]) * k;
+    mean += motorAvg_[i] * 0.25f;
+    inst += mo.out[i] * 0.25f;
+  }
+  int worst = 0;
+  for (int i = 1; i < 4; i++) if (motorAvg_[i] > motorAvg_[worst]) worst = i;
+  float dev = motorAvg_[worst] - mean;
+  bool steady = fabsf(att_.rateDps.x) < 60 && fabsf(att_.rateDps.y) < 60 && fabsf(att_.rateDps.z) < 60 &&
+                att_.q.cosTilt() > 0.87f;
+  if (steady && mean > 0.15f && dev > 0.10f) { if (!motorBadSince_) motorBadSince_ = now; }
+  else if (dev < 0.07f) motorBadSince_ = 0;
+  motorWarn_ = motorBadSince_ && now - motorBadSince_ > 3000;
+  if (motorWarn_ && now - motorToldMs_ > 30000) {
+    motorToldMs_ = now;
+    char m[48];
+    snprintf(m, sizeof(m), "Motor %d weak? (+%d%% output)", worst + 1, (int)(dev * 100.0f + 0.5f));
+    bus::postMessage(m);
+  }
+  // full power (motors / the throttle asked near the top), sinking, and not even slowing the descent: a
+  // full-throttle catch out of a dive decelerates hard and does not count
+  bool full = inst > 0.8f || lastThrottle_ > 0.8f;
+  bool notSlowing = -att_.accEarth.z < 1.0f;
+  if (navEst_.altValid && full && navEst_.vz < -0.5f && notSlowing) { if (!thrustBadSince_) thrustBadSince_ = now; }
+  else thrustBadSince_ = 0;
+  thrustWarn_ = thrustBadSince_ && now - thrustBadSince_ > 1500;
+  if (thrustWarn_ && now - thrustToldMs_ > 10000) {
+    thrustToldMs_ = now;
+    bus::postMessage("Thrust loss: full power, still sinking");
+  }
 }
 
 }  // namespace app

@@ -9,7 +9,7 @@ const HITL = { on: false, timer: 0, rx: new Uint8Array(0), seq: 0, auto: false, 
   sentAt: new Map(), trail: [], m: null, rc: [1500, 1500, 1000, 1500, 1000, 1500, 1000, 1000], res: null, wind: 0, refused: false };
 const HITL_CMD = 0x4160;
 const HITL_MODES = ["ACRO", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "FAILSAFE", "TURTLE",
-  "CRUISE", "AUTOTUNE", "GUIDED", "SMART_RTL"];
+  "CRUISE", "AUTOTUNE", "GUIDED", "SMART_RTL", "BRAKE", "CIRCLE", "FLIP", "FOLLOW"];
 
 function hitlCrc8(b, from, to) {
   let c = 0;

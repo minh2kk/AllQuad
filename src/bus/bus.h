@@ -33,6 +33,17 @@ struct GuidedTarget {
   float n, e;
 };
 extern Topic<GuidedTarget> guided;          // telemetry -> control
+// FOLLOW leader (MAVLink FOLLOW_TARGET from QGroundControl "Follow Me" / a phone app)
+struct FollowTarget {
+  int32_t lat, lon;   // degE7
+  float vn, ve;       // m/s (0 when unknown)
+  uint32_t timeMs;    // when it arrived (0 = never)
+};
+extern Topic<FollowTarget> follow;          // telemetry -> control
+// stick commands / OSD menu -> the telemetry task (the same task the CLI saves from)
+extern volatile bool saveRequest;
+extern volatile uint32_t stickBeepUntilMs;   // short buzzer / LED blink: a stick command was taken
+extern volatile bool osdMenuOpen;            // the OSD shows the menu (sticks drive it, arming blocked)
 
 // Configuration: tasks keep a pointer; writers (CLI / MAVLink / MSP) only change it
 // while disarmed and then bump the generation so every task re-reads it.

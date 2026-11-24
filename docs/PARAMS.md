@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 384 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 393 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -196,6 +196,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `arm_require_gps` | 0 | 0 … 1 | Chỉ arm khi có GPS fix (để RTH chắc chắn có điểm về) |
 | `gcs_arm` | 0 | 0 … 1 | Cho phép arm từ trạm mặt đất (MAVLink) |
 | `arm_max_angle` | 25 ° | 5 … 180 | Góc nghiêng tối đa để được arm (°) |
+| `bat_smart_rth` | 2 | 0 … 2 | Pin đủ để bay về (tính theo khoảng cách, độ cao, gió): 0 tắt, 1 chỉ cảnh báo, 2 cảnh báo và tự bay về |
 | `gcs_fs` | 0 | 0 … 3 | Mất kết nối trạm mặt đất khi GUIDED / MISSION: 0 tắt, 1 RTH, 2 hạ cánh, 3 SmartRTL |
 | `gcs_fs_s` | 5 s | 1 … 60 | Số giây mất heartbeat GCS |
 
@@ -214,51 +215,51 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 
 | Tham số | Mặc định | Giới hạn | Mô tả |
 |---|---|---|---|
-| `mr1_mode` | 1 | 0 … 15 | Dòng chế độ 1: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr1_mode` | 1 | 0 … 20 | Dòng chế độ 1: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr1_ch` | 4 | 4 … 15 | Dòng chế độ 1: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr1_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 1: đầu dưới của khoảng (µs) |
 | `mr1_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 1: đầu trên của khoảng (µs) |
-| `mr2_mode` | 2 | 0 … 15 | Dòng chế độ 2: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr2_mode` | 2 | 0 … 20 | Dòng chế độ 2: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr2_ch` | 5 | 4 … 15 | Dòng chế độ 2: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr2_lo` | 1300 µs | 900 … 2100 | Dòng chế độ 2: đầu dưới của khoảng (µs) |
 | `mr2_hi` | 1700 µs | 900 … 2100 | Dòng chế độ 2: đầu trên của khoảng (µs) |
-| `mr3_mode` | 4 | 0 … 15 | Dòng chế độ 3: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr3_mode` | 4 | 0 … 20 | Dòng chế độ 3: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr3_ch` | 5 | 4 … 15 | Dòng chế độ 3: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr3_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 3: đầu dưới của khoảng (µs) |
 | `mr3_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 3: đầu trên của khoảng (µs) |
-| `mr4_mode` | 5 | 0 … 15 | Dòng chế độ 4: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr4_mode` | 5 | 0 … 20 | Dòng chế độ 4: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr4_ch` | 6 | 4 … 15 | Dòng chế độ 4: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr4_lo` | 1300 µs | 900 … 2100 | Dòng chế độ 4: đầu dưới của khoảng (µs) |
 | `mr4_hi` | 1700 µs | 900 … 2100 | Dòng chế độ 4: đầu trên của khoảng (µs) |
-| `mr5_mode` | 6 | 0 … 15 | Dòng chế độ 5: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr5_mode` | 6 | 0 … 20 | Dòng chế độ 5: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr5_ch` | 6 | 4 … 15 | Dòng chế độ 5: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr5_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 5: đầu dưới của khoảng (µs) |
 | `mr5_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 5: đầu trên của khoảng (µs) |
-| `mr6_mode` | 7 | 0 … 15 | Dòng chế độ 6: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr6_mode` | 7 | 0 … 20 | Dòng chế độ 6: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr6_ch` | 7 | 4 … 15 | Dòng chế độ 6: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr6_lo` | 1300 µs | 900 … 2100 | Dòng chế độ 6: đầu dưới của khoảng (µs) |
 | `mr6_hi` | 1700 µs | 900 … 2100 | Dòng chế độ 6: đầu trên của khoảng (µs) |
-| `mr7_mode` | 8 | 0 … 15 | Dòng chế độ 7: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr7_mode` | 8 | 0 … 20 | Dòng chế độ 7: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr7_ch` | 7 | 4 … 15 | Dòng chế độ 7: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr7_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 7: đầu dưới của khoảng (µs) |
 | `mr7_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 7: đầu trên của khoảng (µs) |
-| `mr8_mode` | 10 | 0 … 15 | Dòng chế độ 8: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr8_mode` | 10 | 0 … 20 | Dòng chế độ 8: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr8_ch` | 8 | 4 … 15 | Dòng chế độ 8: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr8_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 8: đầu dưới của khoảng (µs) |
 | `mr8_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 8: đầu trên của khoảng (µs) |
-| `mr9_mode` | 9 | 0 … 15 | Dòng chế độ 9: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr9_mode` | 9 | 0 … 20 | Dòng chế độ 9: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr9_ch` | 9 | 4 … 15 | Dòng chế độ 9: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr9_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 9: đầu dưới của khoảng (µs) |
 | `mr9_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 9: đầu trên của khoảng (µs) |
-| `mr10_mode` | 0 | 0 … 15 | Dòng chế độ 10: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr10_mode` | 0 | 0 … 20 | Dòng chế độ 10: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr10_ch` | 4 | 4 … 15 | Dòng chế độ 10: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr10_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 10: đầu dưới của khoảng (µs) |
 | `mr10_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 10: đầu trên của khoảng (µs) |
-| `mr11_mode` | 0 | 0 … 15 | Dòng chế độ 11: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr11_mode` | 0 | 0 … 20 | Dòng chế độ 11: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr11_ch` | 4 | 4 … 15 | Dòng chế độ 11: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr11_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 11: đầu dưới của khoảng (µs) |
 | `mr11_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 11: đầu trên của khoảng (µs) |
-| `mr12_mode` | 0 | 0 … 15 | Dòng chế độ 12: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng) |
+| `mr12_mode` | 0 | 0 … 20 | Dòng chế độ 12: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng) |
 | `mr12_ch` | 4 | 4 … 15 | Dòng chế độ 12: kênh RC (0-based, 4 = AUX1 / CH5) |
 | `mr12_lo` | 1700 µs | 900 … 2100 | Dòng chế độ 12: đầu dưới của khoảng (µs) |
 | `mr12_hi` | 2100 µs | 900 … 2100 | Dòng chế độ 12: đầu trên của khoảng (µs) |
@@ -304,6 +305,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `esc_telemetry` (KĐL) | 0 | 0 … 1 | Đọc telemetry ESC (cần cho RPM filter) |
 | `motor_idle` | 0.055 | 0 … 0.2 | Ga không tải khi arm (0,055 = 5,5 %) |
 | `motor_limit_pct` | 100 % | 50 … 100 | Giới hạn công suất motor (% dải ra motor; cho motor / pin mạnh hơn khung cần) |
+| `motor_warn` | 1 | 0 … 1 | Cảnh báo motor yếu (một motor phải chạy mạnh hơn hẳn) và mất lực đẩy |
 | `dshot_bidir` (KĐL) | 0 | 0 … 1 | Bidirectional DShot: đọc RPM qua dây tín hiệu (RPM filter không cần dây telemetry; ESC cần Bluejay/BLHeli_32/AM32) |
 
 ## VTX & LED
@@ -443,6 +445,13 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `wind_drag` | 0.45 | 0.05 … 3 | Hệ số cản (1/s): đổi gió từ m/s² sang m/s |
 | `rally_max_m` | 500 m | 0 … 10000 | Bay về điểm rally gần hơn nhà trong phạm vi này (m, 0 = luôn về nhà) |
 | `baro_gnd` | 1 | 0 … 1 | Bỏ qua baro tụt do hiệu ứng mặt đất (đã arm, dưới khoảng 1 m) |
+| `beacon_s` | 10 s | 0 … 120 | Motor kêu bíp (DShot beacon) sau bấy nhiêu giây mất sóng khi đang disarm, để tìm drone (0 tắt) |
+| `stick_cmds` | 1 | 0 … 1 | Lệnh bằng cần khi disarm: hiệu chuẩn, chọn profile, trim, lưu, mở menu OSD |
+| `headfree_type` | 0 | 0 … 1 | HEADFREE: 0 hướng mũi lúc arm là phía trước, 1 khoá theo nhà (kéo cần về = bay về nhà) |
+| `circle_radius` | 10 m | 2 … 200 | CIRCLE: bán kính (m), tâm ở phía trước mũi lúc bật |
+| `circle_speed` | 3 m/s | -15 … 15 | CIRCLE: tốc độ (m/s), âm = ngược chiều kim đồng hồ |
+| `follow_dist` | 8 | 2 … 100 | FOLLOW: khoảng cách giữ với người dẫn (m) |
+| `follow_alt` | 0 | 0 … 120 | FOLLOW: độ cao so với nhà (m), 0 = giữ độ cao lúc bật |
 | `baro_dyn` | 0 | -0.1 … 0.1 | Sửa baro theo tốc độ ngang (m trên (m/s)², 0 tắt; dương khi baro đọc thấp lúc bay nhanh) |
 | `sd_mode` (KĐL) | 0 | 0 … 3 | Kiểu nối thẻ SD: 0 tắt, 1 SPI, 2 SD bus 1-bit, 3 SD bus 4-bit |
 | `sd_mhz` (KĐL) | 0 | 0 … 40 | Xung nhịp thẻ (0 = mặc định 20 MHz; hạ xuống 10 nếu dây dài / lỗi ghi) |

@@ -1545,5 +1545,22 @@
 "Đỉnh rung đứng yên khi đổi ga (không do motor): kiểm tra ốc khung, tay, FC; hoặc đặt notch tĩnh tại tần số này.": "A vibration peak that stays put when the throttle changes (not the motors): check the frame, arm and FC screws; or set a static notch at this frequency.",
 "Độ cao / xa": "Height / distance",
 "Độ cao bị đặt lại theo baro {n} lần (baro lệch xa ước lượng hơn {n} s): kiểm tra baro, mút che, hoặc va chạm.": "Height reset to the baro {n} times (baro far from the estimate for more than {n} s): check the baro, its foam, or a crash.",
-"⌂ nhà · ● vị trí ở thời điểm đang xem (thanh thời gian bên dưới)": "⌂ home · ● position at the moment shown (time bar below)"
+"⌂ nhà · ● vị trí ở thời điểm đang xem (thanh thời gian bên dưới)": "⌂ home · ● position at the moment shown (time bar below)",
+"Pin đủ để bay về (tính theo khoảng cách, độ cao, gió): 0 tắt, 1 chỉ cảnh báo, 2 cảnh báo và tự bay về": "Battery enough to come home (from distance, height, wind): 0 off, 1 warn only, 2 warn and return home",
+"Cảnh báo motor yếu (một motor phải chạy mạnh hơn hẳn) và mất lực đẩy": "Warn about a weak motor (one runs much harder than the others) and thrust loss",
+"Motor kêu bíp (DShot beacon) sau bấy nhiêu giây mất sóng khi đang disarm, để tìm drone (0 tắt)": "Motors beep (DShot beacon) this many seconds after the link is lost while disarmed, to find the craft (0 off)",
+"Lệnh bằng cần khi disarm: hiệu chuẩn, chọn profile, trim, lưu, mở menu OSD": "Stick commands while disarmed: calibrate, pick a profile, trim, save, open the OSD menu",
+"HEADFREE: 0 hướng mũi lúc arm là phía trước, 1 khoá theo nhà (kéo cần về = bay về nhà)": "HEADFREE: 0 the nose direction at arming is forward, 1 home lock (pull back = fly home)",
+"CIRCLE: bán kính (m), tâm ở phía trước mũi lúc bật": "CIRCLE: radius (m), centre ahead of the nose when switched on",
+"CIRCLE: tốc độ (m/s), âm = ngược chiều kim đồng hồ": "CIRCLE: speed (m/s), negative = counter-clockwise",
+"FOLLOW: khoảng cách giữ với người dẫn (m)": "FOLLOW: distance kept from the leader (m)",
+"FOLLOW: độ cao so với nhà (m), 0 = giữ độ cao lúc bật": "FOLLOW: height above home (m), 0 = keep the height at switch-on",
+"Cảnh báo + bay về": "Warn + return home",
+"Hướng lúc arm": "Heading at arming",
+"Khoá theo nhà": "Home lock",
+"Ngoài bãi bay (không cần máy tính)": "In the field (no computer)",
+"CIRCLE & FOLLOW": "CIRCLE & FOLLOW",
+"Mất lực đẩy: motor đã hết cỡ mà vẫn tụt, hạ cánh ngay": "Thrust loss: motors at full power and still sinking, land now",
+"Pin chỉ còn vừa đủ để bay về nhà": "Battery only just enough to fly home",
+"Một motor phải chạy mạnh hơn hẳn các motor khác: kiểm tra cánh, motor, ESC": "One motor runs much harder than the others: check the prop, motor and ESC"
 }

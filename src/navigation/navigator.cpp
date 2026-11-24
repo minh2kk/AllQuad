@@ -93,6 +93,33 @@ void Navigator::begin(FlightMode m, const fc::NavEstimate& est, float yaw, bool 
       if (srtlIdx_ < 1 || !est.gpsValid) { startRth(est, headingOk); break; }  // no path: plain RTH
       phase_ = NavPhase::SRTL_RETURN;
       break;
+    case FlightMode::BRAKE: {
+      // the stopping point at twice the normal deceleration: the position loop brakes straight to it
+      float v = sqrtf(est.vn * est.vn + est.ve * est.ve), a = fmaxf(cfg_->pos_max_accel * 2.0f, 2.0f);
+      holdHere(est);
+      if (v > 0.2f) {
+        float d = v * v / (2.0f * a);
+        tgtN_ += est.vn / v * d;
+        tgtE_ += est.ve / v * d;
+      }
+      phase_ = NavPhase::BRAKE;
+      break;
+    }
+    case FlightMode::CIRCLE: {
+      holdHere(est);
+      orbR_ = fmaxf(cfg_->circle_radius, 2.0f);
+      orbN_ = est.n + orbR_ * cosf(yaw);
+      orbE_ = est.e + orbR_ * sinf(yaw);
+      crcSpeed_ = cfg_->circle_speed;
+      orbAngle_ = atan2f(est.e - orbE_, est.n - orbN_);
+      phase_ = NavPhase::CIRCLE;
+      break;
+    }
+    case FlightMode::FOLLOW:
+      holdHere(est);
+      if (cfg_->follow_alt > 0) tgtAlt_ = cfg_->follow_alt;
+      phase_ = NavPhase::FOLLOW;
+      break;
     default:
       phase_ = NavPhase::IDLE;
       break;
@@ -405,6 +432,43 @@ void Navigator::update(const fc::NavEstimate& est, float yaw, float rollStick, f
         }
       }
       faceTravel(tgtN_, tgtE_);
+      break;
+    }
+    case NavPhase::BRAKE:
+      o.maxSpeed = c.pos_max_speed;
+      break;
+    case NavPhase::CIRCLE: {
+      // pilot: roll changes the speed (and the direction through zero), pitch forward shrinks the radius
+      if (fabsf(rollStick) > 0.05f) crcSpeed_ = fc::constrainf(crcSpeed_ + rollStick * 2.0f * dt, -c.pos_max_speed, c.pos_max_speed);
+      if (fabsf(pitchStick) > 0.05f) orbR_ = fc::constrainf(orbR_ - pitchStick * 3.0f * dt, 2.0f, 200.0f);
+      pilotClimb();
+      float r = orbR_;
+      float sp = fabsf(crcSpeed_);
+      int dir = crcSpeed_ < 0 ? -1 : 1;
+      float v = fminf(sp, sqrtf(c.pos_max_accel * 0.35f * r));
+      float w = v / r;
+      float ang = atan2f(est.e - orbE_, est.n - orbN_);
+      tgtN_ = orbN_ + r * cosf(ang);
+      tgtE_ = orbE_ + r * sinf(ang);
+      float ca = cosf(ang), sa = sinf(ang);
+      o.ffN = -dir * v * sa;
+      o.ffE = dir * v * ca;
+      o.accFfN = -v * w * ca;
+      o.accFfE = -v * w * sa;
+      o.maxSpeed = v + 2.0f;
+      tgtYaw_ = atan2f(orbE_ - est.e, orbN_ - est.n);  // nose to the centre
+      o.yawControl = true;
+      break;
+    }
+    case NavPhase::FOLLOW: {
+      o.maxSpeed = c.pos_max_speed;
+      if (!fFresh_) break;  // leader quiet: hold where we are
+      float ln = fN_, le = fE_;
+      float dx = est.n - ln, dy = est.e - le, d = sqrtf(dx * dx + dy * dy);
+      if (d > 0.5f) { tgtN_ = ln + dx / d * c.follow_dist; tgtE_ = le + dy / d * c.follow_dist; }
+      o.ffN = fVn_;
+      o.ffE = fVe_;
+      if (d > 2.0f) { tgtYaw_ = atan2f(le - est.e, ln - est.n); o.yawControl = true; }  // nose to the leader
       break;
     }
     case NavPhase::MISSION_DONE:

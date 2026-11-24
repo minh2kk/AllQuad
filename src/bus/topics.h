@@ -141,6 +141,10 @@ enum class FlightMode : uint8_t {
   ACRO = 0, ANGLE, HORIZON, ALTHOLD, POSHOLD, RTH, MISSION, LAND, FAILSAFE, TURTLE, CRUISE, AUTOTUNE,
   GUIDED,     // ArduPilot GUIDED: fly to the point the GCS sends ("fly here" / companion computer)
   SMART_RTL,  // ArduPilot SmartRTL: back along the recorded path, then RTH
+  BRAKE,      // ArduPilot BRAKE: stop hard and hold, sticks ignored
+  CIRCLE,     // ArduPilot CIRCLE: orbit a point, nose to the centre
+  FLIP,       // ArduPilot FLIP: one automatic flip, then back to the mode underneath
+  FOLLOW,     // follow the GCS / phone position (MAVLink FOLLOW_TARGET)
   COUNT
 };
 const char* flightModeName(FlightMode m);
@@ -188,6 +192,9 @@ enum Warning : uint32_t {
   WARN_RPM_LOST = 1 << 15,      // a motor's RPM telemetry stopped in flight (its RPM notches are off)
   WARN_ACC_CLIP = 1 << 16,      // accelerometer hit the end of its range (hard vibration / loose FC)
   WARN_BEGINNER = 1 << 17,      // first-flight limits active (information)
+  WARN_MOTOR = 1 << 18,         // one motor runs much harder than the others (weak motor / damaged prop)
+  WARN_THRUST = 1 << 19,        // motors at full power and still sinking (thrust loss)
+  WARN_RTH_BAT = 1 << 20,       // the battery left is about what the way home needs
 };
 
 // navigation EKF health (published by the control task)
@@ -211,7 +218,10 @@ enum class NavPhase : uint8_t {
   RTH_ALIGN,  // no compass: fly forward until the GPS heading is learned
   WP_ORBIT, CRUISE,
   GUIDED,       // flying to / holding the GCS target
-  SRTL_RETURN   // SmartRTL: following the recorded path backwards
+  SRTL_RETURN,  // SmartRTL: following the recorded path backwards
+  BRAKE,        // stopping / holding where it stopped
+  CIRCLE,       // orbiting the circle centre
+  FOLLOW        // keeping follow_dist from the leader (holds when the leader goes quiet)
 };
 const char* navPhaseName(NavPhase p);
 

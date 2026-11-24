@@ -27,6 +27,7 @@
 #include "../logging/gyro_tap.h"
 #include "../logging/sdlog.h"
 #include "../navigation/mission.h"
+#include "../osd/menu.h"
 #include "../osd/osd.h"
 #include "../rx/rx_parser.h"
 #include "../web/credentials.h"
@@ -35,6 +36,7 @@
 #include "../safety/safety.h"
 #include "../sensors/serial_sensors.h"
 #include "commander.h"
+#include "sticks.h"
 
 namespace app {
 
@@ -57,6 +59,7 @@ drv::TfminiParser tfmini;
 comms::MavlinkLink mav[NPORTS];
 comms::MspLink msp[NPORTS];
 comms::Cli cli;
+app::StickCommands sticks;
 comms::AqLink aqlink;  // configurator over the USB console (Web Serial)
 comms::MspLink mspCrsf;  // MSP requests from the radio's Lua scripts, carried in CRSF frames
 comms::CrsfMsp crsfMsp;
@@ -635,7 +638,31 @@ void sensorsTask(void*) {
   if (st.failsafe) beep = (now / 200) % 2;
   if (bus::logicBeep) beep = (now / 300) % 2;
   if (!st.armed && rc.everReceived && !rcOk && now - lastRcOkMs > 10000) beep = (now % 2000) < 1000;  // lost model
+  if ((int32_t)(bus::stickBeepUntilMs - now) > 0) beep = true;  // a stick command was taken
   hal::buzzerSet(beep);
+
+  // ---- stick commands, OSD menu (disarmed) ----
+  bool armSw = rcOk && boxOn(modeBoxes(c, rc.ch, RC_MAX_CH), ModeBox::ARM);
+  sticks.update(c, rc.ch, rcOk, st.armed, armSw, now);
+  if (osd::menu.isOpen()) {
+    if (st.armed || !rcOk) osd::menu.close(false);
+    else osd::menu.input((rc.ch[RC_ROLL] - 1500) / 500.0f, (rc.ch[RC_PITCH] - 1500) / 500.0f, now);
+  }
+
+  // ---- DShot beacon (Betaflight RX_LOST / RX_SET): the ESCs beep through the motors, so a craft lost in
+  // the grass can be found without a buzzer. Disarmed only, never during an ESC passthrough / motor test.
+  bool dshot = c.motor_protocol >= (uint8_t)MotorProtocol::DSHOT300;
+  bool lost = c.beacon_s && rc.everReceived && !rcOk && now - lastRcOkMs > c.beacon_s * 1000u;
+  bool asked = rcOk && boxOn(modeBoxes(c, rc.ch, RC_MAX_CH), ModeBox::BEEPER);
+  static uint32_t beaconMs = 0;
+  if (dshot && !st.armed && (lost || asked) && !bus::escPassthrough && !bus::motorTestActive(now) &&
+      !hitl::active() && !bus::escCmdPending && now - beaconMs >= 1500) {
+    beaconMs = now;
+    bus::escCmd = 1;  // DSHOT_CMD_BEACON1
+    bus::escCmd2 = 0;
+    bus::escCmdMask = 0x0F;
+    bus::escCmdPending = true;
+  }
   bool led;
   if (st.armBlockers & ARM_CALIBRATING) led = (now / 50) % 2;
   else if (st.armed) led = true;
@@ -746,6 +773,16 @@ void telemetryTask(void*) {
     else if (now > 60000 && hal::firmwareInfo().pendingVerify) hal::firmwareReject();
   }
   hal::logService(bus::status.get().armed);
+  // save asked by a stick command / the OSD menu (here, like the CLI: a flash write can take a while)
+  if (bus::saveRequest) {
+    bus::saveRequest = false;
+    if (!bus::status.get().armed) {
+      configSeal(bus::config);
+      bool ok = hal::storageSave(hal::Slot::CONFIG, &bus::config, sizeof(Config));
+      bus::postMessage(ok ? "Settings saved" : "Save FAILED");
+      bus::stickBeepUntilMs = now + 400;
+    }
+  }
   // USB console: configurator link + CLI + MSP + MAVLink on one stream
   int ch;
   int budget = 2048;

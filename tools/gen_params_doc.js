@@ -53,7 +53,7 @@ function family(n) {
     return `${what}, trục ${AXV[m[2]]}${m[1] ? `, profile ${m[1]}` : ""}`;
   }
   if ((m = /^mr(\d+)_(mode|ch|lo|hi)$/.exec(n)))
-    return { mode: `Dòng chế độ ${m[1]}: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL; 0 = không dùng)`,
+    return { mode: `Dòng chế độ ${m[1]}: chế độ được bật (mã như tab Chế độ: 1 ARM, 2 ANGLE, 3 HORIZON, 4 ALTHOLD, 5 POSHOLD, 6 RTH, 7 MISSION, 8 LAND, 9 TURTLE, 10 BEEPER, 11 CRUISE, 12 AUTOTUNE, 13 GPS RESCUE, 14 LAUNCH, 15 SMART RTL, 16 HEADFREE, 17 BRAKE, 18 CIRCLE, 19 FLIP, 20 FOLLOW; 0 = không dùng)`,
       ch: `Dòng chế độ ${m[1]}: kênh RC (0-based, 4 = AUX1 / CH5)`, lo: `Dòng chế độ ${m[1]}: đầu dưới của khoảng (µs)`, hi: `Dòng chế độ ${m[1]}: đầu trên của khoảng (µs)` }[m[2]];
   if ((m = /^(serial(\d)|udp)_(fn|baud)$/.exec(n)))
     return m[3] === "fn" ? `Chức năng của ${m[2] ? "SERIAL" + m[2] : "cổng UDP (WiFi)"}: ${FN}` : `Tốc độ baud của SERIAL${m[2]}`;

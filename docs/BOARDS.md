@@ -112,6 +112,46 @@ Mọi board như nhau. Mỗi lần firmware phải đổi chế độ vì thiế
 | Áp pin sụt khi đẩy ga | cảnh báo chỉ tính khi thấp liên tục 2 s, mức nguy hiểm 3 s: đẩy ga ngắn không kích failsafe pin |
 | Vượt trần độ cao `fence_alt_max` | RTH bay về **dưới** trần (trần − 2 m), kể cả khi `rth_alt` cao hơn |
 
+### Ngoài bãi bay, không cần máy tính (Betaflight, KK)
+Mọi board. Chỉ khi **disarm và công tắc arm tắt**, giữ 1 s (`stick_cmds 1`). Mode 2: cần trái là ga / yaw.
+
+| Ga | Yaw | Pitch | Roll | Làm gì |
+|---|---|---|---|---|
+| thấp | trái | xuống | giữa | hiệu chuẩn gyro |
+| cao | trái | xuống | giữa | hiệu chuẩn gia tốc kế (đặt drone phẳng) |
+| cao | phải | xuống | giữa | hiệu chuẩn la bàn (30 s, xoay drone mọi hướng) |
+| thấp | trái | xuống | phải | lưu cài đặt |
+| thấp | trái | giữa / lên / giữa | trái / giữa / phải | chọn profile PID 1 / 2 / 3 (khi không gán công tắc `prof_ch`) |
+| cao | giữa | lên / xuống, hoặc roll trái / phải | | trim cân bằng 0.1° mỗi bước (giữ để lặp) |
+| giữa | trái | lên | giữa | mở **menu OSD** |
+
+Menu OSD (MAX7456 hoặc DisplayPort: DJI, HDZero, Walksnail): PID, rate (của profile đang dùng), bộ lọc, VTX,
+pin, vài thông số bay, hiệu chuẩn, lưu. Pitch để chọn dòng, roll để đổi giá trị / vào trang (giữ để chạy nhanh,
+sau 1.5 s mỗi bước gấp 10). Giá trị đi qua cùng bảng giới hạn như CLI. Khi menu mở: không arm được; mất RC thì
+menu tự đóng. Mỗi lệnh được nhận thì còi kêu ngắn.
+
+### Chế độ bay mới (ArduPilot, DJI, Betaflight)
+Gán ở tab Chế độ như mọi chế độ khác.
+
+| Chế độ | Cần | Làm gì |
+|---|---|---|
+| HEADFREE | ANGLE / HORIZON / ALTHOLD / POSHOLD | cần roll / pitch theo hướng người lái: `headfree_type 0` hướng mũi lúc arm là "phía trước"; `1` khoá theo nhà (cách nhà trên 5 m: đẩy cần = bay ra xa, kéo = bay về nhà). Không áp dụng cho ACRO |
+| BRAKE | vị trí (GPS / flow) | dừng gấp (gia tốc gấp đôi `pos_max_accel`) rồi giữ chỗ; bỏ qua mọi cần |
+| CIRCLE | vị trí | bay vòng quanh điểm cách mũi `circle_radius` m, mũi hướng vào tâm. Roll đổi tốc độ (qua 0 là đổi chiều), pitch tới = bán kính nhỏ lại, ga đổi độ cao |
+| FLIP | ACRO / ANGLE / HORIZON / ALTHOLD, cao trên 3 m | một vòng lật 400 °/s theo hướng cần roll (cần pitch đẩy mạnh hơn: lật dọc), rồi tự cân bằng và về chế độ cũ. Bật lại công tắc để lật lần nữa |
+| FOLLOW | GPS + la bàn / hướng GPS | bám theo người dẫn cách `follow_dist` m, mũi hướng vào người dẫn. Vị trí người dẫn qua MAVLink `FOLLOW_TARGET` (QGroundControl trên điện thoại: Follow Me) qua WiFi của ESP32 hoặc radio telemetry. Mất tín hiệu người dẫn 3 s: đứng giữ chỗ |
+
+### Pin, motor (DJI, ArduPilot, Betaflight)
+| Cấu hình | Mặc định | Làm gì |
+|---|---|---|
+| `bat_smart_rth` | 2 | mỗi giây tính điện cần để về nhà (leo tới `rth_alt`, bay về với `rth_speed` có tính gió ngược, lượn `rth_loiter_s`, hạ cánh) theo dòng trung bình của chuyến bay, cộng 20 %. Khi phần còn lại trên `bat_reserve_pct` không đủ trong 3 s: báo "Battery: home now", và với 2 thì tự RTH (gạt công tắc chế độ để lấy lại điều khiển). **Cần `bat_capacity` và cảm biến dòng**; thiếu thì không chạy |
+| `motor_warn` | 1 | một motor phải chạy mạnh hơn trung bình trên 10 % suốt 3 s khi bay ổn định: "Motor N weak?". Ga gần tối đa mà vẫn tụt và không chậm lại 1.5 s: "Thrust loss" (hạ cánh ngay). Chỉ cảnh báo |
+| `beacon_s` | 10 | disarm, mất sóng quá `beacon_s` giây: ESC kêu bíp qua motor (DShot beacon) mỗi 1.5 s để tìm drone rơi. Cũng kêu khi bật công tắc BEEPER lúc disarm. Chỉ với DShot |
+
+Sửa kèm: kiểm tra "RTH không tiến về nhà" (`rth_sanity_s`) trước đây đo khoảng cách tới điểm giữ của lúc leo
+nên luôn tưởng không tiến triển: **mọi lần RTH bay về lâu hơn `rth_sanity_s` (20 s) đều bị hạ cánh giữa
+đường**. Nay đo tới nhà / điểm rally.
+
 ### Blackbox (`bb_backend`)
 | Giá trị | Board | Ghi chú |
 |---|---|---|

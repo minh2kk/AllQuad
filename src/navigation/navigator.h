@@ -8,6 +8,10 @@
 //   LAND    : descend in place, slow near the ground, report touchdown
 //   GUIDED  : fly to the point the GCS sends, hold there (ArduPilot GUIDED)
 //   SMART_RTL : back along the recorded path to the take-off point, then RTH (ArduPilot SmartRTL)
+//   BRAKE   : stop as fast as possible at the stopping point and hold, sticks ignored (ArduPilot BRAKE)
+//   CIRCLE  : orbit a centre circle_radius ahead of the nose, nose to the centre; roll changes the speed
+//             (through zero: the other way round), pitch the radius, throttle the height (ArduPilot CIRCLE)
+//   FOLLOW  : keep follow_dist from the leader (GCS / phone position), nose to it; holds when it goes quiet
 #pragma once
 #include "../bus/topics.h"
 #include "../config/config.h"
@@ -68,10 +72,15 @@ class Navigator {
   int missionIndex() const { return wpIndex_; }
   fc::FlightMode mode() const { return mode_; }
   int rtlTarget() const { return rtlRally_; }  // -1 home, else rally index
+  void rthDestination(float& n, float& e) const { n = rtlN_; e = rtlE_; }
   // GUIDED target (NE metres from home, altitude above home); applies at once when in GUIDED
   void setGuided(float n, float e, float alt);
   bool guidedSet() const { return guidedSet_; }
   SmartPath& path() { return path_; }
+  // FOLLOW leader: NE metres from home, velocity, fresh = updated within the last 3 s
+  void setFollow(float n, float e, float vn, float ve, bool fresh) { fN_ = n; fE_ = e; fVn_ = vn; fVe_ = ve; fFresh_ = fresh; }
+  float circleSpeed() const { return crcSpeed_; }
+  float circleRadius() const { return orbR_; }
 
  private:
   void startRth(const fc::NavEstimate& est, bool headingOk);
@@ -106,6 +115,10 @@ class Navigator {
   bool guidedSet_ = false;
   SmartPath path_;
   int srtlIdx_ = -1;
+  // circle / follow
+  float crcSpeed_ = 0;
+  float fN_ = 0, fE_ = 0, fVn_ = 0, fVe_ = 0;
+  bool fFresh_ = false;
 };
 
 }  // namespace nav

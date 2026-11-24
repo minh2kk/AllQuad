@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 32;
+constexpr uint16_t CONFIG_VERSION = 33;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -47,6 +47,11 @@ enum class ModeBox : uint8_t {
   GPS_RESCUE,  // Betaflight-style rescue: RTH that needs neither compass nor barometer
   LAUNCH,      // launch control (racing start): hold a pitch angle on the ground until the throttle is raised
   SMART_RTL,   // ArduPilot SmartRTL: fly home along the recorded path, then RTH (land)
+  HEADFREE,    // sticks move the craft relative to the pilot (heading at arming / home), not to its nose
+  BRAKE,       // ArduPilot BRAKE: stop as fast as possible and hold (sticks ignored)
+  CIRCLE,      // ArduPilot CIRCLE: orbit a point ahead of the nose, nose to the centre
+  FLIP,        // ArduPilot FLIP: one automatic flip in the roll (or pitch) stick direction
+  FOLLOW,      // follow the GCS / phone (MAVLink FOLLOW_TARGET)
   COUNT
 };
 struct ModeRange { uint8_t box, ch; uint16_t lo, hi; };  // ch: 4 = AUX1 (CH5) ... 15 = CH16
@@ -337,6 +342,16 @@ struct Config {
   uint8_t baro_gnd;         // 1: ignore the baro dip from ground effect (armed, below ~1 m)
   float baro_dyn;           // baro height error per (m/s)^2 of horizontal speed, added back (0 off; + reads low)
   float thr_curve;          // thrust ~ (1-k) t + k t^2 for the altitude control (0 linear ESC, ~0.5 typical)
+  // ---- v33: smart RTH, motor warnings, beacon, stick commands, head-free, circle / follow ----
+  uint8_t bat_smart_rth;    // battery needed to come home (distance, height, wind): 0 off, 1 warn, 2 warn + RTH
+  uint8_t motor_warn;       // 1: warn about a weak motor (one runs much harder) and thrust loss
+  uint8_t beacon_s;         // DShot beacon (motors beep) this many s after the RC link is lost while disarmed, 0 off
+  uint8_t stick_cmds;       // 1: stick commands while disarmed (calibrate, profile, trim, save, OSD menu)
+  uint8_t headfree_type;    // HEADFREE: 0 the heading at arming is "forward", 1 home lock (pull back = come home)
+  float circle_radius;      // CIRCLE: radius (m), centre that far ahead of the nose at entry
+  float circle_speed;       // CIRCLE: speed (m/s), negative = counter-clockwise
+  float follow_dist;        // FOLLOW: distance kept from the leader (m)
+  float follow_alt;         // FOLLOW: height above home (m), 0 = keep the height at entry
 
   uint32_t crc;
 };

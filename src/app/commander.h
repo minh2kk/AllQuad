@@ -149,6 +149,34 @@ class Commander {
   bool gcsFsDone_ = false;
   // SmartRTL path recording
   uint32_t pathMs_ = 0;
+  // head-free (Betaflight HEADFREE / ArduPilot SIMPLE, home lock = SUPER SIMPLE / DJI home lock)
+  float headfreeRef_ = 0;
+  bool headfreeOn_ = false;
+  void headfreeSticks(float& rs, float& ps);
+  // FLIP (ArduPilot): one flip per switch flick
+  enum FlipPhase : uint8_t { FLIP_START = 0, FLIP_ROLL, FLIP_RECOVER };
+  bool flipActive_ = false, flipBoxPrev_ = false;
+  uint8_t flipPhase_ = 0, flipAxis_ = 0;
+  int8_t flipDir_ = 1;
+  float flipAngle_ = 0;
+  uint32_t flipStartMs_ = 0, flipPhaseMs_ = 0;
+  void flipTrigger(uint32_t now);
+  bool flipControl(uint32_t now, float dt, float rollDeg, float pitchDeg, float cosTilt, float rate[3], float& throttle);
+  // FOLLOW leader
+  uint32_t followSeq_ = 0, followMs_ = 0;
+  bool followTold_ = false;
+  void followInput(uint32_t now);
+  // battery needed to come home (DJI smart RTH)
+  float ampsAvg_ = -1, rthNeedMah_ = 0, rthLeftMah_ = 0;
+  uint32_t smartMs_ = 0;
+  uint8_t smartLowN_ = 0;
+  bool smartDone_ = false, smartWarn_ = false;
+  void smartRth(uint32_t now);
+  // weak motor / thrust loss (ArduPilot "potential thrust loss")
+  float motorAvg_[4] = {0, 0, 0, 0};
+  uint32_t motorBadSince_ = 0, thrustBadSince_ = 0, motorToldMs_ = 0, thrustToldMs_ = 0;
+  bool motorWarn_ = false, thrustWarn_ = false;
+  void motorHealth(uint32_t now, float dt);
   uint32_t guidedSeq_ = 0;
   void guidedInput(uint32_t nowMs);
   // logic conditions (iNav programming framework)

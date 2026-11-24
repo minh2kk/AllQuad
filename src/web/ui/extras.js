@@ -44,6 +44,9 @@ function extrasStatus(st) {
   if (st.warn & 4096) w.push('<span class="chip bad">GPS Rescue: bay về không tiến triển, đang hạ cánh</span>');
   if (st.warn & 16384) w.push('<span class="chip bad">Đang bay bằng IMU thứ hai: kiểm tra IMU chính</span>');
   if (st.warn & 65536) w.push('<span class="chip bad">Gia tốc kế bị quá tải (vượt ±16 g): rung rất mạnh hoặc FC gắn lỏng, ước lượng tư thế / độ cao sẽ trôi</span>');
+  if (st.warn & 524288) w.push('<span class="chip bad">Mất lực đẩy: motor đã hết cỡ mà vẫn tụt, hạ cánh ngay</span>');
+  if (st.warn & 1048576) w.push('<span class="chip bad">Pin chỉ còn vừa đủ để bay về nhà</span>');
+  if (st.warn & 262144) w.push('<span class="chip bad">Một motor phải chạy mạnh hơn hẳn các motor khác: kiểm tra cánh, motor, ESC</span>');
   if (st.warn & 131072) w.push('<span class="chip">Chế độ bay lần đầu: đang giới hạn góc, tốc độ, ga và khoảng cách</span>');
   if (st.warn & 32768) w.push(`<span class="chip bad">Mất RPM telemetry${st.rpml ? " motor " + [1, 2, 3, 4].filter((m) => st.rpml & (1 << (m - 1))).join(", ") : ""}: RPM filter của motor đó đã tắt</span>`);
   const host = $("xWarn");

@@ -5,7 +5,7 @@
 namespace fc {
 
 const char* flightModeName(FlightMode m) {
-  static const char* n[] = {"ACRO", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "FAILSAFE", "TURTLE", "CRUISE", "AUTOTUNE", "GUIDED", "SMARTRTL"};
+  static const char* n[] = {"ACRO", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "FAILSAFE", "TURTLE", "CRUISE", "AUTOTUNE", "GUIDED", "SMARTRTL", "BRAKE", "CIRCLE", "FLIP", "FOLLOW"};
   return (uint8_t)m < (uint8_t)FlightMode::COUNT ? n[(uint8_t)m] : "?";
 }
 
@@ -19,8 +19,8 @@ const char* armCheckName(int bit) {
 const char* navPhaseName(NavPhase p) {
   static const char* n[] = {"IDLE", "POSHOLD", "RTH_CLIMB", "RTH_RETURN", "RTH_LOITER", "LANDING",
                             "LANDED", "WP_TAKEOFF", "WP_ENROUTE", "WP_HOLD", "MISSION_DONE",
-                            "RTH_ALIGN", "WP_ORBIT", "CRUISE", "GUIDED", "SRTL_RETURN"};
-  return (uint8_t)p <= (uint8_t)NavPhase::SRTL_RETURN ? n[(uint8_t)p] : "?";
+                            "RTH_ALIGN", "WP_ORBIT", "CRUISE", "GUIDED", "SRTL_RETURN", "BRAKE", "CIRCLE", "FOLLOW"};
+  return (uint8_t)p <= (uint8_t)NavPhase::FOLLOW ? n[(uint8_t)p] : "?";
 }
 
 }  // namespace fc
@@ -81,6 +81,10 @@ volatile uint8_t acc6Mask = 0;
 volatile bool acc6Active = false;
 volatile uint8_t compassMotPct = 255;
 Topic<GuidedTarget> guided;
+Topic<FollowTarget> follow;
+volatile bool saveRequest = false;
+volatile uint32_t stickBeepUntilMs = 0;
+volatile bool osdMenuOpen = false;
 volatile float motorTest[4] = {0, 0, 0, 0};
 volatile uint32_t motorTestUntilMs = 0;
 volatile bool escPassthrough = false;

@@ -500,7 +500,7 @@ function psDraw() {
 }
 
 // ---------------------------------------------------------------- blackbox: noise heatmap + events
-const MODE_NAMES = ["ACRO", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "FAILSAFE", "TURTLE", "CRUISE", "AUTOTUNE", "GUIDED", "SMARTRTL"];
+const MODE_NAMES = ["ACRO", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "FAILSAFE", "TURTLE", "CRUISE", "AUTOTUNE", "GUIDED", "SMARTRTL", "BRAKE", "CIRCLE", "FLIP", "FOLLOW"];
 function bbProHost() {
   if ($("bbHeatPanel") || !$("specChart")) return;
   const spec = $("specChart").closest(".panel");

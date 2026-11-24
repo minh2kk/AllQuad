@@ -27,6 +27,8 @@
 #include "../../src/estimation/kalman.h"
 #include "../../src/estimation/ekf.h"
 #include "../../src/estimation/baro_comp.h"
+#include "../../src/app/sticks.h"
+#include "../../src/osd/menu.h"
 #include "../../src/estimation/range_height.h"
 #include "../../src/control/pos_control.h"
 #include "../../src/config/config.h"
@@ -2206,6 +2208,77 @@ static void testImuDelta() {
   CHECKF((a1 - aj).norm() < 2e-4f && (v1 - vj).norm() < 1e-3f, "IMU delta: joining two intervals ~ one interval (%.5f / %.5f)", (double)(a1 - aj).norm(), (double)(v1 - vj).norm());
 }
 
+
+static void testSticksMenu() {
+  using app::StickCommands;
+  fc::Config& c = bus::config;
+  fc::configDefaults(c);
+  uint16_t ch[16];
+  auto set = [&](int t, int y, int p, int r) { for (int i = 0; i < 16; i++) ch[i] = 1500; ch[fc::RC_THROTTLE] = t; ch[fc::RC_YAW] = y; ch[fc::RC_PITCH] = p; ch[fc::RC_ROLL] = r; };
+  set(1000, 1000, 1000, 1500);
+  CHECK(StickCommands::decode(ch) == StickCommands::GYRO_CAL, "sticks: throttle low, yaw left, pitch down = gyro calibration");
+  set(2000, 1000, 1000, 1500);
+  CHECK(StickCommands::decode(ch) == StickCommands::ACC_CAL, "sticks: throttle high, yaw left, pitch down = accelerometer");
+  set(1500, 1000, 2000, 1500);
+  CHECK(StickCommands::decode(ch) == StickCommands::MENU, "sticks: throttle mid, yaw left, pitch up = OSD menu");
+  set(1500, 1500, 1500, 1500);
+  CHECK(StickCommands::decode(ch) == StickCommands::NONE, "sticks: centred = nothing");
+  StickCommands sc;
+  bus::Request rq; uint32_t arg;
+  while (bus::takeRequest(rq, arg)) {}
+  set(1000, 1000, 1000, 1500);
+  bool early = sc.update(c, ch, true, false, false, 1000) != StickCommands::NONE || sc.update(c, ch, true, false, false, 1900) != StickCommands::NONE;
+  StickCommands::Cmd k = sc.update(c, ch, true, false, false, 2010);
+  CHECK(!early && k == StickCommands::GYRO_CAL && bus::takeRequest(rq, arg) && rq == bus::Request::GYRO_CAL,
+        "sticks: gyro calibration after 1 s held, not before");
+  CHECK(sc.update(c, ch, true, false, false, 2500) == StickCommands::NONE, "sticks: once per hold");
+  StickCommands s2;
+  s2.update(c, ch, true, true, false, 0);
+  CHECK(s2.update(c, ch, true, true, false, 2000) == StickCommands::NONE, "sticks: nothing while armed");
+  StickCommands s3;
+  s3.update(c, ch, true, false, true, 0);
+  CHECK(s3.update(c, ch, true, false, true, 2000) == StickCommands::NONE, "sticks: nothing with the arm switch on");
+  // trim repeats while held
+  StickCommands s4;
+  c.level_trim_pitch_deg = 0;
+  set(2000, 1500, 2000, 1500);
+  for (uint32_t t = 0; t <= 2000; t += 10) s4.update(c, ch, true, false, false, t);
+  CHECK(c.level_trim_pitch_deg < -0.55f && c.level_trim_pitch_deg > -0.85f, "sticks: trim forward repeats (0.1 deg / 0.15 s)");
+  // profile 2
+  StickCommands s5;
+  set(1000, 1000, 2000, 1500);
+  s5.update(c, ch, true, false, false, 0);
+  s5.update(c, ch, true, false, false, 1100);
+  CHECK(c.pid_profile == 1, "sticks: profile 2");
+  c.pid_profile = 0;
+  // OSD menu: open, PID page, change roll P, back, save + exit
+  StickCommands s6;
+  set(1500, 1000, 2000, 1500);
+  s6.update(c, ch, true, false, false, 0);
+  s6.update(c, ch, true, false, false, 1100);
+  CHECK(osd::menu.isOpen() && bus::osdMenuOpen, "menu: opened by the sticks");
+  osd::menu.input(0, 0.8f, 1200);   // still held from the command: ignored until centred
+  osd::menu.input(0, 0, 1300);
+  float p0 = c.pid[0].p;
+  osd::menu.input(0.9f, 0, 1400);   // roll right on "PID": open the page
+  osd::menu.input(0, 0, 1500);
+  osd::menu.input(0.9f, 0, 1600);   // roll right on "ROLL P": +1
+  osd::menu.input(0, 0, 1700);
+  CHECK(osd::menu.page() == 1 && fabsf(c.pid[0].p - (p0 + 1)) < 1e-3f, "menu: PID page, roll P + 1");
+  char ln[16][osd::Menu::LINE + 1];
+  int n = osd::menu.lines(ln, 16);
+  CHECK(n > 5 && strstr(ln[0], "PID") && strstr(ln[1], "ROLL P") && ln[1][0] == '>', "menu: lines drawn with the cursor");
+  for (int i = 0; i < 11; i++) osd::menu.move(1);     // to BACK
+  osd::menu.press(1);
+  CHECK(osd::menu.page() == 0, "menu: BACK");
+  for (int i = 0; i < 8; i++) osd::menu.move(1);      // SAVE + EXIT
+  bus::saveRequest = false;
+  osd::menu.press(1);
+  CHECK(!osd::menu.isOpen() && !bus::osdMenuOpen && bus::saveRequest, "menu: save + exit");
+  bus::saveRequest = false;
+  c.pid[0].p = p0;
+}
+
 static void testAltitudeHelpers() {
   // rangefinder height: offset learned at first sight, step (kerb / table) absorbed, not passed on
   fc::RangeHeight rh;
@@ -2599,6 +2672,7 @@ int main(int argc, char** argv) {
   testKalman();
   testImuDelta();
   testAltitudeHelpers();
+  testSticksMenu();
   testParams();
   testModeRanges();
   testDeferredSave();

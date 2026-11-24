@@ -2091,6 +2091,7 @@ void scenarioWeakMotor() {
     if (fmodf(t, 5.0f) < 0.0005f) trace(t);
   });
   check("Height held with a weak motor", altDev < 1.5f, "max %.2f m", altDev);
+  check("Pilot warned: motor 2 weak", sawMsg("Motor 2 weak"), "%.0f", sawMsg("Motor 2 weak"));
   check("Level again after 3 s", tiltLate < 8.0f, "max tilt %.1f deg", tiltLate);
   check("Position held", drift < 3.0f, "max %.2f m", drift);
   check("RTH home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
@@ -2429,6 +2430,235 @@ void scenarioHorizonAirmode() {
   check("Did not fall out of the sky", minAlt > 3, "lowest %.1f m", minAlt);
 }
 
+// ================================================================== review: DJI / ArduPilot / KK features
+static float yawDeg() { return quad.q.yaw() * RAD2DEG; }
+
+void scenarioSmartRth() {
+  printf("\n== smart_rth: 1300 mAh pack, flies out 250 m and hovers: RTH starts when the charge left is what the way home needs ==\n");
+  setup([](Config& c) {
+    c.bat_capacity = 1300; c.bat_reserve_pct = 15; c.bat_fs_action = 0; c.bat_smart_rth = 2;
+    c.rth_alt = 20; c.pos_max_speed = 10; c.rth_speed = 8;
+  });
+  opt.currentA = 24.0f;
+  Takeoff to{10};
+  float trigT = -1, trigD = 0, leftAtTrig = 0, disarmT = -1, usedAtLand = 0, maxD = 0;
+  run(260, [&](float t) {
+    to.step(t);
+    rcIn.ch[RC_PITCH] = (t >= 10 && t < 40) ? 2000 : 1500;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    BatteryState b = bus::battery.get();
+    maxD = fmaxf(maxD, distHome());
+    if (trigT < 0 && s.mode == FlightMode::RTH) { trigT = t; trigD = distHome(); leftAtTrig = 1300 * 0.85f - b.mahDrawn; }
+    if (trigT > 0 && !s.armed && disarmT < 0) { disarmT = t; usedAtLand = b.mahDrawn; }
+    if (fmodf(t, 10.0f) < 0.0005f) { trace(t); printf("      used %.0f mAh, %.1f A\n", b.mahDrawn, b.current); }
+  });
+  opt.currentA = 8.0f;
+  check("Flew out", maxD > 150, "%.0f m", maxD);
+  printf("  smart RTH at %.0f s, %.0f m out, %.0f mAh left above the reserve\n", trigT, trigD, leftAtTrig);
+  check("Smart RTH started far out (not the fixed reserve)", trigT > 0 && trigD > 100 && sawMsg("Battery: home now"),
+        "%.0f m out", trigD);
+  check("Long RTH not cut short by the progress check", !sawMsg("no progress"), "%.0f", sawMsg("no progress"));
+  check("Home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.1f m", distHome());
+  check("Landed with the reserve still there (not empty)", usedAtLand > 0 && usedAtLand < 1300 * 0.95f && usedAtLand > 1300 * 0.6f,
+        "used %.0f of 1300 mAh", usedAtLand);
+}
+
+void scenarioThrustLoss() {
+  printf("\n== thrustloss: every motor loses half its thrust in ALTHOLD (dying pack / heavy load): warned ==\n");
+  setup([](Config&) {});
+  Takeoff to{25};
+  to.pos = false;
+  float warnT = -1;
+  run(30, [&](float t) {
+    to.step(t);
+    for (int i = 0; i < 4; i++) quad.eff[i] = t >= 15 ? 0.45f : 1.0f;
+  }, [&](float t) {
+    if (warnT < 0 && (status().warnings & WARN_THRUST)) warnT = t;
+    if (getenv("SIM_TR") && t > 14 && fmodf(t, 0.5f) < 0.0005f) {
+      MotorOutputs m = bus::motors.get();
+      printf("  %.1f out %.2f %.2f %.2f %.2f vz %.2f\n", t, m.out[0], m.out[1], m.out[2], m.out[3], bus::nav.get().vz);
+    }
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("Thrust loss warned within 4 s", warnT > 15 && warnT < 19 && sawMsg("Thrust loss"), "at %.1f s", warnT);
+}
+
+void scenarioBeacon() {
+  printf("\n== beacon: disarmed on the ground, link lost: motors beep (DShot beacon) after beacon_s, not before ==\n");
+  setup([](Config& c) { c.beacon_s = 5; });
+  int early = 0, late = 0;
+  int base = 0;
+  run(25, [&](float t) { rcAlive = t < 6; }, [&](float t) {
+    if (fabsf(t - 2.0f) < 0.0005f) base = hal::host::motorCommandCount;
+    bool beacon = hal::host::lastMotorCommand == 1;
+    if (t < 10.5f && beacon) early++;
+    if (t > 12 && beacon && hal::host::motorCommandCount > base) late++;
+  });
+  check("No beacon while the link is up / before beacon_s", early == 0, "%.0f", (double)early);
+  check("DShot beacon after the link was lost", late > 0, "%.0f samples", (double)late);
+}
+
+static void scenarioHeadfreeCase(int type) {
+  setup([type](Config& c) {
+    c.headfree_type = (uint8_t)type;
+    c.mode_range[9] = {(uint8_t)ModeBox::HEADFREE, 10, 1700, 2100};
+  });
+  Takeoff to{10};
+  float n0 = 0, e0 = 0, yaw1 = 0, d0 = 0, d1 = 0, yawArm = 0;
+  run(55, [&](float t) {
+    to.step(t);
+    rcIn.ch[10] = 2000;
+    if (type == 1) rcIn.ch[RC_ROLL] = (t >= 9 && t < 17) ? 2000 : 1500;  // fly out east first (still nose north)
+    rcIn.ch[RC_YAW] = (t >= 18 && t < 20.5f) ? 1800 : 1500;                 // turn the nose ~ 90-130 deg right
+    if (type == 0) rcIn.ch[RC_PITCH] = (t >= 25 && t < 33) ? 1900 : 1500;   // "forward" = north (heading at arming)
+    else rcIn.ch[RC_PITCH] = (t >= 25 && t < 33) ? 1100 : 1500;             // pull back = home
+  }, [&](float t) {
+    if (fabsf(t - 3.0f) < 0.0005f) yawArm = yawDeg();
+    if (fabsf(t - 24.0f) < 0.0005f) { n0 = quad.pos.x; e0 = quad.pos.y; yaw1 = yawDeg(); d0 = distHome(); }
+    if (getenv("SIM_TR") && (fabsf(t - 3.0f) < 0.0005f || fabsf(t - 24.0f) < 0.0005f || fabsf(t - 30.0f) < 0.0005f))
+      printf("  t %.0f true yaw %.1f est yaw %.1f vel N %.1f E %.1f\n", t, yawDeg(), bus::nav.get().yaw * RAD2DEG, quad.vel.x, quad.vel.y);
+    if (fabsf(t - 35.0f) < 0.0005f) d1 = distHome();
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  float dn = quad.pos.x - n0, de = quad.pos.y - e0;
+  check("Nose turned away from the arming heading", fabsf(wrapPi((yaw1 - yawArm) * DEG2RAD)) * RAD2DEG > 60, "%.0f deg", yaw1 - yawArm);
+  if (type == 0) {
+    float dir = atan2f(de, dn) * RAD2DEG, off = fabsf(wrapPi((dir - yawArm) * DEG2RAD)) * RAD2DEG;
+    check("HEADFREE: forward stick flies the arming heading, whatever the nose", hypotf(dn, de) > 15 && off < 15,
+          "%.0f deg off", off);
+  } else {
+    check("Home lock: pull back flies home", d0 > 12 && d1 < d0 * 0.4f, (std::to_string((int)d0) + " m -> %.0f m").c_str(), d1);
+  }
+}
+void scenarioHeadfree() {
+  printf("\n== headfree: POSHOLD + HEADFREE, nose turned: pitch forward still flies the heading of arming ==\n");
+  scenarioHeadfreeCase(0);
+}
+void scenarioHomeLock() {
+  printf("\n== homelock: headfree_type 1, 40 m east, nose turned: pull back comes home ==\n");
+  scenarioHeadfreeCase(1);
+}
+
+void scenarioBrake() {
+  printf("\n== brake: 10 m/s forward in POSHOLD, BRAKE switch: stops short and holds ==\n");
+  setup([](Config& c) { c.pos_max_speed = 10; c.mode_range[9] = {(uint8_t)ModeBox::BRAKE, 10, 1700, 2100}; });
+  Takeoff to{10};
+  float v0 = 0, n0 = 0, e0 = 0, stopD = 0, n1 = 0, e1 = 0, drift = 0;
+  bool brake = false;
+  run(45, [&](float t) {
+    to.step(t);
+    rcIn.ch[RC_PITCH] = (t >= 10 && t < 22) ? 2000 : 1500;
+    if (t >= 20) rcIn.ch[RC_PITCH] = 2000;  // pilot still pushes: BRAKE ignores the sticks
+    rcIn.ch[10] = t >= 20 ? 2000 : 1000;
+  }, [&](float t) {
+    if (fabsf(t - 20.0f) < 0.0005f) { v0 = hypotf(quad.vel.x, quad.vel.y); n0 = quad.pos.x; e0 = quad.pos.y; }
+    if (t > 20 && status().mode == FlightMode::BRAKE) brake = true;
+    if (fabsf(t - 27.0f) < 0.0005f) { stopD = hypotf(quad.pos.x - n0, quad.pos.y - e0); n1 = quad.pos.x; e1 = quad.pos.y; }
+    if (t > 27) drift = fmaxf(drift, hypotf(quad.pos.x - n1, quad.pos.y - e1));
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("Was flying fast", v0 > 8, "%.1f m/s", v0);
+  check("BRAKE mode", brake, "%.0f", brake);
+  check("Stopped within the braking distance", stopD < v0 * v0 / (2.0f * 2.0f * bus::config.pos_max_accel) + 6.0f, "%.1f m", stopD);
+  check("Holds after stopping (sticks ignored)", drift < 1.5f, "drift %.2f m", drift);
+}
+
+void scenarioCircle() {
+  printf("\n== circle: CIRCLE switch: orbit 10 m around the point ahead, nose to the centre ==\n");
+  setup([](Config& c) { c.circle_radius = 10; c.circle_speed = 4; c.mode_range[9] = {(uint8_t)ModeBox::CIRCLE, 10, 1700, 2100}; });
+  Takeoff to{10};
+  float cn = 0, ce = 0, rErr = 0, yawErr = 0, turned = 0, lastAng = 0, altDev = 0, alt0 = 0;
+  bool init = false;
+  run(60, [&](float t) {
+    to.step(t);
+    rcIn.ch[10] = t >= 15 ? 2000 : 1000;
+  }, [&](float t) {
+    if (fabsf(t - 15.0f) < 0.0005f) {
+      float y = quad.q.yaw();
+      cn = quad.pos.x + 10 * cosf(y); ce = quad.pos.y + 10 * sinf(y); alt0 = alt();
+    }
+    if (t > 25) {
+      float dx = quad.pos.x - cn, dy = quad.pos.y - ce;
+      rErr = fmaxf(rErr, fabsf(hypotf(dx, dy) - 10));
+      float ang = atan2f(dy, dx);
+      if (init) turned += fabsf(wrapPi(ang - lastAng));
+      lastAng = ang; init = true;
+      float toC = atan2f(-dy, -dx);
+      yawErr = fmaxf(yawErr, fabsf(wrapPi(quad.q.yaw() - toC)) * RAD2DEG);
+      altDev = fmaxf(altDev, fabsf(alt() - alt0));
+    }
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  float revs = turned / (2 * PI_F);
+  check("CIRCLE radius held", rErr < 1.5f, "max error %.2f m", rErr);
+  check("Goes round (4 m/s: ~2 laps in 35 s)", revs > 1.5f && revs < 3.0f, "%.2f laps", revs);
+  check("Nose to the centre", yawErr < 20, "max %.0f deg", yawErr);
+  check("Height held", altDev < 0.8f, "max %.2f m", altDev);
+}
+
+void scenarioFlip() {
+  printf("\n== flip: ALTHOLD at 15 m, FLIP switch: one roll, back to ALTHOLD; too low: refused ==\n");
+  setup([](Config& c) { c.mode_range[9] = {(uint8_t)ModeBox::FLIP, 10, 1700, 2100}; });
+  Takeoff to{15};
+  to.pos = false;
+  float rolled = 0, minAlt = 99, alt0 = 0, backT = -1, tiltLate = 0;
+  bool flip = false;
+  run(40, [&](float t) {
+    to.step(t);
+    rcIn.ch[10] = (t >= 15 && t < 17) || (t >= 4.0f && t < 4.5f) ? 2000 : 1000;  // first flick just after take-off: refused
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (fabsf(t - 15.0f) < 0.0005f) alt0 = alt();
+    if (t > 15 && t < 20) { rolled += fabsf(quad.w.x) * 0.001f * RAD2DEG; minAlt = fminf(minAlt, alt()); }
+    if (s.mode == FlightMode::FLIP) flip = true;
+    if (flip && backT < 0 && s.mode == FlightMode::ALTHOLD) backT = t;
+    if (t > 22) tiltLate = fmaxf(tiltLate, acosf(constrainf(quad.q.cosTilt(), -1, 1)) * RAD2DEG);
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("Refused on the ground", sawMsg("Flip: too low"), "%.0f", sawMsg("Flip: too low"));
+  check("Flipped once (one roll, ~360 deg)", flip && rolled > 330 && rolled < 520, "%.0f deg", rolled);
+  check("Back to ALTHOLD after the flip", backT > 15 && backT < 18, "at %.1f s", backT);
+  check("Height lost in the flip", alt0 - minAlt < 4.0f, "%.1f m", alt0 - minAlt);
+  check("Level afterwards", tiltLate < 8, "%.1f deg", tiltLate);
+}
+
+void scenarioFollow() {
+  printf("\n== follow: a leader walks east at 2 m/s (MAVLink FOLLOW_TARGET), FOLLOW keeps 8 m, nose to it; leader quiet: holds ==\n");
+  setup([](Config& c) { c.follow_dist = 8; c.mode_range[9] = {(uint8_t)ModeBox::FOLLOW, 10, 1700, 2100}; });
+  Takeoff to{10};
+  float distErr = 0, yawErr = 0, n1 = 0, e1 = 0, drift = 0, ln = 0, le = 0;
+  bool follow = false;
+  run(70, [&](float t) {
+    to.step(t);
+    rcIn.ch[10] = t >= 14 ? 2000 : 1000;
+    // leader: 15 m south of home, walking east at 2 m/s from 12 s, 5 Hz updates, quiet after 50 s
+    ln = -15; le = t > 12 ? (t - 12) * 2.0f : 0;
+    static float lastSend = 0;
+    if (t > 12 && t < 50 && t - lastSend >= 0.2f) {
+      lastSend = t;
+      double lat, lon;
+      NavEstimator::nedToLla(ln, le, LAT0, LON0, lat, lon);
+      bus::FollowTarget f{(int32_t)(lat * 1e7), (int32_t)(lon * 1e7), 0.0f, t > 12 ? 2.0f : 0.0f, os::timeMs() | 1};
+      bus::follow.publish(f);
+    }
+  }, [&](float t) {
+    if (status().mode == FlightMode::FOLLOW) follow = true;
+    if (t > 30 && t < 50) {
+      float dx = quad.pos.x - ln, dy = quad.pos.y - le;
+      distErr = fmaxf(distErr, fabsf(hypotf(dx, dy) - 8));
+      yawErr = fmaxf(yawErr, fabsf(wrapPi(quad.q.yaw() - atan2f(-dy, -dx))) * RAD2DEG);
+    }
+    if (fabsf(t - 55.0f) < 0.0005f) { n1 = quad.pos.x; e1 = quad.pos.y; }
+    if (t > 55) drift = fmaxf(drift, hypotf(quad.pos.x - n1, quad.pos.y - e1));
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("FOLLOW mode", follow, "%.0f", follow);
+  check("Keeps follow_dist from the walking leader", distErr < 2.5f, "max error %.1f m", distErr);
+  check("Nose to the leader", yawErr < 25, "max %.0f deg", yawErr);
+  check("Leader quiet: holds and tells", drift < 1.5f && sawMsg("Follow: no leader"), "drift %.2f m", drift);
+}
+
 void scenarioBeginner() {
   printf("\n== beginner: first-flight limits (ACRO switch flies ANGLE, 25 deg, fence -> RTH) ==\n");
   setup([](Config& c) { c.beginner = 1; c.beg_radius = 40; });
@@ -2540,7 +2770,10 @@ int main(int argc, char** argv) {
       {"baro_dead", scenarioBaroDead}, {"baro_dead_nogps", scenarioBaroDeadNoGps}, {"mag_dead", scenarioMagDead},
       {"vbat", scenarioVbat}, {"fs_land", scenarioFsLand}, {"fs_nogps", scenarioFsNoGps}, {"fs_mission", scenarioFsMission},
       {"fs_regain", scenarioFsRegain}, {"fence_alt", scenarioFenceAlt}, {"rth_opts", scenarioRthOpts},
-      {"armchecks", scenarioArmChecks}, {"horizon_airmode", scenarioHorizonAirmode}};
+      {"armchecks", scenarioArmChecks}, {"horizon_airmode", scenarioHorizonAirmode},
+      {"smart_rth", scenarioSmartRth}, {"thrustloss", scenarioThrustLoss}, {"beacon", scenarioBeacon},
+      {"headfree", scenarioHeadfree}, {"homelock", scenarioHomeLock}, {"brake", scenarioBrake},
+      {"circle", scenarioCircle}, {"flip", scenarioFlip}, {"follow", scenarioFollow}};
   if (!strcmp(which, "all")) {  // every scenario in a fresh process (clean firmware state)
     int failed = 0;
     for (auto& s : scenarios) {

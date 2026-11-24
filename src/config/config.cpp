@@ -84,6 +84,17 @@ static void v30Defaults(Config& c) {
   c.rc_deadband = 5;
 }
 static void v31Defaults(Config& c) { c.bb_gyro_s = 0; }
+static void v33Defaults(Config& c) {
+  c.bat_smart_rth = 2;
+  c.motor_warn = 1;
+  c.beacon_s = 10;
+  c.stick_cmds = 1;
+  c.headfree_type = 0;
+  c.circle_radius = 10;
+  c.circle_speed = 3;
+  c.follow_dist = 8;
+  c.follow_alt = 0;
+}
 static void v32Defaults(Config& c) {
   c.baro_gnd = 1;
   c.baro_dyn = 0;
@@ -327,6 +338,7 @@ void configDefaults(Config& c) {
   v30Defaults(c);
   v31Defaults(c);
   v32Defaults(c);
+  v33Defaults(c);
   configSeal(c);
 }
 
@@ -360,6 +372,7 @@ bool configMigrate(Config& c) {
   if (c.version < 30) v30Defaults(d);
   if (c.version < 31) v31Defaults(d);
   if (c.version < 32) v32Defaults(d);
+  if (c.version < 33) v33Defaults(d);
   configSeal(d);
   c = d;
   return true;
@@ -401,7 +414,7 @@ uint32_t modeBoxes(const Config& c, const uint16_t* ch, int nch) {
 const char* modeBoxName(int box) {
   static const char* const names[] = {"NONE", "ARM", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD",
                                       "RTH", "MISSION", "LAND", "TURTLE", "BEEPER", "CRUISE", "AUTOTUNE",
-                                      "GPS RESCUE", "LAUNCH", "SMART RTL"};
+                                      "GPS RESCUE", "LAUNCH", "SMART RTL", "HEADFREE", "BRAKE", "CIRCLE", "FLIP", "FOLLOW"};
   return box >= 0 && box < (int)ModeBox::COUNT ? names[box] : "?";
 }
 

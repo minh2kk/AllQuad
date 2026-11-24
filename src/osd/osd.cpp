@@ -1,5 +1,6 @@
 #include "../common/size_opt.h"  // -Os on ESP32 (not flight critical)
 #include "osd.h"
+#include "menu.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -252,7 +253,12 @@ void Renderer::render(uint32_t now) {
   float speed = e.posValid ? sqrtf(e.vn * e.vn + e.ve * e.ve) : 0.0f;
   track(now, st.armed, e.posValid, e.n, e.e, e.alt, speed, b.voltage, b.current, b.mahDrawn,
         e.homeSet ? st.homeDistance : 0.0f);
-  if (!st.armed && statsUntil_ && (int32_t)(statsUntil_ - now) > 0) {
+  if (menu.isOpen()) {  // the stick menu takes the whole screen (centred on wide HD canvases)
+    char ln[MAX_ROWS][Menu::LINE + 1];
+    int n = menu.lines(ln, rows_ - 1);
+    int col = (cols_ - Menu::LINE) / 2;
+    for (int i = 0; i < n; i++) putAt(i + 1, col < 0 ? 0 : col, ln[i]);
+  } else if (!st.armed && statsUntil_ && (int32_t)(statsUntil_ - now) > 0) {
     drawStats();
   } else {
   // ---- v24 elements
@@ -365,7 +371,10 @@ void Renderer::render(uint32_t now) {
   else if (st.warnings & WARN_BAT_CRIT) w = "BATTERY CRITICAL";
   else if (st.warnings & WARN_FENCE) w = "GEOFENCE";
   else if (st.warnings & WARN_GCS_LOST) w = "GCS LOST";
+  else if (st.warnings & WARN_THRUST) w = "THRUST LOSS - LAND";
   else if (st.warnings & WARN_IMU2) w = "IMU 2 ACTIVE";
+  else if (st.warnings & WARN_RTH_BAT) w = "BATTERY: GO HOME";
+  else if (st.warnings & WARN_MOTOR) w = "MOTOR WEAK?";
   else if (st.warnings & WARN_BAT_LOW) w = "LOW BATTERY";
   else if (st.warnings & WARN_GPS_LOST) w = "GPS LOST";
   else if (st.warnings & WARN_RESCUE) w = "RESCUE: NO PROGRESS";

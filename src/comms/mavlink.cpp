@@ -1,9 +1,11 @@
 #include "../common/size_opt.h"  // -Os on ESP32 (not flight critical)
 #include "mavlink.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "../bus/bus.h"
+#include "../os/os.h"
 #include "../navigation/mission.h"
 
 namespace comms {
@@ -19,7 +21,7 @@ enum : uint32_t {
   MSG_MISSION_CLEAR_ALL = 45, MSG_MISSION_ITEM_REACHED = 46, MSG_MISSION_ACK = 47, MSG_MISSION_REQUEST_INT = 51,
   MSG_RC_CHANNELS = 65, MSG_MISSION_ITEM_INT = 73, MSG_VFR_HUD = 74, MSG_COMMAND_INT = 75, MSG_COMMAND_LONG = 76,
   MSG_COMMAND_ACK = 77, MSG_SET_POSITION_TARGET_LOCAL_NED = 84, MSG_SET_POSITION_TARGET_GLOBAL_INT = 86,
-  MSG_AUTOPILOT_VERSION = 148, MSG_HOME_POSITION = 242, MSG_STATUSTEXT = 253,
+  MSG_FOLLOW_TARGET = 144, MSG_AUTOPILOT_VERSION = 148, MSG_HOME_POSITION = 242, MSG_STATUSTEXT = 253,
 };
 
 int mavCrcExtra(uint32_t id) {
@@ -31,7 +33,7 @@ int mavCrcExtra(uint32_t id) {
     case 45: return 232;  case 46: return 11;   case 47: return 153;  case 51: return 196;
     case 65: return 118;  case 73: return 38;   case 74: return 20;   case 75: return 158;
     case 76: return 152;  case 77: return 143;  case 84: return 143;  case 86: return 5;
-    case 148: return 178; case 242: return 104;
+    case 144: return 127; case 148: return 178; case 242: return 104;
     case 253: return 83;
     default: return -1;
   }
@@ -122,6 +124,13 @@ constexpr uint8_t MODE_CUSTOM = 1, MODE_AUTO = 4, MODE_GUIDED = 8, MODE_STABILIZ
                   MODE_ARMED = 128;
 }  // namespace
 
+// modes a GCS may pick (custom_mode = AllQuad FlightMode); not FAILSAFE / TURTLE / AUTOTUNE / FLIP
+static bool gcsMode(uint32_t m) {
+  return m < (uint32_t)FlightMode::FAILSAFE || m == (uint32_t)FlightMode::CRUISE || m == (uint32_t)FlightMode::GUIDED ||
+         m == (uint32_t)FlightMode::SMART_RTL || m == (uint32_t)FlightMode::BRAKE || m == (uint32_t)FlightMode::CIRCLE ||
+         m == (uint32_t)FlightMode::FOLLOW;
+}
+
 // ---------------------------------------------------------------- link
 void MavlinkLink::begin(hal::Port p, bool streamOnlyWhenConnected) {
   port_ = p;
@@ -141,7 +150,8 @@ void MavlinkLink::sendHeartbeat() {
   VehicleStatus st = bus::status.get();
   uint8_t base = MODE_CUSTOM | MODE_STABILIZE;
   bool autoMode = st.mode == FlightMode::RTH || st.mode == FlightMode::MISSION || st.mode == FlightMode::LAND ||
-                  st.mode == FlightMode::GUIDED || st.mode == FlightMode::SMART_RTL;
+                  st.mode == FlightMode::GUIDED || st.mode == FlightMode::SMART_RTL || st.mode == FlightMode::FOLLOW ||
+                  st.mode == FlightMode::BRAKE;
   if (autoMode) base |= MODE_AUTO | MODE_GUIDED;
   else base |= MODE_MANUAL;
   if (st.armed) base |= MODE_ARMED;
@@ -375,8 +385,7 @@ void MavlinkLink::handleCommand(uint16_t cmd, const float p[7], uint32_t nowMs) 
     case 21: bus::postRequest(bus::Request::SET_MODE, (uint32_t)FlightMode::LAND); break;   // NAV_LAND
     case 300: bus::postRequest(bus::Request::SET_MODE, (uint32_t)FlightMode::MISSION); break;  // MISSION_START
     case 176:  // DO_SET_MODE (custom mode in param2)
-      if (p[1] >= 0 && (p[1] < (float)FlightMode::TURTLE || p[1] == (float)FlightMode::CRUISE ||
-                        p[1] == (float)FlightMode::GUIDED || p[1] == (float)FlightMode::SMART_RTL))
+      if (p[1] >= 0 && p[1] < (float)FlightMode::COUNT && gcsMode((uint32_t)p[1]))
         bus::postRequest(bus::Request::SET_MODE, (uint32_t)p[1]);
       else res = 2;
       break;
@@ -482,9 +491,21 @@ void MavlinkLink::handle(const MavFrame& f, uint32_t now) {
       bus::guided.publish(g);
       break;
     }
+    case MSG_FOLLOW_TARGET: {  // QGroundControl "Follow Me": timestamp, custom_state, lat, lon, alt, vel[3], ...
+      bus::FollowTarget t{};
+      t.lat = ri32(p + 16);
+      t.lon = ri32(p + 20);
+      float vn = rf(p + 28), ve = rf(p + 32);
+      // velocity: used when sane (apps often leave est_capabilities at 0 but fill it in)
+      t.vn = vn == vn && fabsf(vn) < 50 ? vn : 0;
+      t.ve = ve == ve && fabsf(ve) < 50 ? ve : 0;
+      t.timeMs = os::timeMs() | 1;
+      if (t.lat >= -900000000 && t.lat <= 900000000 && t.lon >= -1800000000 && t.lon <= 1800000000 && (t.lat || t.lon))
+        bus::follow.publish(t);
+      break;
+    }
     case MSG_SET_MODE:  // custom_mode u32, target_system u8, base_mode u8
-      if (forUs(p[4]) && ri32(p) >= 0 && (ri32(p) < (int32_t)FlightMode::TURTLE || ri32(p) == (int32_t)FlightMode::CRUISE ||
-                                          ri32(p) == (int32_t)FlightMode::GUIDED || ri32(p) == (int32_t)FlightMode::SMART_RTL))
+      if (forUs(p[4]) && ri32(p) >= 0 && gcsMode((uint32_t)ri32(p)))
         bus::postRequest(bus::Request::SET_MODE, (uint32_t)ri32(p));
       break;
     // ---- mission protocol ----

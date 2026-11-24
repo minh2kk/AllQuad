@@ -2030,6 +2030,15 @@ const HINT = {
   mav_sysid: "MAVLink system ID", wifi_armed: "Giữ WiFi khi đang bay (tắt = bớt nhiễu, tiết kiệm CPU)",
   est_baro_noise: "Độ nhiễu baro cho bộ ước lượng", est_acc_noise: "Độ nhiễu accel cho bộ ước lượng", est_gpsvel_noise: "Độ nhiễu vận tốc GPS",
   baro_gnd: "Bỏ qua baro tụt do hiệu ứng mặt đất (đã arm, dưới khoảng 1 m)",
+  bat_smart_rth: "Pin đủ để bay về (tính theo khoảng cách, độ cao, gió): 0 tắt, 1 chỉ cảnh báo, 2 cảnh báo và tự bay về",
+  motor_warn: "Cảnh báo motor yếu (một motor phải chạy mạnh hơn hẳn) và mất lực đẩy",
+  beacon_s: "Motor kêu bíp (DShot beacon) sau bấy nhiêu giây mất sóng khi đang disarm, để tìm drone (0 tắt)",
+  stick_cmds: "Lệnh bằng cần khi disarm: hiệu chuẩn, chọn profile, trim, lưu, mở menu OSD",
+  headfree_type: "HEADFREE: 0 hướng mũi lúc arm là phía trước, 1 khoá theo nhà (kéo cần về = bay về nhà)",
+  circle_radius: "CIRCLE: bán kính (m), tâm ở phía trước mũi lúc bật",
+  circle_speed: "CIRCLE: tốc độ (m/s), âm = ngược chiều kim đồng hồ",
+  follow_dist: "FOLLOW: khoảng cách giữ với người dẫn (m)",
+  follow_alt: "FOLLOW: độ cao so với nhà (m), 0 = giữ độ cao lúc bật",
   baro_dyn: "Sửa baro theo tốc độ ngang (m trên (m/s)², 0 tắt; dương khi baro đọc thấp lúc bay nhanh)",
   rf_max_m: "Tầm xa tối đa cảm biến khoảng cách (m)", flow_scale: "Hệ số optical flow", flow_align: "Hướng lắp optical flow",
   flow_flip: "Lật trục optical flow", osd_backend: "Loại OSD", osd_pal: "Camera chuẩn PAL (tắt = NTSC)", osd_canvas: "Lưới chữ OSD (canvas)", osd_font: "Ký hiệu OSD",
@@ -2056,7 +2065,8 @@ const ENUMS = {
   est_type: ["Kalman từng trục", "EKF 15 trạng thái"], bb_backend: [, "Cổng serial", "Flash trên board", "Thẻ SD"],
   sd_mode: ["Tắt", "SPI (4 dây)", "SD bus 1-bit", "SD bus 4-bit"],
   fence_action: [, "Hạ cánh", "Bay về"], gcs_fs: ["Tắt", "Bay về (RTH)", "Hạ cánh", "SmartRTL"],
-  fs_action: ["Tắt motor", "Hạ cánh", "Bay về (RTH)", "SmartRTL"], bat_fs_action: ["Chỉ cảnh báo", "Hạ cánh", "Bay về (RTH)", "SmartRTL"],
+  fs_action: ["Tắt motor", "Hạ cánh", "Bay về (RTH)", "SmartRTL"],
+  bat_smart_rth: ["Tắt", "Chỉ cảnh báo", "Cảnh báo + bay về"], headfree_type: ["Hướng lúc arm", "Khoá theo nhà"], bat_fs_action: ["Chỉ cảnh báo", "Hạ cánh", "Bay về (RTH)", "SmartRTL"],
   pid_profile: ["Profile 1", "Profile 2", "Profile 3"], motor_protocol: ["PWM", "OneShot125", "DShot300", "DShot600"],
   rx_protocol: ["CRSF / ELRS", "SBUS", "iBUS"], osd_backend: ["Tắt", "MAX7456 (analog)", "MSP DisplayPort (digital)"],
   dyn_notch_count: ["Tắt", "1 notch", "2 notch"],
@@ -2194,7 +2204,8 @@ function buildPid() {
   pcard(ex, "Cảm giác cần & lực đẩy", ["rc_smooth_hz", "thrust_expo", "vbat_sag_comp", "airmode"]);
   pcard(ex, "Tự cân bằng (ANGLE / HORIZON)", ["angle_p", "angle_limit", "horizon_trans"]);
   pcard(ex, "Profile", ["pid_profile", "prof_ch"], "3 bộ PID / rates, đổi bằng công tắc. Chọn Profile 2 / 3 ở trên bảng PID để sửa.");
-  pcard(ex, "Bảo vệ", ["crash_detect", "yaw_spin_thr"]);
+  pcard(ex, "Bảo vệ", ["crash_detect", "yaw_spin_thr", "motor_warn", "beacon_s"]);
+  pcard(ex, "Ngoài bãi bay (không cần máy tính)", ["stick_cmds", "headfree_type"]);
   pcard(ex, "Autotune & launch control", ["at_axes", "at_rate", "at_steps", "launch_angle", "launch_thr"]);
   const f = $("filterParams");
   f.innerHTML = "";
@@ -2207,7 +2218,7 @@ function buildPid() {
   if (sp) {
     sp.innerHTML = "";
     pcard(sp, "Mất sóng tay điều khiển", ["fs_action", "fs_delay_ms", "fs_off_delay_ms", "fs_throttle", "gcs_fs", "gcs_fs_s"]);
-    pcard(sp, "Pin", ["cell_count", "vbat_warn_cell", "vbat_crit_cell", "bat_capacity", "bat_fs_action", "bat_reserve_pct", "vbat_scale", "cur_scale", "cur_offset"]);
+    pcard(sp, "Pin", ["cell_count", "vbat_warn_cell", "vbat_crit_cell", "bat_capacity", "bat_fs_action", "bat_reserve_pct", "bat_smart_rth", "vbat_scale", "cur_scale", "cur_offset"]);
     pcard(sp, "Điều kiện arm", ["arm_throttle_max", "arm_max_angle", "arm_require_gps", "gcs_arm"]);
   }
   const snp = $("sensorParams");
@@ -2246,6 +2257,7 @@ function buildPid() {
   navGroups[3][1].push("srtl_point_m");
   navGroups.push(["Bộ ước lượng (độ nhiễu cảm biến)", ["est_baro_noise", "est_acc_noise", "est_gpsvel_noise", "baro_gnd", "baro_dyn"]]);
   navGroups[4][1].push("fence_poly");
+  navGroups.push(["CIRCLE & FOLLOW", ["circle_radius", "circle_speed", "follow_dist", "follow_alt"]]);
   const np = $("navParams");
   np.innerHTML = "";
   for (const [title, names] of navGroups) pcard(np, title, names);
@@ -2298,7 +2310,7 @@ $("pSearch").oninput = (e) => {
 };
 
 // ---------------------------------------------------------------- mode ranges
-const BOXES = ["", "ARM", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "TURTLE", "BEEPER", "CRUISE", "AUTOTUNE", "GPS RESCUE", "LAUNCH", "SMART RTL"];
+const BOXES = ["", "ARM", "ANGLE", "HORIZON", "ALTHOLD", "POSHOLD", "RTH", "MISSION", "LAND", "TURTLE", "BEEPER", "CRUISE", "AUTOTUNE", "GPS RESCUE", "LAUNCH", "SMART RTL", "HEADFREE", "BRAKE", "CIRCLE", "FLIP", "FOLLOW"];
 const BOX_HINT = ["", "Arm motor", "Tự cân bằng, giới hạn góc nghiêng", "Tự cân bằng ở giữa cần, lật được khi gạt hết cần",
   "Giữ độ cao bằng baro", "Giữ vị trí bằng GPS hoặc optical flow", "Bay về điểm cất cánh rồi hạ cánh",
   "Bay theo nhiệm vụ waypoint", "Hạ cánh tại chỗ", "Lật drone khi bị úp (cần DShot)", "Còi tìm drone",
@@ -2500,7 +2512,7 @@ function drawNav() {
   S.trail.forEach((p, j) => (j ? g.lineTo(X(p[1]), Y(p[0])) : g.moveTo(X(p[1]), Y(p[0]))));
   g.stroke();
   if (e && e.pos) {
-    if (st.armed && /POSHOLD|CRUISE|RTH|MISSION|LAND|GUIDED|SMARTRTL/.test(st.mode)) {  // target
+    if (st.armed && /POSHOLD|CRUISE|RTH|MISSION|LAND|GUIDED|SMARTRTL|BRAKE|CIRCLE|FOLLOW/.test(st.mode)) {  // target
       const tx = X(e.tgt[1]), ty = Y(e.tgt[0]);
       g.strokeStyle = css("--amber"); g.lineWidth = 2;
       g.beginPath(); g.moveTo(tx - 8, ty); g.lineTo(tx + 8, ty); g.moveTo(tx, ty - 8); g.lineTo(tx, ty + 8); g.stroke();
