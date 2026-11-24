@@ -126,6 +126,8 @@ void Navigator::startRth(const fc::NavEstimate& est, bool headingOk) {
     }
   }
   tgtAlt_ = fmaxf(est.alt, rtlAlt_);
+  // a height ceiling (geofence): the return flies under it, also when RTH started because of it
+  if (cfg_->fence_enable && cfg_->fence_alt_max > 3.0f) tgtAlt_ = fminf(tgtAlt_, cfg_->fence_alt_max - 2.0f);
   phaseStartMs_ = nowMs_;
   if (!headingOk) {  // no compass and GPS heading unknown: fly a few forward/back legs to learn it
     phase_ = NavPhase::RTH_ALIGN;

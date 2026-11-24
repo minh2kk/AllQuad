@@ -18,6 +18,13 @@ uint8_t BatteryMonitor::lipoPercent(float v) {
   return 100;
 }
 
+// latched flag once `low` held for holdMs in a row
+void BatteryMonitor::lowFor(bool low, uint32_t& since, uint32_t holdMs, uint32_t nowMs, bool& flag) {
+  if (!low) { since = 0; return; }
+  if (!since) since = nowMs ? nowMs : 1;
+  if (nowMs - since >= holdMs) flag = true;
+}
+
 void BatteryMonitor::update(float volts, float amps, bool armed, uint32_t nowMs, float dt) {
   const Config& c = *cfg_;
   if (volts < 1.0f) {  // no battery sensing
@@ -40,10 +47,12 @@ void BatteryMonitor::update(float volts, float amps, bool armed, uint32_t nowMs,
     st_.capacityLow = false;
   }
   // latch while flying; clear only when disarmed and recovered
-  if (st_.cellVoltage < c.vbat_warn_cell) st_.warn = true;
-  else if (!armed && st_.cellVoltage > c.vbat_warn_cell + 0.1f) st_.warn = false;
-  if (st_.cellVoltage < c.vbat_crit_cell) st_.critical = true;
-  else if (!armed && st_.cellVoltage > c.vbat_crit_cell + 0.1f) st_.critical = false;
+  // a punch sags the pack for a moment: below the limit for 3 s in a row (warning 2 s) counts, a short dip
+  // does not trigger the battery failsafe (ArduPilot BATT_LOW_TIMER)
+  lowFor(st_.cellVoltage < c.vbat_warn_cell, warnMs_, 2000, nowMs, st_.warn);
+  if (!armed && st_.cellVoltage > c.vbat_warn_cell + 0.1f) st_.warn = false;
+  lowFor(st_.cellVoltage < c.vbat_crit_cell, critMs_, 3000, nowMs, st_.critical);
+  if (!armed && st_.cellVoltage > c.vbat_crit_cell + 0.1f) st_.critical = false;
 }
 
 }  // namespace fc

@@ -98,6 +98,8 @@ void Commander::fuseSensors(uint32_t now, float dt) {
   uint32_t s = bus::baro.read(b);
   if (s != seqBaro_) {
     seqBaro_ = s;
+    if (armed_ && baroSeen_ && !b.healthy)
+      bus::postMessage(navEst_.gpsValid ? "Baro lost - height from GPS" : "Baro lost - no height hold");
     baroSeen_ = b.healthy;
     // baro corrections: speed from the last estimate (only with a position source), near the ground
     // when armed below 1 m (rangefinder height when it sees the ground, else above home)
@@ -109,7 +111,15 @@ void Commander::fuseSensors(uint32_t now, float dt) {
     newBaro = true;
   }
   s = bus::mag.read(mag_);
-  if (s != seqMag_) { seqMag_ = s; magSeen_ = true; newMag = true; }
+  if (s != seqMag_) {
+    bool was = magSeen_ && magHealthy_;
+    seqMag_ = s;
+    magSeen_ = true;
+    newMag = true;
+    magHealthy_ = mag_.healthy;
+    if (armed_ && was && !mag_.healthy && !bus::magRejected && (int32_t)(bus::magCalUntilMs - now) <= 0)
+      bus::postMessage("Compass lost - heading from GPS / gyro");
+  }
   float cosTilt = att_.q.cosTilt();
   RangeSample r;
   s = bus::range.read(r);
@@ -146,6 +156,7 @@ void Commander::fuseSensors(uint32_t now, float dt) {
   if (useEkf) ekfFuse(now, newGps ? &g : nullptr, newBaro ? &b : nullptr, newMag, newRange ? &r : nullptr);
   else ekf_.reset();
   buildNavEstimate(now);
+  if (navEst_.altValid) altValidMs_ = now;
   const NavEstimate& e = navEst_;
   wind_.update(att_.q, yawCorr_, att_.accEarth, e.vn, e.ve, c.wind_drag, airborne_ && armed_ && e.posValid, dt);
   if (e.glitchCount != lastGlitchCount_) {
@@ -499,10 +510,10 @@ FlightMode Commander::validate(FlightMode m) const {
       return altOk ? FlightMode::ALTHOLD : FlightMode::ANGLE;
     case FlightMode::RTH:
       if (rthOk) return m;
-      // fall through
-    case FlightMode::LAND:
       if (altOk) return FlightMode::LAND;
       return forced ? FlightMode::FAILSAFE : FlightMode::ANGLE;
+    case FlightMode::LAND:  // asked for a landing: without a height the inertial descent still lands it
+      return altOk ? m : FlightMode::FAILSAFE;
     case FlightMode::ALTHOLD:
     case FlightMode::AUTOTUNE:  // twitches from an altitude-held hover
       return altOk ? m : FlightMode::ANGLE;
@@ -518,6 +529,9 @@ void Commander::updateFailsafes(bool rcOk, uint32_t now) {
     actionMode_ = FlightMode::COUNT;
     return;
   }
+  // FAILSAFE (descent without a height): disarmed fs_off_delay after it began, however it was asked for
+  if (mode_ != FlightMode::FAILSAFE) fsModeMs_ = now;
+  else if (!rcFailsafe_ && now - fsModeMs_ > c.fs_off_delay_ms) { disarm("failsafe timeout"); return; }
   // ---- RC link ----
   if (!rcOk && !rcFailsafe_) {
     if (!airborne_) { disarm("RC lost on ground"); return; }
@@ -534,7 +548,7 @@ void Commander::updateFailsafes(bool rcOk, uint32_t now) {
     } else {
       rcRecoverMs_ = 0;
     }
-    if (mode_ == FlightMode::FAILSAFE && now - failsafeStartMs_ > c.fs_off_delay_ms) { disarm("failsafe timeout"); return; }
+    if (mode_ == FlightMode::FAILSAFE && now - fsModeMs_ > c.fs_off_delay_ms) { disarm("failsafe timeout"); return; }
   }
   // ---- battery ----
   if (!batFsDone_ && c.bat_fs_action && airborne_ && (bat_.critical || bat_.capacityLow)) {
@@ -669,7 +683,16 @@ void Commander::run(uint32_t now, float dt) {
   else if (actionMode_ != FlightMode::COUNT) want = actionMode_;
   else if (gcsMode_ != FlightMode::COUNT) want = gcsMode_;
   else want = pilotMode(rcOk);
+  FlightMode asked = want;
   want = validate(want);
+  // a mode the sensors cannot fly (GPS / height lost): tell the pilot once per change
+  if (armed_ && want != asked && (asked != downAsked_ || want != downGot_)) {
+    char m[48];
+    snprintf(m, sizeof(m), "%s unavailable: %s", flightModeName(asked), flightModeName(want));
+    bus::postMessage(m);
+  }
+  downAsked_ = want != asked ? asked : FlightMode::COUNT;
+  downGot_ = want;
   if (want != mode_) {
     FlightMode old = mode_;
     mode_ = want;
@@ -838,6 +861,8 @@ void Commander::control(float dt, uint32_t now) {
       float tgtAlt = pilotNav ? surfaceTarget(navOut_.tgtAlt, navOut_.climbFF, dt) : navOut_.tgtAlt;
       if (!pilotNav) aglHold_ = false;
       throttle = alt_.update(tgtAlt, navOut_.climbFF, navOut_.maxUp, navOut_.maxDown, e, accUp, cosTilt, dt);
+      // ALTHOLD after this (GPS lost, pilot switch) holds the height the craft is at, not an old target
+      altTarget_ = navOut_.landing ? e.alt : tgtAlt;
       descending = navOut_.landing || navOut_.climbFF < 0;
       if (!navOut_.landing) learnHover(throttle, cosTilt, navOut_.climbFF, dt);
       bool yawFree = navOut_.yawStickFree && fabsf(ys) > 0.02f;
@@ -846,12 +871,20 @@ void Commander::control(float dt, uint32_t now) {
       if (!yawFree) rate[2] = constrainf(c.nav_yaw_p * wrapPi(yawHold_ - yawNav_) * RAD2DEG, -90.0f, 90.0f);
       break;
     }
-    case FlightMode::FAILSAFE:  // no altitude sensor: level and descend on a fixed throttle
+    case FlightMode::FAILSAFE: {  // no altitude sensor: level and descend
       AttitudeControl::level(c, 0, 0, rollDeg, pitchDeg, rate);
       rate[2] = 0;
-      throttle = c.fs_throttle;
+      // descent began less than 30 s after the height was lost: about 1 m/s down on the inertial vertical speed (accelerometer
+      // only, good for a while), at most 5 % over the learned hover throttle. Later the
+      // inertial speed has no anchor: a fixed 90 % of hover. Nothing learned: the fixed fs_throttle.
+      float h = alt_.hoverEstimate(), ct = constrainf(cosTilt, 0.6f, 1.0f);
+      bool learned = airborne_ && h > 0.12f && h < 0.8f;
+      fsInertial_ = learned && fsModeMs_ - altValidMs_ < 30000 && fabsf(e.vz) < 10.0f;
+      if (fsInertial_) throttle = constrainf(h - 0.15f * (e.vz + 1.0f), h * 0.75f, h * 1.05f) / ct;
+      else throttle = learned ? h * 0.9f / ct : c.fs_throttle;
       descending = true;
       break;
+    }
     default:
       break;
   }
@@ -862,6 +895,10 @@ void Commander::control(float dt, uint32_t now) {
   bool landed = land_.update(armed_, throttle, alt_.hoverEstimate(), e.vz, e, descending, now);
   if (landed && airborne_) {
     if (isNavMode(mode_) && navOut_.landing) { disarm("landed"); }
+    else if (mode_ == FlightMode::FAILSAFE && fsInertial_) {  // low throttle, no vertical motion: on the ground
+      if (!landedLowThrSinceMs_) landedLowThrSinceMs_ = now;
+      if (now - landedLowThrSinceMs_ > 2000) disarm("landed");
+    }
     else if (isAltMode(mode_) && thrStick(rc_.ch[RC_THROTTLE]) < 0.1f) {
       if (!landedLowThrSinceMs_) landedLowThrSinceMs_ = now;
       if (now - landedLowThrSinceMs_ > 3000) disarm("landed");

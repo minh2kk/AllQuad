@@ -47,7 +47,9 @@ class NavEstimator {
   uint16_t baroResets() const { return baroResets_; }
   bool rangeHeightActive() const { return rangeUsed_; }
  private:
-  float baroOffset_ = 0, baroVh2_ = 0;
+  float baroOffset_ = 0, baroVh2_ = 0, gpsHOff_ = 0;
+  bool gpsHInit_ = false;
+  uint32_t lastGpsHMs_ = 0;
   bool baroGround_ = false;
   uint32_t lastGpsMs_ = 0, lastFlowMs_ = 0, lastRangeMs_ = 0, lastBaroMs_ = 0;
   uint32_t baroRejSince_ = 0;   // baro rejected by the gate since (0 = accepted)

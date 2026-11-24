@@ -87,6 +87,9 @@ class Commander {
   uint32_t armTimeMs_ = 0;
   uint32_t blockers_ = 0;
   fc::FlightMode mode_ = fc::FlightMode::ACRO, prevMode_ = fc::FlightMode::ACRO;
+  fc::FlightMode downAsked_ = fc::FlightMode::COUNT, downGot_ = fc::FlightMode::COUNT;  // validate() fallback shown
+  bool magHealthy_ = false, fsInertial_ = false;
+  uint32_t altValidMs_ = 0, fsModeMs_ = 0;  // height last valid; FAILSAFE mode since
   fc::FlightMode gcsMode_ = fc::FlightMode::COUNT;  // COUNT = no GCS override
   uint32_t switchState_ = 0, gcsSwitchState_ = 0;
   uint32_t boxes_ = 0;  // active mode boxes (ModeBox bits)

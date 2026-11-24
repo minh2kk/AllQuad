@@ -18,8 +18,10 @@ class BatteryMonitor {
  private:
   const Config* cfg_ = nullptr;
   BatteryState st_{};
+  static void lowFor(bool low, uint32_t& since, uint32_t holdMs, uint32_t nowMs, bool& flag);
   Pt1 vLpf_, aLpf_;
   bool init_ = false;
+  uint32_t warnMs_ = 0, critMs_ = 0;
 };
 
 // ArduPilot-style landing detector: low throttle demand + no vertical motion for 1 s

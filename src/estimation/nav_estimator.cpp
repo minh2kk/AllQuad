@@ -33,6 +33,8 @@ void NavEstimator::predict(const Vec3& accEarth, float dt, bool horizTrusted) {
 
 void NavEstimator::fuseBaro(const BaroSample& b) {
   if (!b.healthy) return;
+  // first baro sample after a GPS-only start (late chip): join the GPS height without a jump
+  if (zInit_ && !lastBaroMs_) baroOffset_ = b.altM - kz_.pos();
   float alt = b.altM - baroOffset_;
   if (!zInit_) {
     kz_.init(alt, 0, 1.0f, 0.5f, 0.1f);
@@ -96,9 +98,30 @@ void NavEstimator::fuseGps(const GpsData& g, uint32_t nowMs) {
     }
     st_.homeLat = g.lat;
     st_.homeLon = g.lon;
+    if (st_.homeSet) gpsHOff_ += g.altMsl - st_.homeAltMsl;  // same GPS height in the height frame
     st_.homeAltMsl = g.altMsl;
     st_.homeSet = true;
     rehomePending_ = false;
+  }
+  // GPS height: learns its offset to the baro height while the baro works (slowly: GPS height wanders),
+  // carries the height when the baro is gone (no jump, the offset is already there)
+  if (!zInit_ && !lastBaroMs_ && st_.homeSet && nowMs > 5000) {  // no barometer at all: GPS height only
+    kz_.init(g.altMsl - st_.homeAltMsl, 0, 4.0f, 0.5f, 0.1f);
+    zInit_ = true;
+    gpsHInit_ = true;
+    gpsHOff_ = 0;
+  }
+  if (zInit_) {
+    float gh = g.altMsl - st_.homeAltMsl;
+    bool baroFresh = lastBaroMs_ && nowMs - lastBaroMs_ < 1000;
+    if (baroFresh) {
+      if (!gpsHInit_) { gpsHOff_ = kz_.pos() - gh; gpsHInit_ = true; }
+      else gpsHOff_ += 0.01f * (kz_.pos() - gh - gpsHOff_);
+    } else if (gpsHInit_) {
+      float r = g.vAcc > 1.5f ? g.vAcc : 1.5f;
+      kz_.update(0, gh + gpsHOff_, r * r);
+      lastGpsHMs_ = nowMs;
+    }
   }
   float n, e;
   llaToNed(g.lat, g.lon, st_.homeLat, st_.homeLon, n, e);
@@ -187,7 +210,7 @@ void NavEstimator::update(uint32_t nowMs) {
   if (lastRangeMs_ && nowMs - lastRangeMs_ > 300) { st_.aglValid = false; rangeUsed_ = false; }
   if (hInit_ && !gpsUsable_ && !flowUsable_ && (nowMs - lastGpsMs_) > 3000 && (nowMs - lastFlowMs_) > 3000) hInit_ = false;
 
-  st_.altValid = zInit_ && (nowMs - lastBaroMs_) < 1000;
+  st_.altValid = zInit_ && ((nowMs - lastBaroMs_) < 1000 || (lastGpsHMs_ && nowMs - lastGpsHMs_ < 1000));
   st_.alt = kz_.pos();
   st_.vz = kz_.vel();
   st_.gpsValid = gpsUsable_;
@@ -207,6 +230,7 @@ void NavEstimator::setHomeHere() {
     baroOffset_ += h;
     kz_.shift(-h);
     rh_.T -= h;  // the ground moves with the height frame
+    gpsHOff_ -= h;
   }
   if (gpsUsable_) rehomePending_ = true;
   else if (flowUsable_ && hInit_) {  // relative navigation: current point becomes origin

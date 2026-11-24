@@ -97,6 +97,21 @@ lao giảm từ 1.4 m xuống 0.3 m.
 Ngoài ra, ALTHOLD cất cánh từ mặt đất: khi drone chưa rời đất, đích độ cao chỉ đi trước tối đa 1 m (trước là
 2 m) để lượng leo dồn lại lúc motor đang tăng tốc không thành vọt quá sau khi rời đất.
 
+### Khi cảm biến hỏng giữa chuyến bay
+Mọi board như nhau. Mỗi lần firmware phải đổi chế độ vì thiếu cảm biến, OSD / trạm mặt đất hiện tin
+"`<chế độ>` unavailable: `<chế độ thay>`".
+
+| Sự cố | Firmware làm gì |
+|---|---|
+| Mất GPS (POSHOLD, MISSION, CRUISE, GUIDED) | về ALTHOLD giữ đúng độ cao lúc mất; GPS về thì chế độ cũ chạy lại |
+| Mất GPS khi đang RTH / SmartRTL | LAND tại chỗ (không bay mò về nhà) |
+| Baro chết, có GPS | độ cao lấy từ GPS (cả `est_type` 0 và 1), không giật; tin "Baro lost - height from GPS" |
+| Baro chết, không có GPS | ALTHOLD về ANGLE (tin "Baro lost - no height hold"). Công tắc LAND hoặc mất RC: hạ không cần độ cao (FAILSAFE). Nếu bắt đầu hạ trong vòng 30 s sau khi mất baro: khoảng 1 m/s theo gia tốc kế, ga quanh ga treo đã học, tự disarm khi chạm đất. Muộn hơn (gia tốc kế không còn đáng tin): ga cố định 90 % ga treo. Luôn disarm sau `fs_off_delay_ms` (mặc định 30 s): **đặt đủ dài cho độ cao bạn hay bay** |
+| La bàn chết | hướng từ GPS khi bay / con quay; POSHOLD, RTH vẫn chạy; tin "Compass lost" |
+| Motor yếu / cánh hỏng nhẹ (mất khoảng 30 % lực) | vẫn giữ thăng bằng, độ cao, vị trí, RTH hạ cánh được |
+| Áp pin sụt khi đẩy ga | cảnh báo chỉ tính khi thấp liên tục 2 s, mức nguy hiểm 3 s: đẩy ga ngắn không kích failsafe pin |
+| Vượt trần độ cao `fence_alt_max` | RTH bay về **dưới** trần (trần − 2 m), kể cả khi `rth_alt` cao hơn |
+
 ### Blackbox (`bb_backend`)
 | Giá trị | Board | Ghi chú |
 |---|---|---|

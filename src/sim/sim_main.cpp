@@ -72,12 +72,20 @@ struct QuadModel {
     q.normalize();
     Vec3 f = q.rotate(Vec3(0, 0, -thrust)) + Vec3(0, 0, mass * GRAVITY) - vel * drag + (onGround ? Vec3() : wind);
     accel = f * (1.0f / mass);
+    float vz0 = vel.z;
     vel += accel * dt;
     pos += vel * dt;
     onGround = pos.z >= 0;
     if (onGround) {
       pos.z = 0;
-      if (vel.z > 0) vel = Vec3();
+      // touch-down: the legs stop the descent within ~20 ms (at most 4 g), and the IMU feels that stop
+      if (vz0 > 0.05f) {
+        float stop = fminf(vz0 / dt, 4.0f * GRAVITY);
+        vel.z = fmaxf(vz0 - stop * dt, 0.0f);
+        accel.z = (vel.z - vz0) / dt;
+      } else if (vel.z > 0) {
+        vel = Vec3();  // resting on the ground
+      }
       vel.x *= 0.9f; vel.y *= 0.9f;
       if (accel.z > 0) accel = Vec3();
       w = w * 0.9f;
@@ -110,6 +118,10 @@ struct Options {
   bool baroReal = false;
   float baroDyn = 0.025f;
   float rangeMax = 8.0f;                // rangefinder range (MT-01P class: ~4 m)
+  bool baroDead = false, magDead = false;
+  float gpsAltNoise = 0.3f;              // GPS height noise (m, 1 sigma)  // the chip stops answering (mid-flight failure)
+  // battery: full voltage, drain (V/s), internal resistance (ohm: sag under load)
+  float vbatFull = 16.4f, vbatDrain = 0.01f, vbatR = 0.0f;
 };
 
 QuadModel quad;
@@ -178,6 +190,7 @@ class SimBaro : public drv::BaroDriver {
  public:
   bool init() override { return true; }
   bool update(float& pa, float& t) override {
+    if (opt.baroDead) return false;
     float alt = -quad.pos.z + gauss(0.08f) + opt.baroOffset;
     if (opt.baroReal) {
       static float wash = 0, drift = 0;
@@ -200,6 +213,7 @@ class SimMag : public drv::MagDriver {
  public:
   bool init() override { return true; }
   bool read(Vec3& f) override {
+    if (opt.magDead) return false;
     Vec3 m = magEarth;
     if (opt.magRot != 0) {  // interference: the measured field points elsewhere
       float c = cosf(opt.magRot), s = sinf(opt.magRot);
@@ -260,7 +274,7 @@ void simIoTask(void*) {
     NavEstimator::nedToLla(quad.pos.x + opt.gpsOffset.x + gauss(0.3f), quad.pos.y + opt.gpsOffset.y + gauss(0.3f), LAT0,
                            LON0, lat, lon);
     g.lat = lat; g.lon = lon;
-    g.altMsl = 10.0f - quad.pos.z;
+    { static std::mt19937 rg(7); std::normal_distribution<float> nd(0.0f, 1.0f); g.altMsl = 10.0f - quad.pos.z + opt.gpsAltNoise * nd(rg); }
     g.velN = quad.vel.x + gauss(0.1f); g.velE = quad.vel.y + gauss(0.1f); g.velD = quad.vel.z;
     g.groundSpeed = sqrtf(g.velN * g.velN + g.velE * g.velE);
     g.timeMs = now;
@@ -285,10 +299,12 @@ void simIoTask(void*) {
     bus::esc.publish(e);
   }
   hal::host::currentPin = opt.adc ? fmaxf(simCurrent(), 0.2f) / 10.0f : -1.0f;
-  hal::host::vbatPin = opt.adc ? (16.4f - 0.01f * now / 1000.0f) / 11.0f : 0.0f;
+  float amps = fmaxf(simCurrent(), 0.2f);
+  hal::host::vbatPin = opt.adc ? (opt.vbatFull - opt.vbatDrain * now / 1000.0f - amps * opt.vbatR) / 11.0f : 0.0f;
 }
 
 // ------------------------------------------------------------------ harness
+std::string simMsgs;  // every message posted during the run, '|' separated
 struct Result { const char* name; bool ok; char detail[100]; };
 Result results[64];
 int nResults = 0;
@@ -337,17 +353,20 @@ void run(float seconds, const std::function<void(float)>& script, const std::fun
     script(t);
     os::hostRunUntil((uint64_t)((t + dt) * 1e6));
     static uint32_t msgSeen = 0;
-    if (getenv("SIM_MSG") && bus::messageSeq() != msgSeen) {  // debug: every OSD / GCS message
+    if (bus::messageSeq() != msgSeen) {  // every OSD / GCS message (SIM_MSG prints them)
       msgSeen = bus::messageSeq();
       char m[64];
       bus::readMessage(m, sizeof(m));
-      printf("  [%6.2f] %s\n", t, m);
+      simMsgs += m;
+      simMsgs += '|';
+      if (getenv("SIM_MSG")) printf("  [%6.2f] %s\n", t, m);
     }
     eval(t);
   }
 }
 
 float distHome() { return hypotf(quad.pos.x, quad.pos.y); }
+bool sawMsg(const char* part) { return simMsgs.find(part) != std::string::npos; }
 float alt() { return -quad.pos.z; }
 VehicleStatus status() { return bus::status.get(); }
 void trace(float t) {
@@ -1844,6 +1863,13 @@ void scenarioSoak() {
     float baroAt = srnd(4) == 0 ? sfrand(15, 60) : -1;
     float noiseAt = srnd(5) == 0 ? sfrand(15, 60) : -1;
     float vibAt = srnd(4) == 0 ? sfrand(15, 60) : -1;
+    // failures that stay: GPS gone for a while, compass / baro dead, a weak motor (damaged prop)
+    float gpsLostAt = opt.gps && srnd(5) == 0 ? sfrand(15, 60) : -1, gpsLostLen = sfrand(3, 25);
+    float magDeadAt = opt.mag && srnd(6) == 0 ? sfrand(15, 60) : -1;
+    float baroDeadAt = srnd(8) == 0 ? sfrand(15, 60) : -1;
+    float weakAt = srnd(6) == 0 ? sfrand(15, 60) : -1;
+    int weakMotor = srnd(4);
+    bool hasGps = opt.gps;
     const float flyEnd = 75, total = 170;
     float nextSeg = 0, lostSince = -1, disarmedSince = -1, landedAt = -1;
     bool armedOnce = false, failed = false, crashed = false;
@@ -1857,6 +1883,10 @@ void scenarioSoak() {
       opt.baroOffset = (baroAt >= 0 && t >= baroAt && t < baroAt + 4 && t < flyEnd) ? 8.0f : 0.0f;
       opt.imuNoise = (noiseAt >= 0 && t >= noiseAt && t < noiseAt + 2 && t < flyEnd) ? 0.05f : 0.0f;
       opt.accVib = (vibAt >= 0 && t >= vibAt && t < vibAt + 5 && t < flyEnd) ? 6.0f : 0.0f;
+      opt.gps = hasGps && !(gpsLostAt >= 0 && t >= gpsLostAt && t < gpsLostAt + gpsLostLen);
+      opt.magDead = magDeadAt >= 0 && t >= magDeadAt;
+      opt.baroDead = baroDeadAt >= 0 && t >= baroDeadAt;
+      quad.eff[weakMotor] = weakAt >= 0 && t >= weakAt ? 0.75f : 1.0f;
       if (t < 2) return;
       if (t < 2.1f) { rcIn.ch[4] = 2000; rcIn.ch[5] = 1500; return; }  // arm, ANGLE
       if (t < 6) { rcIn.ch[RC_THROTTLE] = (uint16_t)(1000 + 600 * fminf(1.0f, (t - 2.1f) / 2.0f)); return; }
@@ -1925,11 +1955,478 @@ void scenarioSoak() {
     if (!failed && landedAt < 0) fail("not landed + disarmed after LAND", total);
     if (landedAt > 0) worstLand = fmaxf(worstLand, landedAt - flyEnd);
     crashes += crashed;
-    if (failed) { bad++; printf("  flight %3d FAIL: %s (gps %d mag %d range %d flow %d vib %d loop %u est %u)\n", fl, why, opt.gps, opt.mag, opt.range, opt.flow, opt.vibration, loopHz, est); }
+    if (failed) {
+      bad++;
+      printf("  flight %3d FAIL: %s (gps %d mag %d range %d flow %d vib %d loop %u est %u; gps lost %.0f mag dead %.0f baro dead %.0f weak motor %.0f)\n",
+             fl, why, hasGps, opt.mag, opt.range, opt.flow, opt.vibration, loopHz, est, gpsLostAt, magDeadAt, baroDeadAt, weakAt);
+    }
     else printf("  flight %3d ok: landed %.1f s after LAND%s\n", fl, landedAt - flyEnd, crashed ? " (disarmed in the air once)" : "");
   }
   if (soakOnly < 0) printf("  %d flights, %d with radio loss, %d with GPS glitch, %d disarmed in the air, slowest landing %.1f s\n", soakFlights, rcLosses, glitches, crashes, worstLand);
   check("Soak: every random flight safe and landed", bad == 0, "%.0f failed", (double)bad);
+}
+
+// ================================================================== failures in flight, failsafe options
+// common take-off: arm at 3 s, climb, ALTHOLD from 6 s, stick up until `target` m, POSHOLD when `pos`
+struct Takeoff {
+  float target;
+  bool pos = true, reached = false;
+  void step(float t) {
+    if (t >= 3.0f) rcIn.ch[4] = 2000;
+    if (t >= 3.5f && t < 6.0f) rcIn.ch[RC_THROTTLE] = 1600;
+    if (t >= 6.0f) {
+      rcIn.ch[5] = 2000;
+      if (pos) rcIn.ch[6] = 1500;
+      if (alt() >= target) reached = true;
+      rcIn.ch[RC_THROTTLE] = reached ? 1500 : 1750;
+    }
+  }
+};
+// touch-down: fastest descent within 0.3 m of the ground while armed (m/s)
+struct Touchdown {
+  float vz = 0, tilt = 0;
+  void eval() {
+    if (alt() < 0.3f && status().armed) vz = fmaxf(vz, quad.vel.z);
+    if (alt() > 0.5f) tilt = fmaxf(tilt, acosf(constrainf(quad.q.cosTilt(), -1, 1)) * RAD2DEG);
+  }
+};
+
+void scenarioGpsLoss() {
+  printf("\n== gpsloss: POSHOLD, GPS gone 10 s (ALTHOLD), back (POSHOLD); fly out, RC loss -> RTH, GPS gone -> LAND ==\n");
+  setup([](Config& c) { c.rth_alt = 15; });
+  Takeoff to{10};
+  float holdAlt = 0, altDev = 0, lostN = 0, lostE = 0, landT = -1, disarmT = -1;
+  bool altholdOnLoss = false, posholdBack = false, rth = false, landOnLoss = false;
+  Touchdown td;
+  run(110, [&](float t) {
+    to.step(t);
+    opt.gps = !((t >= 20 && t < 30) || t >= 52);
+    rcIn.ch[RC_PITCH] = (t >= 36 && t < 42) ? 1900 : 1500;  // fly ~30 m out
+    if (t >= 46) rcAlive = false;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    td.eval();
+    if (fabsf(t - 19.0f) < 0.0005f) holdAlt = alt();
+    if (t > 23 && t < 30 && s.mode == FlightMode::ALTHOLD) altholdOnLoss = true;
+    if (t > 20 && t < 30) altDev = fmaxf(altDev, fabsf(alt() - holdAlt));
+    if (t > 33 && t < 36 && s.mode == FlightMode::POSHOLD) posholdBack = true;
+    if (t > 47 && t < 52 && s.mode == FlightMode::RTH) rth = true;
+    if (fabsf(t - 52.0f) < 0.0005f) { lostN = quad.pos.x; lostE = quad.pos.y; }
+    if (t > 52 && s.mode == FlightMode::LAND && landT < 0) { landT = t; landOnLoss = true; }
+    if (t > 52 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("GPS lost in POSHOLD -> ALTHOLD", altholdOnLoss, "%.0f", altholdOnLoss);
+  check("Height held without GPS", altDev < 1.0f, "max %.2f m", altDev);
+  check("GPS back -> POSHOLD again", posholdBack, "%.0f", posholdBack);
+  check("RC loss -> RTH", rth, "%.0f", rth);
+  check("GPS lost during RTH -> LAND", landOnLoss && landT - 52 < 3, "after %.1f s", landT - 52);
+  check("Landed near where GPS was lost", disarmT > 0 && hypotf(quad.pos.x - lostN, quad.pos.y - lostE) < 12,
+        "%.1f m away", hypotf(quad.pos.x - lostN, quad.pos.y - lostE));
+  check("Soft touch-down", td.vz < 1.5f, "%.2f m/s", td.vz);
+}
+
+void scenarioGpsLossMission() {
+  printf("\n== gpsloss_mission: GPS gone mid-mission -> holds height (ALTHOLD), pilot LAND switch ==\n");
+  setup([](Config& c) { c.rth_alt = 10; });
+  int idx = 0;
+  nav::MissionItem it{};
+  it.cmd = nav::CMD_TAKEOFF; it.frame = 3; it.alt = 10;
+  nav::set(idx++, it);
+  double lat, lon;
+  NavEstimator::nedToLla(80, 0, LAT0, LON0, lat, lon);
+  it = nav::MissionItem{};
+  it.cmd = nav::CMD_WAYPOINT; it.frame = 3; it.lat = (int32_t)(lat * 1e7); it.lon = (int32_t)(lon * 1e7); it.alt = 12;
+  nav::set(idx++, it);
+  it = nav::MissionItem{};
+  it.cmd = nav::CMD_RTL;
+  nav::set(idx++, it);
+  nav::setCount(idx);
+  float lossAlt = 0, altDev = 0, maxSpeedLate = 0, disarmT = -1;
+  bool alth = false;
+  Touchdown td;
+  run(90, [&](float t) {
+    if (t >= 2.5f) rcIn.ch[7] = 1500;  // MISSION
+    if (t >= 3.0f) rcIn.ch[4] = 2000;
+    rcIn.ch[5] = 2000;                 // ALTHOLD on the mode switch underneath
+    rcIn.ch[RC_THROTTLE] = t >= 4.0f ? 1500 : 1000;
+    opt.gps = t < 20;
+    if (t >= 40) rcIn.ch[7] = 2000;    // pilot: LAND
+  }, [&](float t) {
+    VehicleStatus s = status();
+    td.eval();
+    if (fabsf(t - 20.0f) < 0.0005f) lossAlt = alt();
+    if (t > 20 && t < 40) altDev = fmaxf(altDev, fabsf(alt() - lossAlt));
+    if (t > 24 && t < 40 && s.mode == FlightMode::ALTHOLD) alth = true;
+    if (t > 30 && t < 40) maxSpeedLate = fmaxf(maxSpeedLate, hypotf(quad.vel.x, quad.vel.y));
+    if (t > 40 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("On the mission when GPS went", lossAlt > 5 && distHome() > 0, "alt %.1f m", lossAlt);
+  check("GPS lost in MISSION -> ALTHOLD", alth, "%.0f", alth);
+  check("Height held", altDev < 2.0f, "max %.2f m", altDev);
+  check("Stops flying away (drag slows it)", maxSpeedLate < 3.0f, "max %.1f m/s", maxSpeedLate);
+  check("LAND without GPS: down and disarmed", disarmT > 0 && disarmT < 75, "at %.1f s", disarmT);
+  check("Soft touch-down", td.vz < 1.5f, "%.2f m/s", td.vz);
+}
+
+void scenarioWeakMotor() {
+  printf("\n== weakmotor: motor 2 loses 30 %% thrust in POSHOLD (damaged prop) -> holds, RTH lands ==\n");
+  setup([](Config& c) { c.rth_alt = 12; });
+  Takeoff to{10};
+  float holdAlt = 0, altDev = 0, tiltLate = 0, drift = 0, hn = 0, he = 0, disarmT = -1;
+  Touchdown td;
+  run(80, [&](float t) {
+    to.step(t);
+    quad.eff[1] = t >= 15 ? 0.7f : 1.0f;
+    if (t >= 30) rcAlive = false;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    td.eval();
+    if (fabsf(t - 14.0f) < 0.0005f) { holdAlt = alt(); hn = quad.pos.x; he = quad.pos.y; }
+    if (t > 15 && t < 30) altDev = fmaxf(altDev, fabsf(alt() - holdAlt));
+    if (t > 15 && t < 30) drift = fmaxf(drift, hypotf(quad.pos.x - hn, quad.pos.y - he));
+    if (t > 18 && t < 30) tiltLate = fmaxf(tiltLate, acosf(constrainf(quad.q.cosTilt(), -1, 1)) * RAD2DEG);
+    if (t > 30 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("Height held with a weak motor", altDev < 1.5f, "max %.2f m", altDev);
+  check("Level again after 3 s", tiltLate < 8.0f, "max tilt %.1f deg", tiltLate);
+  check("Position held", drift < 3.0f, "max %.2f m", drift);
+  check("RTH home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+  check("Soft touch-down", td.vz < 1.5f, "%.2f m/s", td.vz);
+}
+
+static void baroDead(bool gps) {
+  printf("\n== baro_dead%s: the barometer stops answering at 20 s in %s ==\n", gps ? "" : "_nogps",
+         gps ? "POSHOLD -> height from GPS, RTH lands" : "ALTHOLD without GPS -> ANGLE, RC loss -> FAILSAFE descent");
+  opt.gps = gps;
+  setup([](Config& c) { c.rth_alt = 12; c.fs_off_delay_ms = 30000; });
+  Takeoff to{10};
+  to.pos = gps;
+  float holdAlt = 0, altDev = 0, disarmT = -1;
+  bool angle = false, fsMode = false;
+  Touchdown td;
+  run(gps ? 90.0f : 80.0f, [&](float t) {
+    to.step(t);
+    opt.baroDead = t >= 20;
+    if (t >= 40) rcAlive = false;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    td.eval();
+    if (fabsf(t - 19.0f) < 0.0005f) holdAlt = alt();
+    if (t > 20 && t < 40) altDev = fmaxf(altDev, fabsf(alt() - holdAlt));
+    if (t > 22 && t < 40 && s.mode == FlightMode::ANGLE) angle = true;
+    if (t > 41 && s.mode == FlightMode::FAILSAFE) fsMode = true;
+    if (t > 40 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) { trace(t); if (getenv("SIM_TR")) printf("      est alt %.2f vz %.2f valid %d\n", bus::nav.get().alt, bus::nav.get().vz, bus::nav.get().altValid); }
+  });
+  opt.baroDead = false;
+  check("Pilot told: baro lost", sawMsg("Baro lost"), "%.0f", sawMsg("Baro lost"));
+  if (gps) {
+    check("Height held on GPS", altDev < 2.5f, "max %.2f m", altDev);
+    check("RTH home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+  } else {
+    check("No height: ALTHOLD falls back to ANGLE", angle, "%.0f", angle);
+    check("RC loss without height -> FAILSAFE descent", fsMode, "%.0f", fsMode);
+    check("Down and disarmed", disarmT > 0 && alt() < 0.3f, "at %.1f s", disarmT);
+  }
+  check("Touch-down not a crash", td.vz < (gps ? 1.5f : 3.0f), "%.2f m/s", td.vz);
+}
+void scenarioBaroDead() { baroDead(true); }
+void scenarioBaroDeadNoGps() { baroDead(false); }
+
+void scenarioMagDead() {
+  printf("\n== mag_dead: compass stops answering at 20 s in POSHOLD, fly out 30 m, RC loss -> RTH ==\n");
+  setup([](Config& c) { c.rth_alt = 12; });
+  Takeoff to{10};
+  float drift = 0, hn = 0, he = 0, maxD = 0, disarmT = -1;
+  run(110, [&](float t) {
+    to.step(t);
+    opt.magDead = t >= 20;
+    rcIn.ch[RC_PITCH] = (t >= 30 && t < 36) ? 1900 : 1500;
+    if (t >= 45) rcAlive = false;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (fabsf(t - 20.0f) < 0.0005f) { hn = quad.pos.x; he = quad.pos.y; }
+    if (t > 20 && t < 30) drift = fmaxf(drift, hypotf(quad.pos.x - hn, quad.pos.y - he));
+    maxD = fmaxf(maxD, distHome());
+    if (t > 45 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  opt.magDead = false;
+  check("POSHOLD kept without the compass", drift < 3.0f, "max %.2f m", drift);
+  check("Flew out", maxD > 20, "%.1f m", maxD);
+  check("RTH home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+}
+
+void scenarioVbat() {
+  printf("\n== vbat: punches sag the voltage below critical for a moment (no failsafe), then the pack runs low -> RTH ==\n");
+  opt.vbatFull = 15.6f;
+  opt.vbatDrain = 0.0f;
+  opt.vbatR = 0.06f;
+  opt.currentA = 20.0f;
+  setup([](Config& c) { c.cell_count = 4; c.bat_fs_action = 2; c.rth_alt = 10; c.bat_capacity = 0; });
+  Takeoff to{8};
+  to.pos = false;
+  float fsT = -1, disarmT = -1, minCell = 9;
+  run(140, [&](float t) {
+    to.step(t);
+    // three 1 s full-throttle punches in ANGLE (ALTHOLD off), back to ALTHOLD after
+    bool punch = (t >= 15 && t < 16) || (t >= 22 && t < 23) || (t >= 29 && t < 30);
+    if (t >= 14 && t < 31) { rcIn.ch[5] = punch ? 1500 : 2000; if (punch) rcIn.ch[RC_THROTTLE] = 2000; }
+    if (t >= 31) rcIn.ch[6] = 1500;  // POSHOLD
+    rcIn.ch[RC_PITCH] = (t >= 34 && t < 39) ? 1900 : 1500;
+    opt.vbatDrain = t >= 40 ? 0.08f : 0.0f;
+    if (t >= 40) opt.vbatFull = 15.6f + 0.08f * 40.0f;  // the drain starts from 15.6 V at 40 s
+  }, [&](float t) {
+    VehicleStatus s = status();
+    BatteryState b = bus::battery.get();
+    if (t > 14 && t < 31 && b.cells) minCell = fminf(minCell, b.cellVoltage);
+    if (s.mode == FlightMode::RTH && fsT < 0) fsT = t;
+    if (t > 40 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) { trace(t); printf("      cell %.2f V, %.1f A\n", b.cellVoltage, b.current); }
+  });
+  opt.currentA = 8.0f;
+  check("Punches sagged below critical", minCell < bus::config.vbat_crit_cell, "lowest %.2f V/cell", minCell);
+  check("No failsafe from a short sag", fsT < 0 || fsT > 40, "at %.1f s", fsT);
+  check("Low pack -> battery failsafe RTH", fsT > 40, "at %.1f s", fsT);
+  check("Home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+}
+
+void scenarioFsLand() {
+  printf("\n== fs_land: fs_action 1 (land): RC loss in POSHOLD 25 m out -> LAND in place ==\n");
+  setup([](Config& c) { c.fs_action = 1; });
+  Takeoff to{8};
+  float lossN = 0, lossE = 0, disarmT = -1;
+  bool rth = false;
+  run(70, [&](float t) {
+    to.step(t);
+    rcIn.ch[RC_PITCH] = (t >= 14 && t < 19) ? 1900 : 1500;
+    if (t >= 25) rcAlive = false;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (fabsf(t - 25.0f) < 0.0005f) { lossN = quad.pos.x; lossE = quad.pos.y; }
+    if (t > 25 && s.mode == FlightMode::RTH) rth = true;
+    if (t > 25 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("No RTH with fs_action 1", !rth, "%.0f", rth);
+  check("Landed where the link was lost", disarmT > 0 && hypotf(quad.pos.x - lossN, quad.pos.y - lossE) < 3.0f,
+        "%.2f m away", hypotf(quad.pos.x - lossN, quad.pos.y - lossE));
+  check("Far from home (did not return)", distHome() > 10, "%.1f m", distHome());
+}
+
+void scenarioFsNoGps() {
+  printf("\n== fs_nogps: no GPS, RC loss in ALTHOLD -> LAND (baro), disarmed ==\n");
+  opt.gps = false;
+  setup([](Config&) {});
+  Takeoff to{8};
+  to.pos = false;
+  float disarmT = -1;
+  bool land = false;
+  Touchdown td;
+  run(60, [&](float t) {
+    to.step(t);
+    if (t >= 15) rcAlive = false;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    td.eval();
+    if (t > 15 && s.mode == FlightMode::LAND) land = true;
+    if (t > 15 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("RC loss without GPS -> LAND", land, "%.0f", land);
+  check("Down and disarmed", disarmT > 0 && disarmT < 45, "at %.1f s", disarmT);
+  check("Soft touch-down", td.vz < 1.5f, "%.2f m/s", td.vz);
+}
+
+void scenarioFsMission() {
+  printf("\n== fs_mission: RC loss during a mission -> RTH home ==\n");
+  setup([](Config& c) { c.rth_alt = 10; });
+  int idx = 0;
+  nav::MissionItem it{};
+  it.cmd = nav::CMD_TAKEOFF; it.frame = 3; it.alt = 10;
+  nav::set(idx++, it);
+  double lat, lon;
+  NavEstimator::nedToLla(60, 40, LAT0, LON0, lat, lon);
+  it = nav::MissionItem{};
+  it.cmd = nav::CMD_WAYPOINT; it.frame = 3; it.lat = (int32_t)(lat * 1e7); it.lon = (int32_t)(lon * 1e7); it.alt = 10;
+  nav::set(idx++, it);
+  nav::setCount(idx);
+  float disarmT = -1, maxD = 0;
+  bool rth = false;
+  run(100, [&](float t) {
+    if (t >= 2.5f) rcIn.ch[7] = 1500;
+    if (t >= 3.0f) rcIn.ch[4] = 2000;
+    if (t >= 18) rcAlive = false;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    maxD = fmaxf(maxD, distHome());
+    if (t > 18 && s.mode == FlightMode::RTH) rth = true;
+    if (t > 18 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("Mission under way at the RC loss", maxD > 15, "%.1f m out", maxD);
+  check("RC loss in MISSION -> RTH", rth, "%.0f", rth);
+  check("Home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+}
+
+void scenarioFsRegain() {
+  printf("\n== fs_regain: RC loss -> RTH; link back, pilot moves the mode switch -> POSHOLD, then lands by switch ==\n");
+  setup([](Config& c) { c.rth_alt = 15; });
+  Takeoff to{8};
+  float tookOver = -1, disarmT = -1, dAtRegain = 0, dLater = 0;
+  bool rth = false;
+  run(90, [&](float t) {
+    to.step(t);
+    rcIn.ch[RC_PITCH] = (t >= 12 && t < 18) ? 1900 : 1500;
+    rcAlive = !(t >= 22 && t < 30);
+    if (t >= 31) rcIn.ch[5] = 1500;  // ALTHOLD -> ANGLE position of AUX2: a switch moved
+    if (t >= 31.5f) rcIn.ch[5] = 2000;
+    if (t >= 45) rcIn.ch[7] = 2000;  // LAND
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (t > 23 && t < 30 && s.mode == FlightMode::RTH) rth = true;
+    if (t > 31 && tookOver < 0 && s.mode == FlightMode::POSHOLD) { tookOver = t; dAtRegain = distHome(); }
+    if (fabsf(t - 40.0f) < 0.0005f) dLater = distHome();
+    if (t > 45 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("RC loss -> RTH", rth, "%.0f", rth);
+  check("Link back + switch moved -> pilot has it (POSHOLD)", tookOver > 31 && tookOver < 33, "at %.1f s", tookOver);
+  check("POSHOLD stops the return", fabsf(dLater - dAtRegain) < 3.0f, "moved %.1f m", fabsf(dLater - dAtRegain));
+  check("LAND switch: down and disarmed", disarmT > 0, "at %.1f s", disarmT);
+}
+
+void scenarioFenceAlt() {
+  printf("\n== fence_alt: ceiling 15 m, rth_alt 30 m: climbing through it -> RTH stays under the ceiling ==\n");
+  setup([](Config& c) { c.fence_enable = 1; c.fence_alt_max = 15; c.fence_radius = 300; c.rth_alt = 30; });
+  Takeoff to{8};
+  float maxAlt = 0, disarmT = -1;
+  bool breach = false;
+  run(100, [&](float t) {
+    to.step(t);
+    rcIn.ch[RC_PITCH] = (t >= 12 && t < 17) ? 1900 : 1500;
+    if (t >= 20) rcIn.ch[RC_THROTTLE] = 1900;  // pilot keeps climbing
+  }, [&](float t) {
+    VehicleStatus s = status();
+    maxAlt = fmaxf(maxAlt, alt());
+    if (s.mode == FlightMode::RTH) breach = true;
+    if (t > 20 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("Ceiling breach -> RTH", breach, "%.0f", breach);
+  check("Stayed near the ceiling (RTH does not climb to rth_alt)", maxAlt < 18.0f, "max %.1f m", maxAlt);
+  check("Home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.2f m", distHome());
+}
+
+void scenarioRthOpts() {
+  printf("\n== rth_opts: rth_climb_first 0 (climbs on the way), rth_land 0 (hovers at home), pilot lands ==\n");
+  setup([](Config& c) { c.rth_climb_first = 0; c.rth_land = 0; c.rth_alt = 20; });
+  Takeoff to{5};
+  float altAtHalf = -1, startD = 0, disarmT = -1, hoverSince = -1, hoverAlt = 0;
+  run(120, [&](float t) {
+    to.step(t);
+    rcIn.ch[RC_PITCH] = (t >= 10 && t < 17) ? 1900 : 1500;
+    if (t >= 22) rcIn.ch[6] = 2000;  // RTH switch
+    if (t >= 90) { rcIn.ch[6] = 1500; rcIn.ch[7] = 2000; }  // pilot: LAND
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (fabsf(t - 22.0f) < 0.0005f) startD = distHome();
+    if (t > 22 && altAtHalf < 0 && distHome() < startD * 0.5f) altAtHalf = alt();
+    if (t > 22 && t < 90 && distHome() < 3 && hoverSince < 0) hoverSince = t;
+    if (fabsf(t - 89.0f) < 0.0005f) hoverAlt = alt();
+    if (t > 90 && !s.armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("Flew out", startD > 20, "%.1f m", startD);
+  check("Returning while still climbing (half way below rth_alt)", altAtHalf > 5.5f && altAtHalf < 18.0f, "alt %.1f m", altAtHalf);
+  check("rth_land 0: still hovering at home at 89 s", hoverSince > 0 && hoverAlt > 15.0f, "alt %.1f m", hoverAlt);
+  check("Pilot LAND: down and disarmed", disarmT > 0, "at %.1f s", disarmT);
+}
+
+void scenarioArmChecks() {
+  printf("\n== armchecks: arming refused with the switch on at boot, throttle up, tilted, required GPS missing ==\n");
+  opt.gps = false;
+  setup([](Config& c) { c.arm_require_gps = 1; });
+  bool armedBad = false, armedOk = false;
+  uint32_t seen = 0;
+  float tiltDeg = 0;
+  run(40, [&](float t) {
+    // 0-4 s: arm switch already on at boot
+    rcIn.ch[4] = t < 4 ? 2000 : 1000;
+    if (t >= 6 && t < 8) { rcIn.ch[RC_THROTTLE] = 1500; if (t >= 7) rcIn.ch[4] = 2000; }  // throttle up
+    if (t >= 8 && t < 9) { rcIn.ch[RC_THROTTLE] = 1000; rcIn.ch[4] = 1000; }
+    if (t >= 9 && t < 14) {  // tipped over to 45 deg on the ground (over 1 s: the gyro sees it)
+      float k = fminf(t - 9.0f, 1.0f);
+      quad.q = Quat::fromEuler(45 * DEG2RAD * k, 0, 30 * DEG2RAD);
+      quad.w = Vec3(t < 10 ? 45 * DEG2RAD : 0, 0, 0);
+      if (t >= 12) rcIn.ch[4] = 2000;
+    }
+    if (t >= 14 && t < 15) {  // back on its feet
+      quad.q = Quat::fromEuler(45 * DEG2RAD * (15.0f - t), 0, 30 * DEG2RAD);
+      quad.w = Vec3(-45 * DEG2RAD, 0, 0);
+      rcIn.ch[4] = 1000;
+    }
+    if (t >= 15 && t < 15.01f) { quad.q = Quat::fromEuler(0, 0, 30 * DEG2RAD); quad.w = Vec3(); }
+    if (t >= 15 && t < 20 && t >= 18) rcIn.ch[4] = 2000;  // level, throttle low, but no GPS
+    if (t >= 20 && t < 21) rcIn.ch[4] = 1000;
+    opt.gps = t >= 21;
+    if (t >= 35) rcIn.ch[4] = 2000;  // everything fine
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (t < 34 && s.armed) armedBad = true;
+    if (t > 35 && s.armed) armedOk = true;
+    if (fabsf(t - 3.0f) < 0.0005f) seen |= s.armBlockers & ARM_SWITCH_AT_BOOT;
+    if (fabsf(t - 7.5f) < 0.0005f) seen |= s.armBlockers & ARM_THROTTLE;
+    if (fabsf(t - 13.0f) < 0.0005f) { seen |= s.armBlockers & ARM_ANGLE; tiltDeg = bus::attitude.get().roll * RAD2DEG; printf("  AHRS roll %.1f blockers 0x%x\n", tiltDeg, s.armBlockers); }
+    if (fabsf(t - 19.0f) < 0.0005f) seen |= s.armBlockers & ARM_GPS;
+  });
+  (void)tiltDeg;
+  check("Switch on at boot blocks", seen & ARM_SWITCH_AT_BOOT, "%.0f", (double)(seen & ARM_SWITCH_AT_BOOT));
+  check("Throttle up blocks", seen & ARM_THROTTLE, "%.0f", (double)(seen & ARM_THROTTLE));
+  check("Tilted 45 deg blocks", seen & ARM_ANGLE, "%.0f", (double)(seen & ARM_ANGLE));
+  check("arm_require_gps without a fix blocks", seen & ARM_GPS, "%.0f", (double)(seen & ARM_GPS));
+  check("Never armed while blocked", !armedBad, "%.0f", armedBad);
+  check("Arms once everything is fine", armedOk, "%.0f", armedOk);
+}
+
+void scenarioHorizonAirmode() {
+  printf("\n== horizon_airmode: HORIZON self-levels on small sticks, flips on full stick; airmode keeps control at zero throttle ==\n");
+  setup([](Config& c) {
+    c.airmode = 1;
+    // AUX2 low = HORIZON instead of ACRO
+    for (auto& r : c.mode_range)
+      if (r.box == (uint8_t)ModeBox::ANGLE) { r.box = (uint8_t)ModeBox::HORIZON; r.lo = 900; r.hi = 1300; }
+  });
+  Takeoff to{15};
+  to.pos = false;
+  float smallRoll = 0, rollMax = 0, idleRate = 0, minAlt = 99;
+  bool horizon = false;
+  run(40, [&](float t) {
+    to.step(t);
+    if (t >= 14 && t < 26) { rcIn.ch[5] = 1000; rcIn.ch[RC_THROTTLE] = 1560; }  // manual: a bit over hover
+    rcIn.ch[RC_ROLL] = (t >= 15 && t < 18) ? 1650 : (t >= 20 && t < 20.6f) ? 2000 : 1500;
+    // zero throttle in the air for 0.6 s with a roll stick: airmode must still roll the craft
+    // (ACRO: AUX2 mid has no mode now)
+    if (t >= 24 && t < 24.6f) { rcIn.ch[5] = 1500; rcIn.ch[RC_THROTTLE] = 1000; rcIn.ch[RC_ROLL] = (t < 24.3f) ? 1800 : 1200; }
+    if (t >= 24.6f && t < 26) rcIn.ch[RC_THROTTLE] = 1800;  // catch the fall
+    if (t >= 26) { rcIn.ch[5] = 2000; rcIn.ch[RC_THROTTLE] = 1500; }
+  }, [&](float t) {
+    VehicleStatus s = status();
+    if (t > 15 && t < 26 && s.mode == FlightMode::HORIZON) horizon = true;
+    if (t > 16.5f && t < 18) smallRoll = fmaxf(smallRoll, fabsf(quad.q.roll() * RAD2DEG));
+    if (t > 20 && t < 22) rollMax = fmaxf(rollMax, fabsf(quad.q.roll() * RAD2DEG));
+    if (t > 24.05f && t < 24.3f) idleRate = fmaxf(idleRate, quad.w.x * RAD2DEG);
+    if (t > 22) minAlt = fminf(minAlt, alt());
+    if (fmodf(t, getenv("SIM_TR") && t > 19 ? 0.5f : 5.0f) < 0.0005f) trace(t);
+  });
+  check("HORIZON selected", horizon, "%.0f", horizon);
+  check("Small stick: levelled angle, no rolling over", smallRoll > 5 && smallRoll < 40, "max %.1f deg", smallRoll);
+  check("Full stick: rolls through (rate)", rollMax > 90, "max %.1f deg", rollMax);
+  check("Airmode: roll rate at zero throttle", idleRate > 150, "%.0f deg/s", idleRate);
+  check("Did not fall out of the sky", minAlt > 3, "lowest %.1f m", minAlt);
 }
 
 void scenarioBeginner() {
@@ -2038,7 +2535,12 @@ int main(int argc, char** argv) {
       {"spin", scenarioSpin}, {"logic", scenarioLogic}, {"profiles", scenarioProfiles}, {"polyfence", scenarioPolyFence},
       {"imufail", scenarioImuFail}, {"imuvote", scenarioImuVote}, {"acc6", scenarioAcc6}, {"compassmot", scenarioCompassMot}, {"feel", scenarioFeel},
       {"ekf_faults", scenarioEkfFaults}, {"ekf_yaw", scenarioEkfYaw}, {"alt_real", scenarioAltReal}, {"alt_real_rf", scenarioAltRealRf}, {"rescue", scenarioRescue}, {"rescue_sanity", scenarioRescueSanity},
-      {"launch", scenarioLaunch}, {"vibe", scenarioVibeWarn}, {"clip", scenarioAccClip}, {"beginner", scenarioBeginner}};
+      {"launch", scenarioLaunch}, {"vibe", scenarioVibeWarn}, {"clip", scenarioAccClip}, {"beginner", scenarioBeginner},
+      {"gpsloss", scenarioGpsLoss}, {"gpsloss_mission", scenarioGpsLossMission}, {"weakmotor", scenarioWeakMotor},
+      {"baro_dead", scenarioBaroDead}, {"baro_dead_nogps", scenarioBaroDeadNoGps}, {"mag_dead", scenarioMagDead},
+      {"vbat", scenarioVbat}, {"fs_land", scenarioFsLand}, {"fs_nogps", scenarioFsNoGps}, {"fs_mission", scenarioFsMission},
+      {"fs_regain", scenarioFsRegain}, {"fence_alt", scenarioFenceAlt}, {"rth_opts", scenarioRthOpts},
+      {"armchecks", scenarioArmChecks}, {"horizon_airmode", scenarioHorizonAirmode}};
   if (!strcmp(which, "all")) {  // every scenario in a fresh process (clean firmware state)
     int failed = 0;
     for (auto& s : scenarios) {
