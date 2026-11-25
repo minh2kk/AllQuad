@@ -11,9 +11,11 @@ namespace fc {
 class BatteryMonitor {
  public:
   void configure(const Config& c, float rateHz);
-  void update(float volts, float amps, bool armed, uint32_t nowMs, float dt);
+  // load: mean motor output^1.5 (0..1), the load proxy without a current sensor
+  void update(float volts, float amps, bool armed, uint32_t nowMs, float dt, float load = 0);
   const BatteryState& state() const { return st_; }
   static uint8_t lipoPercent(float cellV);
+  static float lipoPercentF(float cellV);
 
  private:
   const Config* cfg_ = nullptr;
@@ -22,6 +24,9 @@ class BatteryMonitor {
   Pt1 vLpf_, aLpf_;
   bool init_ = false;
   uint32_t warnMs_ = 0, critMs_ = 0;
+  void learnResistance(float volts, float x, float dt);
+  float vSlow_ = 0, xSlow_ = 0, sxv_ = 0, sxx_ = 0, xLpf_ = 0, pctLpf_ = 0;
+  bool rInit_ = false, pctInit_ = false, xInit_ = false;
 };
 
 // ArduPilot-style landing detector: low throttle demand + no vertical motion for 1 s

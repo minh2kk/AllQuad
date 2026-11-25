@@ -34,10 +34,12 @@ enum EkfFault : uint16_t {
   EKF_RESET = 1 << 5,        // whole filter reset (numerical) since boot
   EKF_FLOW_REJECT = 1 << 6,
   EKF_HEAD_REJECT = 1 << 7,
+  EKF_DRAG_REJECT = 1 << 8,  // drag-model velocity rejected right now
 };
 
 struct EkfStatus {
   float trGpsPos, trGpsVel, trHeight, trYaw, trMag, trFlow;  // last test ratios (> 1 = rejected)
+  float trDrag;
   uint16_t faults;
   uint16_t posResets, velResets, filterResets;
   float posStd, velStd, hgtStd, yawStdDeg;                   // 1-sigma from the covariance
@@ -62,6 +64,8 @@ class Ekf {
   // compass consistency only (no fusion: the heading enters through fuseYaw)
   void checkMag(const Vec3& magBody, float declinationRad, bool yawObservable, uint32_t nowMs);
   void fuseFlowVel(float vn, float ve, float sigma, uint32_t nowMs);
+  // ground velocity from the drag model (dead reckoning without GPS)
+  void fuseDragVel(float vn, float ve, float sigma, uint32_t nowMs);
   void fuseZeroVel(float sigma);
 
   void shift(float dn, float de, float dUp) { p_.x += dn; p_.y += de; p_.z -= dUp; }

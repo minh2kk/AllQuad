@@ -1986,7 +1986,7 @@ const HINT = {
   sd_d1: "Chân D1 (chỉ 4-bit, 255 = mặc định)", sd_d2: "Chân D2 (chỉ 4-bit, 255 = mặc định)", sd_d3: "Chân D3 / CS (4-bit và SPI, 255 = mặc định)",
   alt_pos_p: "P độ cao → tốc độ leo", alt_vel_p: "P tốc độ leo", alt_vel_i: "I tốc độ leo", alt_vel_d: "D tốc độ leo",
   climb_rate_max: "Tốc độ leo/hạ tối đa (m/s)", hover_throttle: "Ga treo (tự học nếu bật)",
-  thr_curve: "Độ cong lực đẩy theo ga (0 thẳng, 0.5 thường gặp): giữ độ cao đều ở mọi mức ga",
+  thr_curve: "Độ cong lực đẩy theo ga: 0 thẳng, 0.5 thường gặp; giữ độ cao đều ở mọi mức ga",
   hover_learn: "Tự học ga treo: 0 tắt, 1 học, 2 học và lưu khi disarm",
   alt_surface: "Bám mặt đất bằng cảm biến khoảng cách (ALTHOLD/POSHOLD/CRUISE)",
   pos_p: "P vị trí → tốc độ", pos_vel_p: "P tốc độ ngang", pos_vel_i: "I tốc độ ngang (chống trôi)",
@@ -2029,17 +2029,19 @@ const HINT = {
   rx_protocol: "Giao thức receiver", imu_align: "Hướng lắp FC", mag_align: "Hướng lắp compass",
   mav_sysid: "MAVLink system ID", wifi_armed: "Giữ WiFi khi đang bay (tắt = bớt nhiễu, tiết kiệm CPU)",
   est_baro_noise: "Độ nhiễu baro cho bộ ước lượng", est_acc_noise: "Độ nhiễu accel cho bộ ước lượng", est_gpsvel_noise: "Độ nhiễu vận tốc GPS",
-  baro_gnd: "Bỏ qua baro tụt do hiệu ứng mặt đất (đã arm, dưới khoảng 1 m)",
-  bat_smart_rth: "Pin đủ để bay về (tính theo khoảng cách, độ cao, gió): 0 tắt, 1 chỉ cảnh báo, 2 cảnh báo và tự bay về",
-  motor_warn: "Cảnh báo motor yếu (một motor phải chạy mạnh hơn hẳn) và mất lực đẩy",
-  beacon_s: "Motor kêu bíp (DShot beacon) sau bấy nhiêu giây mất sóng khi đang disarm, để tìm drone (0 tắt)",
+  baro_gnd: "Bỏ qua baro tụt do hiệu ứng mặt đất: khi đã arm và dưới khoảng 1 m",
+  bat_smart_rth: "Pin đủ để bay về: tính theo khoảng cách, độ cao, gió; 0 tắt, 1 chỉ cảnh báo, 2 cảnh báo và tự bay về",
+  motor_warn: "Cảnh báo motor yếu: một motor phải chạy mạnh hơn hẳn, hoặc mất lực đẩy",
+  beacon_s: "Motor kêu bíp khi mất sóng: DShot beacon sau bấy nhiêu giây khi đang disarm, để tìm drone; 0 tắt",
   stick_cmds: "Lệnh bằng cần khi disarm: hiệu chuẩn, chọn profile, trim, lưu, mở menu OSD",
-  headfree_type: "HEADFREE: 0 hướng mũi lúc arm là phía trước, 1 khoá theo nhà (kéo cần về = bay về nhà)",
-  circle_radius: "CIRCLE: bán kính (m), tâm ở phía trước mũi lúc bật",
-  circle_speed: "CIRCLE: tốc độ (m/s), âm = ngược chiều kim đồng hồ",
-  follow_dist: "FOLLOW: khoảng cách giữ với người dẫn (m)",
-  follow_alt: "FOLLOW: độ cao so với nhà (m), 0 = giữ độ cao lúc bật",
-  baro_dyn: "Sửa baro theo tốc độ ngang (m trên (m/s)², 0 tắt; dương khi baro đọc thấp lúc bay nhanh)",
+  headfree_type: "HEADFREE: 0 hướng mũi lúc arm là phía trước, 1 khoá theo nhà; kéo cần về = bay về nhà",
+  circle_radius: "CIRCLE: bán kính tính bằng m, tâm ở phía trước mũi lúc bật",
+  circle_speed: "CIRCLE: tốc độ tính bằng m/s, âm = ngược chiều kim đồng hồ",
+  follow_dist: "FOLLOW: khoảng cách giữ với người dẫn, m",
+  follow_alt: "FOLLOW: độ cao so với nhà, m; 0 = giữ độ cao lúc bật",
+  dr_time_s: "Mất GPS: giữ vị trí bằng mô hình cản gió (EKF) trong bấy nhiêu giây, 0 tắt",
+  mag_learn: "Tự học độ lệch la bàn khi bay: cần GPS và vài vòng quay, lưu khi hạ cánh",
+  baro_dyn: "Sửa baro theo tốc độ ngang: m trên (m/s)², 0 tắt; dương khi baro đọc thấp lúc bay nhanh",
   rf_max_m: "Tầm xa tối đa cảm biến khoảng cách (m)", flow_scale: "Hệ số optical flow", flow_align: "Hướng lắp optical flow",
   flow_flip: "Lật trục optical flow", osd_backend: "Loại OSD", osd_pal: "Camera chuẩn PAL (tắt = NTSC)", osd_canvas: "Lưới chữ OSD (canvas)", osd_font: "Ký hiệu OSD",
   osd_stats: "Màn hình thống kê sau khi disarm (giây, 0 = tắt)", rpm_w1: "RPM filter: mức notch hài bậc 1 (%)",
@@ -2205,7 +2207,7 @@ function buildPid() {
   pcard(ex, "Tự cân bằng (ANGLE / HORIZON)", ["angle_p", "angle_limit", "horizon_trans"]);
   pcard(ex, "Profile", ["pid_profile", "prof_ch"], "3 bộ PID / rates, đổi bằng công tắc. Chọn Profile 2 / 3 ở trên bảng PID để sửa.");
   pcard(ex, "Bảo vệ", ["crash_detect", "yaw_spin_thr", "motor_warn", "beacon_s"]);
-  pcard(ex, "Ngoài bãi bay (không cần máy tính)", ["stick_cmds", "headfree_type"]);
+  pcard(ex, "Ngoài bãi bay (không cần máy tính)", ["stick_cmds", "headfree_type", "mag_learn", "dr_time_s"]);
   pcard(ex, "Autotune & launch control", ["at_axes", "at_rate", "at_steps", "launch_angle", "launch_thr"]);
   const f = $("filterParams");
   f.innerHTML = "";

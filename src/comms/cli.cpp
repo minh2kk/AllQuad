@@ -332,6 +332,9 @@ void Cli::cmdSelftest() {
     const char* pr = bus::gpsLink.proto == 1 ? "UBX" : bus::gpsLink.proto == 2 ? "NMEA" : "?";
     if (!g.fix3d) line(1, "gps", "%s %lu baud, %u satellites, no 3D fix yet (needs open sky)", pr, (unsigned long)bus::gpsLink.baud, g.sats);
     else line(0, "gps", "%s %lu baud, 3D fix, %u satellites, hAcc %.1f m", pr, (unsigned long)bus::gpsLink.baud, g.sats, (double)g.hAcc);
+    if (bus::gpsLink.gen)
+      line(bus::gpsLink.rateHz > 0 && bus::gpsLink.rateHz < 4.5f ? 1 : 0, "gps", "u-blox M%u (protocol %s), %.1f solutions / s",
+           bus::gpsLink.gen, (const char*)bus::gpsLink.protVer, (double)bus::gpsLink.rateHz);
   }
   // optical flow / rangefinder module on an MSP port
   {

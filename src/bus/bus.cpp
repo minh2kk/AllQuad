@@ -157,11 +157,26 @@ bool takeImuDelta(fc::Vec3& dAng, fc::Vec3& dVel, float& dt) {
 
 static char msg[64];
 static volatile uint32_t msgSeq = 0;
+// the last 4 messages: a reader that polls slower than a burst (a disarm right after a calibration
+// message) still gets each one in order (messageAfter); readMessage gives the newest
+static char msgRing[4][64];
 void postMessage(const char* text) {
   os::CriticalGuard g;
   strncpy(msg, text, sizeof(msg) - 1);
   msg[sizeof(msg) - 1] = 0;
   msgSeq = msgSeq + 1;
+  memcpy(msgRing[msgSeq & 3], msg, sizeof(msg));
+}
+bool messageAfter(uint32_t& seq, char* out, int len) {
+  os::CriticalGuard g;
+  uint32_t last = msgSeq;
+  if (seq == last) return false;
+  uint32_t next = seq + 1;
+  if (last - seq > 4) next = last - 3;  // older ones are gone
+  strncpy(out, msgRing[next & 3], len - 1);
+  out[len - 1] = 0;
+  seq = next;
+  return true;
 }
 uint32_t messageSeq() { return msgSeq; }
 void readMessage(char* out, int len) {

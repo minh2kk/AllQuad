@@ -47,6 +47,8 @@ Bộ nhớ: `esp32dev` dùng 94 % ô firmware 1.625 MB trước khi cắt trang 
 - 128 kB RAM: không có bộ đệm gyro tần số cao (`bb_gyro_s` không có tác dụng), không có thẻ SD,
   blackbox chỉ ra cổng serial (OpenLog).
 - `loop_hz` tối đa 2000 Hz; nếu `perf` báo tải trên 70 % thì về 1000.
+- RAM tĩnh gần đầy (bản 11/2026: còn khoảng 200 byte ngoài heap 66 kB và stack 4 kB). Tính năng mới cho mọi
+  board phải giữ RAM nhỏ; nếu không còn chỗ, tính năng sẽ bị tắt riêng trên F411 và ghi ở đây.
 
 ### STM32F405 / F722 (`stm32f405`, `stm32f722`)
 - Không có khe SD: blackbox ra cổng serial (OpenLog). Gyro tần số cao chỉ ghi lên thẻ SD nên không dùng được.
@@ -151,6 +153,19 @@ Gán ở tab Chế độ như mọi chế độ khác.
 Sửa kèm: kiểm tra "RTH không tiến về nhà" (`rth_sanity_s`) trước đây đo khoảng cách tới điểm giữ của lúc leo
 nên luôn tưởng không tiến triển: **mọi lần RTH bay về lâu hơn `rth_sanity_s` (20 s) đều bị hạ cánh giữa
 đường**. Nay đo tới nhà / điểm rally.
+
+### Ước lượng tốt hơn từ cảm biến sẵn có (ArduPilot)
+| Cấu hình | Mặc định | Làm gì |
+|---|---|---|
+| `dr_time_s` | 30 | **chỉ `est_type 1` (EKF)**. Khi có GPS, firmware học mô hình cản gió: lực ngang gia tốc kế đo được tỉ lệ với vận tốc so với không khí (hệ số và gió). Mất GPS: vận tốc tính từ gia tốc kế theo mô hình đó, POSHOLD vẫn giữ chỗ (thử: gió 2.4 m/s, 25 s không GPS, lệch 1 m; ALTHOLD trôi 55 m). Hết `dr_time_s` hoặc chưa học xong (cần vài lần bay nhanh trên 3 m/s): về ALTHOLD như trước. RTH / MISSION vẫn cần GPS thật |
+| `mag_learn` | 1 | khi bay có GPS và quay đủ các hướng (9 / 12 góc 30°, ví dụ vài vòng CIRCLE): tính độ lệch la bàn do đồ trên drone (nam châm, sắt, dây nguồn). La bàn chưa từng hiệu chuẩn: dùng ngay, nên **arm được khi chưa hiệu chuẩn la bàn** (hướng lấy từ GPS tới khi học xong). Đã hiệu chuẩn nhưng sai: sửa ngay nếu EKF đã loại la bàn, không thì sửa khi hạ cánh. Luôn lưu khi hạ cánh. Chỉ độ lệch (hard iron), không sửa méo (soft iron) |
+| pin không cảm biến dòng | tự động | học "nội trở" theo tải motor (độ sụt áp theo ga), tính áp lúc nghỉ, % pin từ đó: không còn nhảy khi đẩy ga. RTH theo pin (`bat_smart_rth`) dùng tốc độ tụt % khi không có `bat_capacity` / cảm biến dòng (sau 60 s bay) |
+| sức khoẻ motor theo RPM | khi có DShot hai chiều / ESC telemetry | so vòng quay trên mỗi đơn vị lệnh với 3 motor kia: chậm hơn 15 % trong 2 s "Motor N slow", nhanh hơn 12 % "spins free: prop damaged?", lệnh trên 25 % mà dưới 1/3 vòng quay mong đợi 0.3 s "stalled / desync!" |
+
+GPS u-blox M10 (như HGLRC M100): cấu hình gốc GPS + Galileo + BeiDou B1I chỉ chạy tối đa 3 Hz (theo datasheet
+MAX-M10S). Firmware đặt GPS + Galileo + BeiDou B1C + QZSS + SBAS (chỉ để hiệu chỉnh) ở **8 Hz**, kiểu
+"airborne". Lệnh `gps` và tin khi khởi động cho biết đời chip, phiên bản và tần số thật; dưới 5 Hz thì báo.
+GLONASS tắt (thêm nó là 4 hệ, chỉ 4 Hz). M8 / M9 giữ cấu hình 10 Hz như trước.
 
 ### Blackbox (`bb_backend`)
 | Giá trị | Board | Ghi chú |

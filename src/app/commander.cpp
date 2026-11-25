@@ -156,6 +156,7 @@ void Commander::fuseSensors(uint32_t now, float dt) {
   s = bus::flow.read(f);
   if (s != seqFlow_) { seqFlow_ = s; est_.fuseFlow(f, att_.rateDps, yawNav_, cosTilt, now); }
   est_.update(now);
+  magLearnStep(now, dt, newMag);
   if (useEkf) ekfFuse(now, newGps ? &g : nullptr, newBaro ? &b : nullptr, newMag, newRange ? &r : nullptr);
   else ekf_.reset();
   buildNavEstimate(now);
@@ -255,7 +256,8 @@ void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, boo
     float n, e;
     NavEstimator::llaToNed(g->lat, g->lon, est.homeLat, est.homeLon, n, e);
     ekf_.fuseGpsPos(n, e, fmaxf(g->hAcc, 0.8f), now);
-    ekf_.fuseGpsVel(g->velN, g->velE, g->velD, c.est_gps_vel_noise, now);
+    // speed accuracy reported by the receiver (u-blox sAcc): poor sky / multipath counts less
+    ekf_.fuseGpsVel(g->velN, g->velE, g->velD, fmaxf(c.est_gps_vel_noise, g->sAcc), now);
     bool baroBad = !seqBaro_ || !baroSeen_ || ekf_.baroFault() || !ekf_.heightOk(now);
     if (baroBad) ekf_.fuseHeight(g->altMsl - est.homeAltMsl, fmaxf(g->vAcc, 1.5f), 1, now);
   }
@@ -296,6 +298,7 @@ void Commander::ekfFuse(uint32_t now, const GpsData* g, const BaroSample* b, boo
     ekfGpsYawInit_ = true;
     if (g) ekf_.fuseYaw(wrapPi(att_.yaw + gpsHeading_.offset()), 0.15f);
   }
+  dragStep(now);
   // ---- optical flow ----
   float fvn, fve, fs;
   if (est_.takeFlowVel(fvn, fve, fs)) ekf_.fuseFlowVel(fvn, fve, fs, now);
@@ -317,7 +320,11 @@ void Commander::buildNavEstimate(uint32_t now) {
   if (bus::config.est_type != 1 || !ekf_.initialized()) return;
   Vec3 p = ekf_.pos(), v = ekf_.vel();
   const EkfStatus& st = ekf_.status();
-  if (ekf_.horizAided(now) && (navEst_.posValid || ekf_.gpsUsed(now))) {
+  // dead reckoning: from the first moment without GPS (the drag fusion takes over within 0.1 s, the EKF
+  // stays aided meanwhile) until dr_time_s
+  bool dr = drActive_ || (bus::config.dr_time_s && drag_.ready() && armed_ && airborne_ &&
+                          (!gpsLostMs_ || now - gpsLostMs_ < bus::config.dr_time_s * 1000u));
+  if (ekf_.horizAided(now) && (navEst_.posValid || ekf_.gpsUsed(now) || dr)) {
     navEst_.n = p.x;
     navEst_.e = p.y;
     navEst_.vn = v.x;
@@ -402,7 +409,9 @@ uint32_t Commander::computeArmBlockers(bool rcOk) {
   if (!c.acc_calibrated) b |= ARM_ACC_NOT_CAL;
   if (seqBaro_ && !baroSeen_) b |= ARM_BARO;
   bool magCal = c.mag_bias[0] != 0 || c.mag_bias[1] != 0 || c.mag_bias[2] != 0 || hitl::active();
-  if (magSeen_ && (!mag_.healthy || !magCal)) b |= ARM_MAG;
+  // an uncalibrated compass blocks arming, unless it is to be learned in flight (mag_learn): then the
+  // heading comes from GPS until the turns have taught the offsets
+  if (magSeen_ && (!mag_.healthy || (!magCal && !c.mag_learn))) b |= ARM_MAG;
   if (c.arm_require_gps && !(e.gpsValid && e.homeSet)) b |= ARM_GPS;
   if (fenceBreached(c, e)) b |= ARM_FENCE;
   if (os::taskCount() > 0) {
@@ -438,10 +447,18 @@ void Commander::arm(uint32_t now, bool turtle) {
   nav_.path().reset();
   pathMs_ = 0;
   headfreeRef_ = yawNav_;  // head-free "forward": where the nose points at arming
+  magLearn_.reset();
+  mlYaw_ = 0;
+  mlDone_ = mlPending_ = false;
+  if (magSeen_ && bus::config.mag_learn && bus::config.mag_bias[0] == 0 && bus::config.mag_bias[1] == 0 &&
+      bus::config.mag_bias[2] == 0)
+    bus::postMessage("Compass not calibrated: fly some turns to learn it");
   flipActive_ = false;
   smartDone_ = smartWarn_ = false;
   smartLowN_ = 0;
   ampsAvg_ = -1;
+  pctRefMs_ = 0;
+  pctRate_ = 0;
   motorBadSince_ = thrustBadSince_ = 0;
   motorWarn_ = thrustWarn_ = false;
   for (float& m : motorAvg_) m = 0;
@@ -457,6 +474,7 @@ void Commander::arm(uint32_t now, bool turtle) {
 
 void Commander::disarm(const char* why) {
   if (armed_) saveHover();
+  if (armed_) magLearnSave();
   if (autotune_.active()) finishAutotune(autotune_.done() && boxOn(boxes_, ModeBox::AUTOTUNE));
   armed_ = false;
   turtle_ = false;
@@ -1296,7 +1314,7 @@ void Commander::publish(uint32_t now) {
   }
   if ((int32_t)(clipWarnUntilMs_ - now) > 0) w |= WARN_ACC_CLIP;
   if (c.beginner) w |= WARN_BEGINNER;
-  if (motorWarn_) w |= WARN_MOTOR;
+  if (motorWarn_ || rpmWarn_) w |= WARN_MOTOR;
   if (thrustWarn_) w |= WARN_THRUST;
   if (smartWarn_ && armed_) w |= WARN_RTH_BAT;
   bool ekfOn = c.est_type == 1 && ekf_.initialized();
@@ -1424,16 +1442,28 @@ void Commander::followInput(uint32_t now) {
 // ---------------------------------------------------------------- battery needed to come home
 // DJI smart RTH / iNav: once a second, the charge the way home takes (climb to rth_alt, fly back at
 // rth_speed with the wind, loiter, land) at the average current of the flight, plus 20 %. When the charge
-// left above bat_reserve_pct drops below it for 3 s: warn and (bat_smart_rth 2) start RTH. Needs
-// bat_capacity and a current sensor.
+// left above bat_reserve_pct drops below it for 3 s: warn and (bat_smart_rth 2) start RTH.
+// With bat_capacity and a current sensor it counts mAh. Without them it uses the charge estimate from
+// the resting voltage (the learned sag added back) and how fast it falls: the time left above the
+// reserve against the time the way home takes.
 void Commander::smartRth(uint32_t now) {
   const Config& c = cfg();
-  if (!c.bat_smart_rth || c.bat_capacity <= 0 || !airborne_ || now - smartMs_ < 1000) return;
+  if (!c.bat_smart_rth || !airborne_ || now - smartMs_ < 1000) return;
   smartMs_ = now;
-  if (bat_.current >= 0) ampsAvg_ = ampsAvg_ < 0 ? bat_.current : ampsAvg_ + (bat_.current - ampsAvg_) * 0.1f;
+  if (bat_.loadIsCurrent && bat_.current >= 0) ampsAvg_ = ampsAvg_ < 0 ? bat_.current : ampsAvg_ + (bat_.current - ampsAvg_) * 0.1f;
+  // charge rate from the resting-voltage estimate (%/s, 30 s memory, sampled every 5 s)
+  if (!pctRefMs_) { pctRefMs_ = now; pctRef_ = bat_.percentF; }
+  else if (now - pctRefMs_ >= 5000) {
+    float r = (pctRef_ - bat_.percentF) * 1000.0f / (float)(now - pctRefMs_);
+    pctRate_ = pctRate_ <= 0 ? r : pctRate_ + (r - pctRate_) * 0.17f;
+    pctRefMs_ = now;
+    pctRef_ = bat_.percentF;
+  }
   const NavEstimate& e = navEst_;
   smartWarn_ = false;
-  if (ampsAvg_ <= 0.5f || !e.homeSet || !e.posValid || !e.gpsValid) return;
+  bool counting = c.bat_capacity > 0 && bat_.loadIsCurrent && ampsAvg_ > 0.5f;
+  bool byVoltage = !counting && bat_.restLearned && bat_.cells && now - armTimeMs_ > 60000 && pctRate_ > 0.005f;
+  if ((!counting && !byVoltage) || !e.homeSet || !e.posValid || !e.gpsValid) return;
   float d = sqrtf(e.n * e.n + e.e * e.e), alt = fmaxf(e.alt, 0.0f);
   float rthAlt = fmaxf(alt, c.rth_alt);
   if (c.fence_enable && c.fence_alt_max > 3.0f) rthAlt = fminf(rthAlt, c.fence_alt_max - 2.0f);
@@ -1445,14 +1475,20 @@ void Commander::smartRth(uint32_t now) {
   float tLand = fmaxf(rthAlt - c.land_slow_alt, 0.0f) / fmaxf(c.land_speed, 0.2f) +
                 fminf(rthAlt, c.land_slow_alt) / fmaxf(c.land_slow_speed, 0.1f);
   float t = tClimb + tHome + c.rth_loiter_s + tLand;
-  rthNeedMah_ = ampsAvg_ * t / 3.6f * 1.2f;
-  rthLeftMah_ = c.bat_capacity * (100 - c.bat_reserve_pct) * 0.01f - bat_.mahDrawn;
+  if (counting) {  // mAh
+    rthNeedMah_ = ampsAvg_ * t / 3.6f * 1.2f;
+    rthLeftMah_ = c.bat_capacity * (100 - c.bat_reserve_pct) * 0.01f - bat_.mahDrawn;
+  } else {  // seconds: the charge left above the reserve at the rate it falls
+    rthNeedMah_ = t * 1.2f;
+    rthLeftMah_ = (bat_.percentF - c.bat_reserve_pct) / pctRate_;
+  }
   smartWarn_ = rthLeftMah_ < rthNeedMah_ * 1.15f;
   smartLowN_ = rthLeftMah_ < rthNeedMah_ ? (uint8_t)(smartLowN_ < 250 ? smartLowN_ + 1 : 250) : 0;
   if (smartLowN_ >= 3 && !smartDone_ && d > c.rth_home_radius) {
     smartDone_ = true;
     char m[48];
-    snprintf(m, sizeof(m), "Battery: home now (%d mAh needed)", (int)rthNeedMah_);
+    if (counting) snprintf(m, sizeof(m), "Battery: home now (%d mAh needed)", (int)rthNeedMah_);
+    else snprintf(m, sizeof(m), "Battery: home now (%d s needed)", (int)rthNeedMah_);
     bus::postMessage(m);
     bool returning = mode_ == FlightMode::RTH || mode_ == FlightMode::LAND || mode_ == FlightMode::SMART_RTL ||
                      actionMode_ != FlightMode::COUNT || rcFailsafe_;
@@ -1463,6 +1499,179 @@ void Commander::smartRth(uint32_t now) {
   }
 }
 
+// ---------------------------------------------------------------- compass offsets learned in flight
+// While flying (mag_learn 1): 5 compass samples a second against the attitude with a gyro-integrated
+// heading. Once the turns cover 9 of 12 heading sectors: solve. Offset under 5 % of the field: the
+// calibration is fine. Larger: an uncalibrated compass gets it at once (it was not used anyway: the
+// EKF now has a compass); a calibrated one is corrected after landing (a heading change in flight
+// would only fight the EKF) unless the EKF has already rejected it as wrong; the stored settings get
+// the new offsets either way.
+void Commander::magLearnStep(uint32_t now, float dt, bool newMag) {
+  Config& c = bus::config;
+  if (!c.mag_learn || !armed_ || !airborne_ || mlDone_ || hitl::active() || !att_.valid) return;
+  Vec3 wE = att_.q.rotate(att_.rateDps * DEG2RAD);
+  mlYaw_ = wrapPi(mlYaw_ + wE.z * dt);
+  if (!newMag || !magSeen_ || !mag_.healthy || now - mlSampleMs_ < 200) return;
+  if (att_.rateDps.norm() > 150 || mode_ == FlightMode::FLIP || mode_ == FlightMode::TURTLE) return;
+  if ((int32_t)(bus::magCalUntilMs - now) > 0) return;
+  mlSampleMs_ = now;
+  Quat q = Quat::fromEuler(att_.roll, att_.pitch, mlYaw_);
+  magLearn_.add(mag_.field, q, mlYaw_);
+  if (magLearn_.sectors() < 9 || magLearn_.samples() < 150 || now - mlSolveMs_ < 5000) return;
+  mlSolveMs_ = now;
+  Vec3 m, b;
+  float rms;
+  if (!magLearn_.solve(m, b, rms)) return;
+  float fm = m.norm();
+  if (fm < 0.1f || fm > 1.5f || rms > 0.06f * fm) return;  // not a consistent fit (yet)
+  mlDone_ = true;
+  int pct = (int)(b.norm() / fm * 100.0f + 0.5f);
+  char msg[48];
+  if (pct < 5) {
+    snprintf(msg, sizeof(msg), "Compass: in-flight check OK (%d%%)", pct);
+    bus::postMessage(msg);
+    return;
+  }
+  mlDelta_ = magBiasDelta(b, c.mag_scale, c.mag_offdiag);
+  bool uncalibrated = c.mag_bias[0] == 0 && c.mag_bias[1] == 0 && c.mag_bias[2] == 0;
+  // in flight when the compass is not in use anyway: never calibrated, or the EKF has rejected it
+  if (uncalibrated || ekf_.magFault()) {
+    for (int i = 0; i < 3; i++) c.mag_bias[i] += mlDelta_[i];
+    if (c.mag_bias[0] == 0) c.mag_bias[0] = 1e-6f;  // marks it calibrated
+    bus::configChanged();
+    mlDelta_ = Vec3();
+    snprintf(msg, sizeof(msg), "Compass: offsets learned in flight (%d%%)", pct);
+  } else {
+    snprintf(msg, sizeof(msg), "Compass off by %d%%: fixed at landing", pct);
+  }
+  mlPending_ = true;
+  bus::postMessage(msg);
+}
+
+void Commander::magLearnSave() {
+  if (!mlPending_) return;
+  mlPending_ = false;
+  Config& c = bus::config;
+  for (int i = 0; i < 3; i++) c.mag_bias[i] += mlDelta_[i];
+  mlDelta_ = Vec3();
+  bus::configChanged();
+  // only the offsets go into the stored settings (unsaved edits elsewhere stay unsaved)
+  Config stored;
+  if (hal::storageLoad(hal::Slot::CONFIG, &stored, sizeof(stored)) && configValid(stored)) {
+    for (int i = 0; i < 3; i++) stored.mag_bias[i] = c.mag_bias[i];
+    configSeal(stored);
+    hal::storageSave(hal::Slot::CONFIG, &stored, sizeof(stored));
+  }
+  bus::postMessage("Compass offsets saved");
+}
+
+// ---------------------------------------------------------------- dead reckoning (drag model)
+// 10 Hz: while GPS is used and the craft flies, the drag model learns k and the wind from the body
+// accelerometer against the EKF velocity. When GPS goes, for dr_time_s the drag velocity is fused into
+// the EKF and the EKF position stays valid: POSHOLD keeps holding (with the wind) instead of dropping to
+// ALTHOLD and drifting downwind. After dr_time_s, or without a learned model: as before (ALTHOLD).
+void Commander::dragStep(uint32_t now) {
+  const Config& c = bus::config;
+  bool gps = ekf_.gpsUsed(now);
+  // 10 Hz, but at once on the cycle GPS times out (the EKF would otherwise be unaided for a moment)
+  if (now - dragMs_ < 100 && !(!gps && !drActive_ && !gpsLostMs_)) return;
+  dragMs_ = now;
+  if (gps) { gpsLostMs_ = 0; drActive_ = false; drTold_ = false; }
+  else if (!gpsLostMs_) gpsLostMs_ = now;
+  if (!armed_ || !airborne_ || !att_.valid) { drActive_ = false; return; }
+  // body specific force minus the EKF accelerometer bias, rotated north / east with the heading
+  Vec3 ba = ekf_.accBias();
+  float ax = att_.accBody.x - ba.x, ay = att_.accBody.y - ba.y;
+  float yaw = ekf_.yaw(), cy = cosf(yaw), sy = sinf(yaw);
+  float aN = cy * ax - sy * ay, aE = sy * ax + cy * ay;
+  Vec3 v = ekf_.vel();
+  bool calmRates = fabsf(att_.rateDps.x) < 90 && fabsf(att_.rateDps.y) < 90 && att_.q.cosTilt() > 0.82f;
+  if (gps && calmRates && mode_ != FlightMode::FLIP && mode_ != FlightMode::TURTLE) drag_.learn(aN, aE, v.x, v.y);
+  drActive_ = false;
+  if (gps || !c.dr_time_s || !drag_.ready() || !calmRates) return;
+  if (now - gpsLostMs_ > c.dr_time_s * 1000u) {
+    if (drTold_) { drTold_ = false; bus::postMessage("Dead reckoning ended - no position"); }
+    return;
+  }
+  float vn, ve;
+  drag_.velocity(aN, aE, vn, ve);
+  // the error grows with speed (k) and with time (the wind moves on)
+  float sigma = 0.4f + 0.08f * sqrtf(vn * vn + ve * ve) + 0.02f * (now - gpsLostMs_) * 1e-3f;
+  ekf_.fuseDragVel(vn, ve, sigma, now);
+  if (!(ekf_.status().faults & EKF_DRAG_REJECT)) { drFusedMs_ = now; }
+  drActive_ = drFusedMs_ && now - drFusedMs_ < 1000;
+  if (drActive_ && !drTold_) { drTold_ = true; bus::postMessage("GPS lost - dead reckoning (drag)"); }
+}
+
+// ---------------------------------------------------------------- motor health from the RPM telemetry
+// Bidirectional DShot (or serial ESC telemetry) gives each motor's RPM. Per motor: RPM per unit of command,
+// 1 s average, against the median of the four. A motor turning 15 % slower than the others for the same
+// command for 2 s: a failing motor / ESC, a bearing ("Motor N slow"). 12 % faster: it is not loaded -
+// a damaged or lost prop ("prop damaged?"). Commanded above 25 % but under a third of the expected RPM
+// for 0.3 s: stalled / desync, at once.
+void Commander::rpmHealth(uint32_t now, float dt, const MotorOutputs& mo, bool steady) {
+  float rpm[4];
+  bool have = true;
+  for (int i = 0; i < 4; i++) {
+    rpm[i] = bus::bidirRpm[i];
+    if (!(rpm[i] >= 0) || !hal::motorsBidirActive()) have = false;
+  }
+  if (!have) {
+    EscTelemetry t = bus::esc.get();
+    have = true;
+    for (int i = 0; i < 4; i++) {
+      rpm[i] = t.rpm[i];
+      if (!t.lastUpdateMs[i] || now - t.lastUpdateMs[i] > 300 || !(rpm[i] >= 0)) have = false;
+    }
+  }
+  if (!have) { rpmSlowSince_ = rpmFreeSince_ = rpmStallSince_ = 0; return; }
+  // RPM and command averaged separately (1 s) and divided: the motor's lag behind a changing command
+  // cancels out (a ratio of instantaneous values swings with every correction)
+  float k = dt / (1.0f + dt), r[4];
+  for (int i = 0; i < 4; i++) {
+    if (rpmAvg_[i] <= 0) { rpmAvg_[i] = rpm[i]; cmdAvg_[i] = mo.out[i]; }
+    rpmAvg_[i] += (rpm[i] - rpmAvg_[i]) * k;
+    cmdAvg_[i] += (mo.out[i] - cmdAvg_[i]) * k;
+    r[i] = rpmAvg_[i] / fmaxf(cmdAvg_[i], 0.05f);
+  }
+  // median of four: mean of the middle two
+  float s[4] = {r[0], r[1], r[2], r[3]};
+  for (int a = 0; a < 3; a++)
+    for (int b = a + 1; b < 4; b++)
+      if (s[b] < s[a]) { float x = s[a]; s[a] = s[b]; s[b] = x; }
+  float med = 0.5f * (s[1] + s[2]);
+  if (med <= 0) return;
+  int lo = 0, hi = 0, stall = -1;
+  for (int i = 1; i < 4; i++) { if (r[i] < r[lo]) lo = i; if (r[i] > r[hi]) hi = i; }
+  for (int i = 0; i < 4; i++)
+    if (mo.out[i] > 0.25f && rpm[i] < med * mo.out[i] * 0.33f) stall = i;  // instantaneous RPM
+  char m[48];
+  if (stall >= 0) {
+    if (!rpmStallSince_) rpmStallSince_ = now;
+    if (now - rpmStallSince_ > 300 && (!rpmStallToldMs_ || now - rpmStallToldMs_ > 5000)) {
+      rpmStallToldMs_ = now;
+      snprintf(m, sizeof(m), "Motor %d stalled / desync!", stall + 1);
+      bus::postMessage(m);
+    }
+  } else rpmStallSince_ = 0;
+  rpmStall_ = rpmStallSince_ && now - rpmStallSince_ > 300;
+  if (steady && r[lo] < med * 0.85f) { if (!rpmSlowSince_) rpmSlowSince_ = now; }
+  else if (r[lo] > med * 0.9f) rpmSlowSince_ = 0;
+  if (rpmSlowSince_ && now - rpmSlowSince_ > 2000 && (!rpmSlowToldMs_ || now - rpmSlowToldMs_ > 30000)) {
+    rpmSlowToldMs_ = now;
+    snprintf(m, sizeof(m), "Motor %d slow (RPM -%d%%)", lo + 1, (int)((1.0f - r[lo] / med) * 100.0f + 0.5f));
+    bus::postMessage(m);
+  }
+  if (steady && r[hi] > med * 1.12f) { if (!rpmFreeSince_) rpmFreeSince_ = now; }
+  else if (r[hi] < med * 1.06f) rpmFreeSince_ = 0;
+  if (rpmFreeSince_ && now - rpmFreeSince_ > 2000 && (!rpmFreeToldMs_ || now - rpmFreeToldMs_ > 30000)) {
+    rpmFreeToldMs_ = now;
+    snprintf(m, sizeof(m), "Motor %d spins free: prop damaged?", hi + 1);
+    bus::postMessage(m);
+  }
+  rpmWarn_ = rpmStall_ || (rpmSlowSince_ && now - rpmSlowSince_ > 2000) || (rpmFreeSince_ && now - rpmFreeSince_ > 2000);
+}
+
 // ---------------------------------------------------------------- weak motor / thrust loss
 // One motor that runs much harder than the others for 3 s in steady flight (2 s average): a weak motor,
 // a damaged prop or a failing ESC. All motors near full power for 1.5 s while sinking: thrust loss
@@ -1471,7 +1680,9 @@ void Commander::motorHealth(uint32_t now, float dt) {
   const Config& c = cfg();
   if (!c.motor_warn || !armed_ || !airborne_ || mode_ == FlightMode::TURTLE || mode_ == FlightMode::FLIP) {
     motorBadSince_ = thrustBadSince_ = 0;
-    motorWarn_ = thrustWarn_ = false;
+    motorWarn_ = thrustWarn_ = rpmWarn_ = rpmStall_ = false;
+    rpmSlowSince_ = rpmFreeSince_ = rpmStallSince_ = 0;
+    for (int i = 0; i < 4; i++) rpmAvg_[i] = cmdAvg_[i] = 0;
     return;
   }
   MotorOutputs mo = bus::motors.get();
@@ -1489,12 +1700,13 @@ void Commander::motorHealth(uint32_t now, float dt) {
   if (steady && mean > 0.15f && dev > 0.10f) { if (!motorBadSince_) motorBadSince_ = now; }
   else if (dev < 0.07f) motorBadSince_ = 0;
   motorWarn_ = motorBadSince_ && now - motorBadSince_ > 3000;
-  if (motorWarn_ && now - motorToldMs_ > 30000) {
+  if (motorWarn_ && (!motorToldMs_ || now - motorToldMs_ > 30000)) {
     motorToldMs_ = now;
     char m[48];
     snprintf(m, sizeof(m), "Motor %d weak? (+%d%% output)", worst + 1, (int)(dev * 100.0f + 0.5f));
     bus::postMessage(m);
   }
+  rpmHealth(now, dt, mo, steady && mean > 0.15f);
   // full power (motors / the throttle asked near the top), sinking, and not even slowing the descent: a
   // full-throttle catch out of a dive decelerates hard and does not count
   bool full = inst > 0.8f || lastThrottle_ > 0.8f;
@@ -1502,7 +1714,7 @@ void Commander::motorHealth(uint32_t now, float dt) {
   if (navEst_.altValid && full && navEst_.vz < -0.5f && notSlowing) { if (!thrustBadSince_) thrustBadSince_ = now; }
   else thrustBadSince_ = 0;
   thrustWarn_ = thrustBadSince_ && now - thrustBadSince_ > 1500;
-  if (thrustWarn_ && now - thrustToldMs_ > 10000) {
+  if (thrustWarn_ && (!thrustToldMs_ || now - thrustToldMs_ > 10000)) {
     thrustToldMs_ = now;
     bus::postMessage("Thrust loss: full power, still sinking");
   }

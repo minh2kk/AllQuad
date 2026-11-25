@@ -21,6 +21,7 @@
 
 #include "../../test/host/hal_host.h"
 #include "../app/app.h"
+#include "../safety/safety.h"
 #include "../bus/bus.h"
 #include "../estimation/ekf.h"
 #include "../estimation/nav_estimator.h"
@@ -44,7 +45,8 @@ struct QuadModel {
   Vec3 pos, vel, w, accel, wind;
   Quat q;
   float m[4] = {0, 0, 0, 0};
-  float eff[4] = {1, 1, 1, 1};  // < 1: weak motor / damaged prop (spins slower for the same command)
+  float eff[4] = {1, 1, 1, 1};  // < 1: weak motor (spins slower for the same command)
+  float prop[4] = {1, 1, 1, 1}; // < 1: damaged prop (less thrust, and the unloaded motor spins faster)
   bool onGround = true;
   float thrustN = 0;  // total thrust of the last step
 
@@ -56,7 +58,7 @@ struct QuadModel {
       float c = armed ? cmd[i] : 0.0f;
       m[i] += (c - m[i]) * (dt / (motorTau + dt));
       float sp = eff[i] * m[i];
-      float t = tMax * (sp * sp * 0.6f + sp * 0.4f);
+      float t = tMax * (sp * sp * 0.6f + sp * 0.4f) * prop[i];
       thrust += t;
       tau.x += -Y[i] * arm * t;
       tau.y += X[i] * arm * t;
@@ -92,7 +94,7 @@ struct QuadModel {
     }
   }
   Vec3 specificForceBody() const { return q.rotateInv(accel - Vec3(0, 0, GRAVITY)); }
-  float motorHz(int i) const { return 27000.0f * eff[i] * m[i] / 60.0f; }
+  float motorHz(int i) const { return 27000.0f * eff[i] * m[i] * (1.0f + 0.6f * (1.0f - prop[i])) / 60.0f; }
 };
 
 struct Options {
@@ -121,7 +123,9 @@ struct Options {
   bool baroDead = false, magDead = false;
   float gpsAltNoise = 0.3f;              // GPS height noise (m, 1 sigma)  // the chip stops answering (mid-flight failure)
   // battery: full voltage, drain (V/s), internal resistance (ohm: sag under load)
-  float vbatFull = 16.4f, vbatDrain = 0.01f, vbatR = 0.0f;
+  float vbatFull = 16.4f, vbatDrain = 0.005f, vbatR = 0.0f;  // ~2 V in 7 min
+  bool noCurrent = false;  // no current sensor wired (voltage only)
+  Vec3 magHard;            // hard-iron offset the craft adds to the compass (raw, body)
 };
 
 QuadModel quad;
@@ -221,6 +225,7 @@ class SimMag : public drv::MagDriver {
     }
     f = quad.q.rotateInv(m) + Vec3(gauss(0.003f), gauss(0.003f), gauss(0.003f));
     f.x += opt.magCmot * simCurrent();
+    f += opt.magHard;
     return true;
   }
   const char* name() const override { return "SIM-MAG"; }
@@ -298,7 +303,7 @@ void simIoTask(void*) {
     for (int i = 0; i < 4; i++) { e.rpm[i] = quad.motorHz(i) * 60.0f * (1.0f + gauss(0.01f)); e.lastUpdateMs[i] = now; }
     bus::esc.publish(e);
   }
-  hal::host::currentPin = opt.adc ? fmaxf(simCurrent(), 0.2f) / 10.0f : -1.0f;
+  hal::host::currentPin = opt.adc && !opt.noCurrent ? fmaxf(simCurrent(), 0.2f) / 10.0f : -1.0f;
   float amps = fmaxf(simCurrent(), 0.2f);
   hal::host::vbatPin = opt.adc ? (opt.vbatFull - opt.vbatDrain * now / 1000.0f - amps * opt.vbatR) / 11.0f : 0.0f;
 }
@@ -353,10 +358,8 @@ void run(float seconds, const std::function<void(float)>& script, const std::fun
     script(t);
     os::hostRunUntil((uint64_t)((t + dt) * 1e6));
     static uint32_t msgSeen = 0;
-    if (bus::messageSeq() != msgSeen) {  // every OSD / GCS message (SIM_MSG prints them)
-      msgSeen = bus::messageSeq();
-      char m[64];
-      bus::readMessage(m, sizeof(m));
+    char m[64];
+    while (bus::messageAfter(msgSeen, m, sizeof(m))) {  // every OSD / GCS message (SIM_MSG prints them)
       simMsgs += m;
       simMsgs += '|';
       if (getenv("SIM_MSG")) printf("  [%6.2f] %s\n", t, m);
@@ -2027,7 +2030,7 @@ void scenarioGpsLoss() {
 }
 
 void scenarioGpsLossMission() {
-  printf("\n== gpsloss_mission: GPS gone mid-mission -> holds height (ALTHOLD), pilot LAND switch ==\n");
+  printf("\n== gpsloss_mission: GPS gone mid-mission -> holds (dead reckoning POSHOLD / ALTHOLD), pilot LAND switch ==\n");
   setup([](Config& c) { c.rth_alt = 10; });
   int idx = 0;
   nav::MissionItem it{};
@@ -2057,13 +2060,13 @@ void scenarioGpsLossMission() {
     td.eval();
     if (fabsf(t - 20.0f) < 0.0005f) lossAlt = alt();
     if (t > 20 && t < 40) altDev = fmaxf(altDev, fabsf(alt() - lossAlt));
-    if (t > 24 && t < 40 && s.mode == FlightMode::ALTHOLD) alth = true;
+    if (t > 24 && t < 40 && (s.mode == FlightMode::ALTHOLD || s.mode == FlightMode::POSHOLD)) alth = true;
     if (t > 30 && t < 40) maxSpeedLate = fmaxf(maxSpeedLate, hypotf(quad.vel.x, quad.vel.y));
     if (t > 40 && !s.armed && disarmT < 0) disarmT = t;
     if (fmodf(t, 5.0f) < 0.0005f) trace(t);
   });
   check("On the mission when GPS went", lossAlt > 5 && distHome() > 0, "alt %.1f m", lossAlt);
-  check("GPS lost in MISSION -> ALTHOLD", alth, "%.0f", alth);
+  check("GPS lost in MISSION -> POSHOLD (dead reckoning) / ALTHOLD", alth, "%.0f", alth);
   check("Height held", altDev < 2.0f, "max %.2f m", altDev);
   check("Stops flying away (drag slows it)", maxSpeedLate < 3.0f, "max %.1f m/s", maxSpeedLate);
   check("LAND without GPS: down and disarmed", disarmT > 0 && disarmT < 75, "at %.1f s", disarmT);
@@ -2659,6 +2662,149 @@ void scenarioFollow() {
   check("Leader quiet: holds and tells", drift < 1.5f && sawMsg("Follow: no leader"), "drift %.2f m", drift);
 }
 
+
+void scenarioBatNoAmps() {
+  printf("\n== bat_noamps: no current sensor: the pack resistance is learned from the motor load, the charge from the\n"
+         "   resting voltage stays steady through punches, and the smart RTH works from how fast it falls ==\n");
+  opt.noCurrent = true;
+  opt.vbatFull = 16.4f;
+  opt.vbatDrain = 0.006f;
+  opt.vbatR = 0.04f;
+  opt.currentA = 24.0f;
+  setup([](Config& c) {
+    c.cell_count = 4; c.bat_capacity = 0; c.bat_reserve_pct = 15; c.bat_smart_rth = 2; c.bat_fs_action = 0;
+    c.vbat_crit_cell = 3.0f; c.vbat_warn_cell = 3.1f; c.rth_alt = 15; c.pos_max_speed = 10; c.rth_speed = 8;
+  });
+  Takeoff to{10};
+  float rawSwing = 0, pctSwing = 0, rawRef = -1, pctRef = -1, trigT = -1, trigD = 0, disarmT = -1, restAtLand = 0;
+  bool learned = false;
+  run(320, [&](float t) {
+    to.step(t);
+    // 20-60 s: four 2 s dashes (load steps); then out 250 m and wait there
+    bool dash = t >= 20 && t < 60 && fmodf(t - 20, 10) < 2;
+    rcIn.ch[RC_PITCH] = dash ? 2000 : (t >= 62 && t < 92) ? 2000 : 1500;
+  }, [&](float t) {
+    VehicleStatus s = status();
+    BatteryState b = bus::battery.get();
+    if (b.restLearned) learned = true;
+    if (t > 40 && t < 60) {  // swing of each reading during the dashes (against the reading 1 s before a dash)
+      if (fmodf(t - 20, 10) > 8.9f && fmodf(t - 20, 10) < 8.901f) { rawRef = fc::BatteryMonitor::lipoPercentF(b.cellVoltage); pctRef = b.percentF; }
+      if (rawRef >= 0) {
+        rawSwing = fmaxf(rawSwing, fabsf(fc::BatteryMonitor::lipoPercentF(b.cellVoltage) - rawRef));
+        pctSwing = fmaxf(pctSwing, fabsf(b.percentF - pctRef));
+      }
+    }
+    if (trigT < 0 && s.mode == FlightMode::RTH) { trigT = t; trigD = distHome(); }
+    if (trigT > 0 && !s.armed && disarmT < 0) { disarmT = t; restAtLand = b.restCell; }
+    if (fmodf(t, 10.0f) < 0.0005f) { trace(t); printf("      cell %.2f V rest %.2f V, %.0f %%, R %.2f\n", b.cellVoltage, b.restCell, b.percentF, b.resistance); }
+  });
+  opt.noCurrent = false;
+  opt.currentA = 8.0f;
+  check("Pack resistance learned from the motor load", learned, "%.0f", learned);
+  printf("  charge swing in the dashes: raw voltage %.0f %%, resting voltage %.0f %%\n", rawSwing, pctSwing);
+  check("Charge from the resting voltage steady through punches", pctSwing < 4.0f && pctSwing < rawSwing * 0.4f, "%.1f %%", pctSwing);
+  check("Smart RTH without a current sensor, far out", trigT > 0 && trigD > 100 && sawMsg("s needed"), "%.0f m out", trigD);
+  check("Home and landed", disarmT > 0 && distHome() < 3.0f, "distance %.1f m", distHome());
+  check("Landed before the pack was flat", restAtLand > 3.45f, "rest %.2f V/cell", restAtLand);
+}
+
+void scenarioRpmHealth() {
+  printf("\n== rpmhealth: bidirectional DShot RPM per motor: slow motor, free-spinning (damaged) prop, stalled motor ==\n");
+  setup([](Config& c) { c.dshot_bidir = 1; c.esc_telemetry = 0; });
+  Takeoff to{15};
+  float slowT = -1, freeT = -1, stallT = -1;
+  run(62, [&](float t) {
+    to.step(t);
+    quad.eff[1] = (t >= 15 && t < 30) ? 0.8f : 1.0f;
+    quad.prop[2] = (t >= 35 && t < 50) ? 0.75f : 1.0f;
+    quad.eff[3] = t >= 58 ? 0.0f : 1.0f;
+  }, [&](float t) {
+    if (slowT < 0 && sawMsg("Motor 2 slow")) slowT = t;
+    if (freeT < 0 && sawMsg("Motor 3 spins free")) freeT = t;
+    if (stallT < 0 && sawMsg("Motor 4 stalled")) stallT = t;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  check("No false alarm before the faults", !(slowT > 0 && slowT < 15) && !(freeT > 0 && freeT < 35), "%.0f", 0.0);
+  check("Slow motor (20 percent less RPM) reported", slowT > 15 && slowT < 22, "at %.1f s", slowT);
+  check("Damaged prop (spins free) reported", freeT > 35 && freeT < 42, "at %.1f s", freeT);
+  check("Stalled motor reported at once", stallT > 58 && stallT < 59.5f, "at %.2f s", stallT);
+}
+
+void scenarioGpsLossWind() {
+  int dr = getenv("SIM_DR") ? atoi(getenv("SIM_DR")) : 30;
+  printf("\n== gpsloss_wind: 2.4 m/s wind, a few dashes (the drag model learns), GPS gone 25 s in POSHOLD:\n"
+         "   dead reckoning keeps holding (dr_time_s %d) ==\n", dr);
+  setup([dr](Config& c) { c.dr_time_s = (uint8_t)dr; });
+  Takeoff to{10};
+  float n0 = 0, e0 = 0, drift = 0, kAtLoss = 0;
+  bool poshold = true, told = false;
+  run(65, [&](float t) {
+    to.step(t);
+    quad.wind = Vec3(0.5f, 0.3f, 0);
+    rcIn.ch[RC_PITCH] = (t >= 8 && t < 11) ? 1900 : (t >= 13 && t < 16) ? 1100 : 1500;
+    rcIn.ch[RC_ROLL] = (t >= 16 && t < 18) ? 1900 : (t >= 19 && t < 21) ? 1100 : 1500;
+    opt.gps = !(t >= 27 && t < 52);
+  }, [&](float t) {
+    if (fabsf(t - 27.0f) < 0.0005f) { n0 = quad.pos.x; e0 = quad.pos.y; }
+    if (t > 27 && t < 52) {
+      drift = fmaxf(drift, hypotf(quad.pos.x - n0, quad.pos.y - e0));
+      if (t > 29 && status().mode != FlightMode::POSHOLD) poshold = false;
+    }
+    if (sawMsg("dead reckoning (drag)")) told = true;
+    if (fmodf(t, 5.0f) < 0.0005f) trace(t);
+  });
+  (void)kAtLoss;
+  quad.wind = Vec3();
+  if (bus::config.est_type != 1) {
+    printf("  (est_type 0: dead reckoning is an EKF feature - drift %.1f m)\n", drift);
+  } else if (dr) {
+    check("GPS lost: dead reckoning on the drag model", told, "%.0f", told);
+    check("POSHOLD kept for the 25 s without GPS", poshold, "%.0f", poshold);
+    check("Drift in 25 s in 2.4 m/s wind (ALTHOLD: ~60 m)", drift < 10.0f, "max %.1f m", drift);
+  } else {
+    printf("  (dead reckoning off: drift %.1f m)\n", drift);
+  }
+}
+
+static void magLearnCase(bool calibrated) {
+  opt.magHard = Vec3(0.12f, -0.08f, 0.06f);
+  setup([calibrated](Config& c) {
+    c.mag_bias[0] = calibrated ? 1e-4f : 0.0f;
+    c.mag_bias[1] = c.mag_bias[2] = 0;
+    c.circle_radius = 10; c.circle_speed = 5;
+    c.mode_range[9] = {(uint8_t)ModeBox::CIRCLE, 10, 1700, 2100};
+  });
+  Takeoff to{12};
+  float learnT = -1, headErr = 0, disarmT = -1;
+  run(110, [&](float t) {
+    to.step(t);
+    rcIn.ch[RC_PITCH] = (t >= 8 && t < 11) ? 1900 : (t >= 12 && t < 15) ? 1100 : 1500;  // GPS heading aligns
+    rcIn.ch[10] = (t >= 17 && t < 80) ? 2000 : 1000;
+    if (t >= 85) { rcIn.ch[6] = 1000; rcIn.ch[7] = 2000; }  // LAND
+  }, [&](float t) {
+    if (learnT < 0 && (sawMsg("offsets learned") || sawMsg("fixed at landing"))) learnT = t;
+    if (!calibrated && t > learnT + 10 && learnT > 0 && t < 80)
+      headErr = fmaxf(headErr, fabsf(wrapPi(bus::nav.get().yaw - quad.q.yaw())) * RAD2DEG);
+    if (t > 85 && !status().armed && disarmT < 0) disarmT = t;
+    if (fmodf(t, 10.0f) < 0.0005f) trace(t);
+  });
+  const Config& c = bus::config;
+  Vec3 got(c.mag_bias[0], c.mag_bias[1], c.mag_bias[2]);
+  float err = (got - opt.magHard).norm();
+  opt.magHard = Vec3();
+  check("Offsets learned from the turns", learnT > 17 && learnT < 60, "at %.0f s", learnT);
+  check("Learned offsets match the craft's hard iron", err < 0.02f, "error %.3f (field 0.47)", err);
+  if (!calibrated) check("Compass in use afterwards: heading right", headErr < 6.0f && headErr > 0, "max %.1f deg", headErr);
+  check("Saved after landing", disarmT > 0 && sawMsg("Compass offsets saved"), "%.0f", sawMsg("Compass offsets saved"));
+}
+void scenarioMagLearn() {
+  printf("\n== maglearn: compass never calibrated, the craft adds a hard-iron offset; CIRCLE turns: learned in flight ==\n");
+  magLearnCase(false);
+}
+void scenarioMagLearnCal() {
+  printf("\n== maglearn_cal: compass calibrated before a new magnet went on: the EKF rejects it, the turns fix it ==\n");
+  magLearnCase(true);
+}
 void scenarioBeginner() {
   printf("\n== beginner: first-flight limits (ACRO switch flies ANGLE, 25 deg, fence -> RTH) ==\n");
   setup([](Config& c) { c.beginner = 1; c.beg_radius = 40; });
@@ -2773,7 +2919,9 @@ int main(int argc, char** argv) {
       {"armchecks", scenarioArmChecks}, {"horizon_airmode", scenarioHorizonAirmode},
       {"smart_rth", scenarioSmartRth}, {"thrustloss", scenarioThrustLoss}, {"beacon", scenarioBeacon},
       {"headfree", scenarioHeadfree}, {"homelock", scenarioHomeLock}, {"brake", scenarioBrake},
-      {"circle", scenarioCircle}, {"flip", scenarioFlip}, {"follow", scenarioFollow}};
+      {"circle", scenarioCircle}, {"flip", scenarioFlip}, {"follow", scenarioFollow},
+      {"bat_noamps", scenarioBatNoAmps}, {"rpmhealth", scenarioRpmHealth},
+      {"gpsloss_wind", scenarioGpsLossWind}, {"maglearn", scenarioMagLearn}, {"maglearn_cal", scenarioMagLearnCal}};
   if (!strcmp(which, "all")) {  // every scenario in a fresh process (clean firmware state)
     int failed = 0;
     for (auto& s : scenarios) {

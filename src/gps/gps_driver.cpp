@@ -67,15 +67,43 @@ void GpsDriver::begin(hal::Port port) {
   nav5[0] = 0x01;  // mask: dyn
   nav5[2] = 6;
   sendUbx(0x06, 0x24, nav5, sizeof(nav5));
-  // M9/M10: rate 100 ms, NAV-PVT on UART1, dyn model 6, GPS+Galileo+BeiDou default
+  // M10: the factory set (GPS + Galileo + BeiDou B1I) runs at 3 Hz at most (MAX-M10S data sheet,
+  // table 2): a 10 Hz request is simply not met. GPS + Galileo + BeiDou B1C (+ QZSS, SBAS corrections)
+  // runs at 8 Hz: 30+ satellites in Europe / Asia, the rate a position loop wants. GLONASS off (it would
+  // bring 4 constellations: 4 Hz). SBAS for corrections only, not as ranging sources (iNav does the same).
+  // A signal change restarts the GNSS part: wait for it before the next command. M8 / M9 ignore this
+  // (they NAK the keys they do not know) and keep the legacy set-up above.
+  uint8_t sig[] = {
+      0x00, 0x03, 0x00, 0x00,
+      0x1f, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-GPS_ENA
+      0x01, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-GPS_L1CA_ENA
+      0x21, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-GAL_ENA
+      0x07, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-GAL_E1_ENA
+      0x22, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-BDS_ENA
+      0x0d, 0x00, 0x31, 0x10, 0x00,  // CFG-SIGNAL-BDS_B1_ENA (B1I) off
+      0x0f, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-BDS_B1C_ENA on
+      0x25, 0x00, 0x31, 0x10, 0x00,  // CFG-SIGNAL-GLO_ENA off
+      0x24, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-QZSS_ENA
+      0x12, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-QZSS_L1CA_ENA
+      0x20, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-SBAS_ENA
+      0x05, 0x00, 0x31, 0x10, 0x01,  // CFG-SIGNAL-SBAS_L1CA_ENA
+      0x03, 0x00, 0x36, 0x10, 0x00,  // CFG-SBAS-USE_RANGING off
+  };
+  sendUbx(0x06, 0x8A, sig, sizeof(sig));
+  hal::delayMs(600);
+  // M9/M10: rate 125 ms (8 Hz), NAV-PVT on UART1, dyn model 6 (airborne < 1 g)
   uint8_t val[] = {
       0x00, 0x03, 0x00, 0x00,
-      0x01, 0x00, 0x21, 0x30, 100, 0x00,  // CFG-RATE-MEAS = 100 ms
+      0x01, 0x00, 0x21, 0x30, 125, 0x00,  // CFG-RATE-MEAS = 125 ms
       0x07, 0x00, 0x91, 0x20, 0x01,       // CFG-MSGOUT-UBX_NAV_PVT_UART1 = 1
       0x21, 0x00, 0x11, 0x20, 0x06,       // CFG-NAVSPG-DYNMODEL = 6
   };
   sendUbx(0x06, 0x8A, val, sizeof(val));
+  hal::delayMs(50);
+  sendUbx(0x0A, 0x04, nullptr, 0);  // MON-VER poll: which receiver (reported by `gps` / selftest)
 }
+
+void GpsDriver::pollVersion() { sendUbx(0x0A, 0x04, nullptr, 0); }
 
 bool GpsDriver::poll() {
   bool got = false;
@@ -129,6 +157,12 @@ bool GpsDriver::ubxByte(uint8_t b) {
   if (a != ubx_[ubxLen_ + 4] || c != ubx_[ubxLen_ + 5]) return false;
   detected_ = ubxSeen_ = true;
   frames_++;
+  if (ubx_[0] == 0x0A && ubx_[1] == 0x04 && ubxLen_ >= 40) { parseMonVer(ubx_ + 4, ubxLen_); return false; }
+  if (ubx_[0] == 0x05 && ubxLen_ >= 2 && ubx_[4] == 0x06 && ubx_[5] == 0x8A) {  // ACK / NAK of CFG-VALSET
+    if (ubx_[1] == 0x01) valsetAck_++;
+    else valsetNak_++;
+    return false;
+  }
   if (ubx_[0] != 0x01 || ubx_[1] != 0x07 || ubxLen_ < 92) return false;  // NAV-PVT only
   const uint8_t* p = ubx_ + 4;
   uint8_t fixType = p[20];
@@ -146,8 +180,41 @@ bool GpsDriver::ubxByte(uint8_t b) {
   course_ = i32le(p + 64) * 1e-5f;
   data_.courseDeg = course_;
   data_.vAcc = u32le(p + 44) * 1e-3f;
+  data_.sAcc = u32le(p + 68) * 1e-3f;
+  if (!(data_.sAcc >= 0 && data_.sAcc < 50)) data_.sAcc = 0;
+  pvtCount_++;
   sanitize();
   return true;
+}
+
+// UBX-MON-VER: swVersion[30], hwVersion[10], then 30-char extensions ("PROTVER=34.10", "MOD=MAX-M10S")
+void GpsDriver::parseMonVer(const uint8_t* p, uint16_t len) {
+  char hw[11];
+  memcpy(hw, p + 30, 10);
+  hw[10] = 0;
+  // hardware generation: 00080000 M8, 00190000 M9, 000A0000 M10
+  gen_ = !strncmp(hw, "000A", 4) ? 10 : !strncmp(hw, "0019", 4) ? 9 : !strncmp(hw, "0008", 4) ? 8 : !strncmp(hw, "0007", 4) ? 7 : 0;
+  protVer_[0] = 0;
+  for (uint16_t o = 40; o + 30 <= len; o += 30) {
+    const char* e = (const char*)p + o;
+    if (!strncmp(e, "PROTVER=", 8)) {
+      int n = 0;
+      while (n < 7 && e[8 + n] && e[8 + n] != ' ') { protVer_[n] = e[8 + n]; n++; }
+      protVer_[n] = 0;
+    }
+  }
+  versionKnown_ = true;
+}
+
+// measured NAV-PVT rate over the last few seconds (Hz)
+float GpsDriver::navRateHz(uint32_t nowMs) {
+  if (!rateMs_) { rateMs_ = nowMs; rateCount_ = pvtCount_; return rateHz_; }
+  if (nowMs - rateMs_ >= 5000) {
+    rateHz_ = (pvtCount_ - rateCount_) * 1000.0f / (float)(nowMs - rateMs_);
+    rateMs_ = nowMs;
+    rateCount_ = pvtCount_;
+  }
+  return rateHz_;
 }
 
 // a corrupted frame that still passes its checksum (or a receiver bug) must not become a position:

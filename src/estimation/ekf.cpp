@@ -374,6 +374,19 @@ void Ekf::fuseFlowVel(float vn, float ve, float sigma, uint32_t now) {
   else { st_.faults &= ~EKF_FLOW_REJECT; lastAidMs_ = now; }
 }
 
+void Ekf::fuseDragVel(float vn, float ve, float sigma, uint32_t now) {
+  if (!init_) return;
+  float h[N];
+  float R = sigma * sigma;
+  unit(h, IV);
+  float t1 = fuse(h, vn - v_.x, R, 5.0f);
+  unit(h, IV + 1);
+  float t2 = fuse(h, ve - v_.y, R, 5.0f);
+  st_.trDrag = fmaxf(t1, t2);
+  if (st_.trDrag > 1.0f) st_.faults |= EKF_DRAG_REJECT;
+  else { st_.faults &= ~EKF_DRAG_REJECT; lastAidMs_ = now; }
+}
+
 void Ekf::fuseZeroVel(float sigma) {
   if (!init_) return;
   float h[N];

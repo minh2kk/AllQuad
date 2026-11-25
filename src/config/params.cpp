@@ -186,6 +186,8 @@ static const ParamInfo PARAMS[] = {
     P("est_gpsvel_noise", F32, est_gps_vel_noise, 0.05f, 5),
     P("baro_gnd", U8, baro_gnd, 0, 1),
     P("bat_smart_rth", U8, bat_smart_rth, 0, 2),
+    P("dr_time_s", U8, dr_time_s, 0, 120),
+    P("mag_learn", U8, mag_learn, 0, 1),
     P("motor_warn", U8, motor_warn, 0, 1),
     P("beacon_s", U8, beacon_s, 0, 120),
     P("stick_cmds", U8, stick_cmds, 0, 1),

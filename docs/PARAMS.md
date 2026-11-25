@@ -1,6 +1,6 @@
 # Bảng tham số AllQuad (cấu hình v25)
 
-Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 393 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
+Tạo tự động bằng `node tools/gen_params_doc.js` từ firmware (giới hạn, mặc định) và trang cấu hình (mô tả). 395 tham số. Đổi bằng trang cấu hình (tab Tham số, hoặc thẻ của từng tab), CLI `set <tên> <giá trị>` rồi `save`, MAVLink (QGroundControl / Mission Planner) hoặc MSP. Cột "KĐL" = cần khởi động lại sau khi lưu.
 
 Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc](#bộ-lọc) · [Độ cao & vị trí](#độ-cao-vị-trí) · [Điều hướng & geofence](#điều-hướng-geofence) · [Failsafe & pin](#failsafe-pin) · [Tay điều khiển](#tay-điều-khiển) · [Chế độ (công tắc)](#chế-độ-công-tắc) · [Cổng & kết nối](#cổng-kết-nối) · [Motor & hệ thống](#motor-hệ-thống) · [VTX & LED](#vtx-led) · [OSD & blackbox](#osd-blackbox) · [Hiệu chuẩn & cảm biến](#hiệu-chuẩn-cảm-biến) · [Khác](#khác)
 
@@ -399,6 +399,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `est_baro_noise` | 0.4 | 0.05 … 5 | Độ nhiễu baro cho bộ ước lượng |
 | `est_acc_noise` | 0.6 | 0.05 … 5 | Độ nhiễu accel cho bộ ước lượng |
 | `est_gpsvel_noise` | 0.3 | 0.05 … 5 | Độ nhiễu vận tốc GPS |
+| `mag_learn` | 1 | 0 … 1 | Tự học độ lệch la bàn khi bay (cần GPS và vài vòng quay), lưu khi hạ cánh |
 | `rf_max_m` | 8 m | 0.5 … 40 | Tầm xa tối đa cảm biến khoảng cách (m) |
 | `flow_scale` | 10.5 | 0.1 … 100 | Hệ số optical flow |
 | `flow_align` | 0 | 0 … 3 | Hướng lắp optical flow |
@@ -445,6 +446,7 @@ Nhóm: [PID & rates](#pid-rates) · [Profile 2 & 3](#profile-2-3) · [Bộ lọc
 | `wind_drag` | 0.45 | 0.05 … 3 | Hệ số cản (1/s): đổi gió từ m/s² sang m/s |
 | `rally_max_m` | 500 m | 0 … 10000 | Bay về điểm rally gần hơn nhà trong phạm vi này (m, 0 = luôn về nhà) |
 | `baro_gnd` | 1 | 0 … 1 | Bỏ qua baro tụt do hiệu ứng mặt đất (đã arm, dưới khoảng 1 m) |
+| `dr_time_s` | 30 s | 0 … 120 | Mất GPS: giữ vị trí bằng mô hình cản gió (EKF) trong bấy nhiêu giây, 0 tắt |
 | `beacon_s` | 10 s | 0 … 120 | Motor kêu bíp (DShot beacon) sau bấy nhiêu giây mất sóng khi đang disarm, để tìm drone (0 tắt) |
 | `stick_cmds` | 1 | 0 … 1 | Lệnh bằng cần khi disarm: hiệu chuẩn, chọn profile, trim, lưu, mở menu OSD |
 | `headfree_type` | 0 | 0 … 1 | HEADFREE: 0 hướng mũi lúc arm là phía trước, 1 khoá theo nhà (kéo cần về = bay về nhà) |

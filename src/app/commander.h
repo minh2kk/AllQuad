@@ -7,6 +7,8 @@
 #include "../control/pos_control.h"
 #include "../estimation/ekf.h"
 #include "../estimation/gps_heading.h"
+#include "../estimation/drag_model.h"
+#include "../estimation/mag_learn.h"
 #include "../estimation/nav_estimator.h"
 #include "../navigation/navigator.h"
 #include "../safety/safety.h"
@@ -167,7 +169,8 @@ class Commander {
   bool followTold_ = false;
   void followInput(uint32_t now);
   // battery needed to come home (DJI smart RTH)
-  float ampsAvg_ = -1, rthNeedMah_ = 0, rthLeftMah_ = 0;
+  float ampsAvg_ = -1, rthNeedMah_ = 0, rthLeftMah_ = 0, pctRef_ = 0, pctRate_ = 0;
+  uint32_t pctRefMs_ = 0;
   uint32_t smartMs_ = 0;
   uint8_t smartLowN_ = 0;
   bool smartDone_ = false, smartWarn_ = false;
@@ -177,6 +180,23 @@ class Commander {
   uint32_t motorBadSince_ = 0, thrustBadSince_ = 0, motorToldMs_ = 0, thrustToldMs_ = 0;
   bool motorWarn_ = false, thrustWarn_ = false;
   void motorHealth(uint32_t now, float dt);
+  // dead reckoning on the drag model (GPS lost)
+  fc::DragModel drag_;
+  uint32_t dragMs_ = 0, gpsLostMs_ = 0, drFusedMs_ = 0;
+  bool drActive_ = false, drTold_ = false;
+  void dragStep(uint32_t now);
+  // compass offsets learned in flight
+  fc::MagLearn magLearn_;
+  float mlYaw_ = 0;
+  uint32_t mlSampleMs_ = 0, mlSolveMs_ = 0;
+  bool mlDone_ = false, mlPending_ = false;
+  fc::Vec3 mlDelta_;
+  void magLearnStep(uint32_t now, float dt, bool newMag);
+  void magLearnSave();
+  float rpmAvg_[4] = {0, 0, 0, 0}, cmdAvg_[4] = {0, 0, 0, 0};
+  uint32_t rpmSlowSince_ = 0, rpmFreeSince_ = 0, rpmStallSince_ = 0, rpmSlowToldMs_ = 0, rpmFreeToldMs_ = 0, rpmStallToldMs_ = 0;
+  bool rpmWarn_ = false, rpmStall_ = false;
+  void rpmHealth(uint32_t now, float dt, const fc::MotorOutputs& mo, bool steady);
   uint32_t guidedSeq_ = 0;
   void guidedInput(uint32_t nowMs);
   // logic conditions (iNav programming framework)

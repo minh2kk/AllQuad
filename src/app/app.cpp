@@ -621,7 +621,12 @@ void sensorsTask(void*) {
   // no divider / current sensor wired: the 4-in-1 ESC's own measurement (EDT) stands in
   if (edtUse && v < 2.0f && edtVolts > 0) v = edtVolts;
   if (edtUse && amps < 0 && edtAmps >= 0) amps = edtAmps;
-  battery.update(v, amps, st.armed, now, 0.01f);
+  float load = 0;
+  if (st.armed) {
+    MotorOutputs mo = bus::motors.get();
+    for (int i = 0; i < 4; i++) load += powf(fmaxf(mo.out[i], 0.0f), 1.5f) * 0.25f;
+  }
+  battery.update(v, amps, st.armed, now, 0.01f, load);
   bus::battery.publish(battery.state());
 
   // ---- LED & buzzer ----
@@ -728,6 +733,30 @@ void ioTask(void*) {
     bus::gpsLink.baud = gps.baud();
     bus::gpsLink.frames = gps.frames();
     bus::gpsLink.proto = !strcmp(gps.protocol(), "UBX") ? 1 : !strcmp(gps.protocol(), "NMEA") ? 2 : 0;
+    bus::gpsLink.gen = gps.generation();
+    bus::gpsLink.rateHz = gps.navRateHz(now);
+    for (int i = 0; i < 8; i++) bus::gpsLink.protVer[i] = gps.protVer()[i];
+    // receiver identity once (poll again if the first MON-VER answer was missed), and a warning when the
+    // solutions come slower than the position loop wants (a receiver set up elsewhere, wrong GNSS set)
+    static uint8_t told = 0;
+    static uint32_t verPollMs = 0, slowSince = 0;
+    if (gps.detected() && !strcmp(gps.protocol(), "UBX") && !gps.versionKnown() && now - verPollMs > 5000 && now > 8000) {
+      verPollMs = now;
+      gps.pollVersion();
+    }
+    if (!(told & 1) && gps.versionKnown() && gps.navRateHz(now) > 0) {
+      told |= 1;
+      char m[48];
+      snprintf(m, sizeof(m), "GPS: u-blox M%u %s, %.0f Hz", gps.generation(), gps.protVer(), (double)gps.navRateHz(now));
+      bus::postMessage(m);
+    }
+    float hz = gps.navRateHz(now);
+    if (hz > 0 && hz < 4.5f && !strcmp(gps.protocol(), "UBX")) { if (!slowSince) slowSince = now; }
+    else slowSince = 0;
+    if (!(told & 2) && slowSince && now - slowSince > 15000) {
+      told |= 2;
+      bus::postMessage("GPS: slow (under 5 Hz) - check its GNSS / rate setup");
+    }
   }
   if (gpsNew && !hitl::active()) {
     GpsData g = gps.data();

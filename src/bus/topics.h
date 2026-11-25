@@ -39,6 +39,7 @@ struct GpsData {
   float groundSpeed, courseDeg;
   float hAcc, vAcc;         // m
   uint32_t timeMs;
+  float sAcc;               // speed accuracy (m/s, 1 sigma; 0 = not reported)
 };
 
 struct BaroSample { float altM; float pressurePa; float tempC; bool healthy; };
@@ -58,6 +59,13 @@ struct BatteryState {
   float cellVoltage;
   uint8_t cells, percent;
   bool warn, critical, capacityLow;
+  // resting voltage: the sag under load added back with the learned pack resistance (ohm with a
+  // current sensor, else volts per unit motor load), the charge estimate from it when there is no
+  // capacity / current counting
+  float restCell;      // V per cell (0 until learned)
+  float resistance;    // ohm (current sensor) or V per unit load (motor outputs)
+  bool restLearned, loadIsCurrent;
+  float percentF;      // percent as a float (0..100, for the smart RTH rate)
 };
 
 // ---------------------------------------------------------------- estimates

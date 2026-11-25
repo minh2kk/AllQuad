@@ -650,12 +650,8 @@ void MavlinkLink::update(uint32_t now, bool readPort) {
       send(MSG_MISSION_ITEM_REACHED, r.b, 2);
     }
   }
-  if (bus::messageSeq() != msgSeq_) {
-    msgSeq_ = bus::messageSeq();
-    char m[64];
-    bus::readMessage(m, sizeof(m));
-    sendStatusText(m, 6);  // MAV_SEVERITY_INFO
-  }
+  char m[64];
+  for (int k = 0; k < 3 && bus::messageAfter(msgSeq_, m, sizeof(m)); k++) sendStatusText(m, 6);  // MAV_SEVERITY_INFO
 }
 
 }  // namespace comms

@@ -28,6 +28,10 @@
 #include "../../src/estimation/ekf.h"
 #include "../../src/estimation/baro_comp.h"
 #include "../../src/app/sticks.h"
+#include "../../src/estimation/drag_model.h"
+#include "../../src/estimation/mag_learn.h"
+#include "../../src/safety/safety.h"
+#include "../../src/gps/gps_driver.h"
 #include "../../src/osd/menu.h"
 #include "../../src/estimation/range_height.h"
 #include "../../src/control/pos_control.h"
@@ -2209,6 +2213,80 @@ static void testImuDelta() {
 }
 
 
+
+static void testLearners() {
+  // drag model: aN = -k (vN - wN), noisy samples at various speeds
+  fc::DragModel dm;
+  uint32_t seed = 7;
+  auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return ((seed >> 8) & 0xFFFF) / 65535.0f - 0.5f; };
+  for (int i = 0; i < 600; i++) {
+    float vn = 8 * sinf(i * 0.05f), ve = 6 * cosf(i * 0.037f);
+    float aN = -0.4f * (vn - 1.5f) + rnd() * 0.3f, aE = -0.4f * (ve + 0.8f) + rnd() * 0.3f;
+    dm.learn(aN, aE, vn, ve);
+  }
+  float vn, ve;
+  dm.velocity(-0.4f * (3 - 1.5f), -0.4f * (-2 + 0.8f), vn, ve);
+  CHECK(dm.ready() && fabsf(dm.k() - 0.4f) < 0.03f && fabsf(dm.windN() - 1.5f) < 0.3f && fabsf(dm.windE() + 0.8f) < 0.3f,
+        "drag model: k and wind learned");
+  CHECK(fabsf(vn - 3) < 0.4f && fabsf(ve + 2) < 0.4f, "drag model: ground velocity back from the accelerometer");
+  fc::DragModel idle;
+  for (int i = 0; i < 600; i++) idle.learn(0.6f + rnd() * 0.2f, 0.36f, 0, 0);
+  CHECK(!idle.ready(), "drag model: not ready from hovering alone");
+  // compass offsets: f = R^T m + b over a full turn with some tilt
+  fc::MagLearn ml;
+  fc::Vec3 m(0.22f, 0.05f, 0.42f), b(0.1f, -0.07f, 0.05f);
+  for (int i = 0; i < 400; i++) {
+    float yaw = i * 0.02f, roll = 0.15f * sinf(i * 0.11f), pitch = 0.12f * cosf(i * 0.07f);
+    fc::Quat q = fc::Quat::fromEuler(roll, pitch, yaw);
+    fc::Vec3 f = q.rotateInv(m) + b + fc::Vec3(rnd() * 0.006f, rnd() * 0.006f, rnd() * 0.006f);
+    ml.add(f, q, fc::wrapPi(yaw));
+  }
+  fc::Vec3 mm, bb;
+  float rms;
+  bool ok = ml.solve(mm, bb, rms);
+  CHECK(ok && ml.sectors() == 12 && (bb - b).norm() < 0.01f && (mm - m).norm() < 0.01f && rms < 0.01f,
+        "compass learning: offset and earth field from one turn");
+  float diag[3] = {1.1f, 0.9f, 1.0f}, off[3] = {0.05f, 0, 0.02f};
+  fc::Vec3 d = fc::magBiasDelta(fc::Vec3(0.1f, 0.2f, -0.1f), diag, off);
+  fc::Vec3 back(diag[0] * d.x + off[0] * d.y + off[1] * d.z, off[0] * d.x + diag[1] * d.y + off[2] * d.z, off[1] * d.x + off[2] * d.y + diag[2] * d.z);
+  CHECK((back - fc::Vec3(0.1f, 0.2f, -0.1f)).norm() < 1e-4f, "compass learning: offset back to the raw frame (soft iron)");
+  // battery: resistance from load steps, resting voltage
+  fc::Config& c = bus::config;
+  fc::configDefaults(c);
+  c.cell_count = 4;
+  fc::BatteryMonitor bm;
+  bm.configure(c, 100);
+  for (int i = 0; i < 9000; i++) {
+    float t = i * 0.01f, load = (fmodf(t, 8) < 2) ? 0.6f : 0.25f;
+    float v = 16.0f - 0.002f * t - 2.5f * load;
+    bm.update(v, -1, true, 2000 + i * 10, 0.01f, load);
+  }
+  const fc::BatteryState& st = bm.state();
+  CHECK(st.restLearned && fabsf(st.resistance - 2.5f) < 0.3f, "battery: sag per load learned (no current sensor)");
+  CHECK(fabsf(st.restCell - (16.0f - 0.002f * 89.99f) / 4) < 0.05f, "battery: resting voltage");
+  // GPS: MON-VER of an M10, NAV-PVT speed accuracy
+  drv::GpsDriver g;
+  uint8_t mv[40 + 60] = {};
+  memcpy(mv, "ROM SPG 5.10 (7b202e)", 21);
+  memcpy(mv + 30, "000A0000", 8);
+  memcpy(mv + 40, "FWVER=SPG 5.10", 14);
+  memcpy(mv + 70, "PROTVER=34.10", 13);
+  std::vector<uint8_t> fr = {0xB5, 0x62, 0x0A, 0x04, (uint8_t)sizeof(mv), 0};
+  fr.insert(fr.end(), mv, mv + sizeof(mv));
+  uint8_t a = 0, k = 0;
+  for (size_t i = 2; i < fr.size(); i++) { a += fr[i]; k += a; }
+  fr.push_back(a); fr.push_back(k);
+  for (uint8_t x : fr) g.feed(x);
+  CHECK(g.versionKnown() && g.generation() == 10 && !strcmp(g.protVer(), "34.10"), "gps: MON-VER -> u-blox M10, protocol 34.10");
+  // message ring: a burst of three is read in order
+  uint32_t seq = bus::messageSeq();
+  bus::postMessage("one"); bus::postMessage("two"); bus::postMessage("three");
+  char m1[16], m2[16], m3[16];
+  bool r1 = bus::messageAfter(seq, m1, 16), r2 = bus::messageAfter(seq, m2, 16), r3 = bus::messageAfter(seq, m3, 16);
+  CHECK(r1 && r2 && r3 && !strcmp(m1, "one") && !strcmp(m2, "two") && !strcmp(m3, "three") && !bus::messageAfter(seq, m1, 16),
+        "messages: a burst is not lost (ring of 4)");
+}
+
 static void testSticksMenu() {
   using app::StickCommands;
   fc::Config& c = bus::config;
@@ -2673,6 +2751,7 @@ int main(int argc, char** argv) {
   testImuDelta();
   testAltitudeHelpers();
   testSticksMenu();
+  testLearners();
   testParams();
   testModeRanges();
   testDeferredSave();

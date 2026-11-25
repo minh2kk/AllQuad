@@ -91,7 +91,8 @@ extern volatile RxLinkStats rxLink;
 extern volatile bool otaActive;  // firmware update being written: arming blocked (flash writes stall the CPU)
 extern volatile uint32_t fastLoops;
 // GPS link diagnostics: port (hal::Port, 0xFF = none), baud rate in use, valid frames, protocol 0 / 1 UBX / 2 NMEA
-struct GpsLink { uint8_t port, proto; uint32_t baud, frames; };
+// gen: u-blox generation (7..10, 0 unknown), rateHz: measured navigation solutions per second
+struct GpsLink { uint8_t port, proto; uint32_t baud, frames; uint8_t gen; float rateHz; char protVer[8]; };
 extern volatile GpsLink gpsLink;
 // MSP sensor port (optical flow / rangefinder modules, e.g. MicoAir MTF-01): what arrives on it. port 0xFF = none;
 // msp / mico = valid MSP / Micolink frames, mav = MAVLink frame starts seen (module set to the wrong protocol)
@@ -149,5 +150,7 @@ extern volatile uint8_t compassMotPct;
 void postMessage(const char* text);
 uint32_t messageSeq();
 void readMessage(char* out, int len);
+// next message after `seq` (the reader's own counter, start at messageSeq()); false when none is new
+bool messageAfter(uint32_t& seq, char* out, int len);
 
 }  // namespace bus

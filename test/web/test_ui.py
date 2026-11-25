@@ -95,7 +95,9 @@ async def main():
             await pg.click("#discardBtn")
         else:
             check(await pg.locator("#bbPlan").count() == 1, "tuning plan rendered (no change needed for this log)")
-        await shot(pg, os.path.join(SHOTS, "blackbox.png"), full_page=True)
+        # the analysed log is a ~7000 px page of charts: a full-page capture of it sometimes stalls headless
+        # Chromium (and the page with it), so the artifact is the visible part only
+        await shot(pg, os.path.join(SHOTS, "blackbox.png"))
         # SD card: status + one file per flight, analysed straight from the card, deleted
         await pg.wait_for_selector("#sdFiles .sdrow", timeout=5000)
         nfiles = await pg.locator("#sdFiles .sdrow").count()

@@ -8,7 +8,7 @@ namespace fc {
 // Version history: 16 = VTX, LED strip; 17 = bidirectional DShot, EKF, autotune steps, launch control,
 // RTH sanity check, vibration warning, custom VTX table (appended). New fields are ONLY appended before `crc`:
 // configMigrate() then keeps every setting of an older (shorter) stored config.
-constexpr uint16_t CONFIG_VERSION = 33;
+constexpr uint16_t CONFIG_VERSION = 34;
 
 // fastest flight loop the target sustains (platformio.ini: the H743 runs 3.2-4 kHz)
 #ifndef AQ_LOOP_HZ_MAX
@@ -352,6 +352,9 @@ struct Config {
   float circle_speed;       // CIRCLE: speed (m/s), negative = counter-clockwise
   float follow_dist;        // FOLLOW: distance kept from the leader (m)
   float follow_alt;         // FOLLOW: height above home (m), 0 = keep the height at entry
+  // ---- v34: dead reckoning, compass learning ----
+  uint8_t dr_time_s;        // GPS lost: keep the position this long from the drag model (EKF), 0 off
+  uint8_t mag_learn;        // 1: learn the compass offsets in flight (GPS + turns), saved when disarmed
 
   uint32_t crc;
 };

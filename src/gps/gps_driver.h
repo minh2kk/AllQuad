@@ -21,6 +21,14 @@ class GpsDriver {
   bool detected() const { return detected_; }
   const char* protocol() const { return ubxSeen_ ? "UBX" : (nmeaSeen_ ? "NMEA" : "none"); }
   float courseDeg() const { return course_; }
+  // receiver: u-blox generation (7 / 8 / 9 / 10, 0 unknown), protocol version, measured NAV-PVT rate
+  uint8_t generation() const { return gen_; }
+  const char* protVer() const { return protVer_; }
+  bool versionKnown() const { return versionKnown_; }
+  float navRateHz(uint32_t nowMs);
+  uint16_t valsetAcks() const { return valsetAck_; }
+  uint16_t valsetNaks() const { return valsetNak_; }
+  void pollVersion();
 
   bool feed(uint8_t b);  // exposed for tests
 
@@ -31,6 +39,7 @@ class GpsDriver {
   void sanitize();
   void sendUbx(uint8_t cls, uint8_t id, const uint8_t* payload, uint16_t len);
   void configure();
+  void parseMonVer(const uint8_t* p, uint16_t len);
 
   fc::GpsData data_{};
   hal::Port port_ = hal::Port::SERIAL2;
@@ -39,9 +48,15 @@ class GpsDriver {
   uint32_t baud_ = 115200, frames_ = 0, lastFrameMs_ = 0, switchMs_ = 0;
   uint8_t baudIdx_ = 0;
   bool timing_ = false;
+  uint8_t gen_ = 0;
+  char protVer_[8] = "";
+  bool versionKnown_ = false;
+  uint16_t valsetAck_ = 0, valsetNak_ = 0;
+  uint32_t pvtCount_ = 0, rateCount_ = 0, rateMs_ = 0;
+  float rateHz_ = 0;
 
   // UBX state
-  uint8_t ubx_[100];
+  uint8_t ubx_[260];  // NAV-PVT 92, MON-VER up to ~250
   uint16_t ubxPos_ = 0, ubxLen_ = 0;
   uint8_t ubxState_ = 0;
   // NMEA state

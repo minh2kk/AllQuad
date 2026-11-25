@@ -84,6 +84,10 @@ static void v30Defaults(Config& c) {
   c.rc_deadband = 5;
 }
 static void v31Defaults(Config& c) { c.bb_gyro_s = 0; }
+static void v34Defaults(Config& c) {
+  c.dr_time_s = 30;
+  c.mag_learn = 1;
+}
 static void v33Defaults(Config& c) {
   c.bat_smart_rth = 2;
   c.motor_warn = 1;
@@ -339,6 +343,7 @@ void configDefaults(Config& c) {
   v31Defaults(c);
   v32Defaults(c);
   v33Defaults(c);
+  v34Defaults(c);
   configSeal(c);
 }
 
@@ -373,6 +378,7 @@ bool configMigrate(Config& c) {
   if (c.version < 31) v31Defaults(d);
   if (c.version < 32) v32Defaults(d);
   if (c.version < 33) v33Defaults(d);
+  if (c.version < 34) v34Defaults(d);
   configSeal(d);
   c = d;
   return true;
